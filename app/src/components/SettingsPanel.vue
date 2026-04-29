@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { useSettingsStore } from '../stores/settings';
 import { useTabsStore } from '../stores/tabs';
@@ -75,8 +75,27 @@ async function setAsDefault() {
   }
 }
 
-defineProps<{ open: boolean }>();
+const props = defineProps<{ open: boolean; initialSection?: string | null }>();
 const emit = defineEmits<{ (e: 'close'): void }>();
+
+// Deep-link support: callers (toolbar AI button, RAG empty state, etc.)
+// pass `initial-section` to land on a specific category instead of the
+// default `basics`. We watch open transitions to true rather than the
+// section value alone, because the parent leaves the section ref in place
+// after close — re-opening would otherwise jump back to the same anchor.
+const VALID_CATEGORIES = new Set<SettingsCategory>([
+  'basics', 'writing', 'sync', 'integrations', 'export', 'advanced',
+]);
+watch(
+  () => props.open,
+  (isOpen) => {
+    if (!isOpen) return;
+    const target = props.initialSection;
+    if (target && VALID_CATEGORIES.has(target as SettingsCategory)) {
+      activeCategory.value = target as SettingsCategory;
+    }
+  },
+);
 
 const settings = useSettingsStore();
 const tabs = useTabsStore();
@@ -633,6 +652,18 @@ function onSelectPdfFont(v: string) {
             <option value="dark">{{ t('settings.pdfDefaults.codeThemeDark') }}</option>
           </select>
           <p class="setting-hint">{{ t('settings.pdfDefaults.frontmatterHint') }}</p>
+        </section>
+
+        <section data-cat="export">
+          <label>
+            <input
+              type="checkbox"
+              :checked="settings.imageExportBranding"
+              @change="settings.toggleImageExportBranding()"
+            />
+            {{ t('settings.imageExportBranding') }}
+          </label>
+          <p class="setting-hint">{{ t('settings.imageExportBrandingHint') }}</p>
         </section>
 
         <section data-cat="advanced">

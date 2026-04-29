@@ -83,6 +83,14 @@ const cursorCol = ref(1);
 const paletteOpen = ref(false);
 const quickSwitcherOpen = ref(false);
 const settingsOpen = ref(false);
+// When a caller wants the Settings panel to land on a specific category
+// (e.g. the AI button → `integrations`), set this before opening; the
+// SettingsPanel watches it and switches activeCategory accordingly.
+const settingsInitialSection = ref<string | null>(null);
+function openSettingsAt(section: string | null = null) {
+  settingsInitialSection.value = section;
+  settingsOpen.value = true;
+}
 const helpOpen = ref(false);
 const searchOpen = ref(false);
 const ragSearchOpen = ref(false);
@@ -551,7 +559,12 @@ async function onWikiOpen(e: Event) {
     tabs.activate(tab.id);
   }
 }
-function onOpenSettingsEvent() { settingsOpen.value = true; }
+function onOpenSettingsEvent(e: Event) {
+  // Optional `detail.section` lets callers (toolbar AI button, RAG
+  // empty state, etc.) deep-link into a specific Settings category.
+  const section = (e as CustomEvent).detail?.section ?? null;
+  openSettingsAt(section);
+}
 
 window.addEventListener('solomd:wiki-open', onWikiOpen as EventListener);
 window.addEventListener('solomd:ai-rewrite-accept', onAIRewriteAccept as EventListener);
@@ -637,7 +650,7 @@ watchEffect(() => { void settings.aiEnabled; void settings.aiProvider; refreshAi
     <template v-else>
       <Toolbar
         @open-palette="paletteOpen = true"
-        @open-settings="settingsOpen = true"
+        @open-settings="openSettingsAt()"
         @open-help="helpOpen = true"
         @open-search="searchOpen = true"
       />
@@ -676,20 +689,21 @@ watchEffect(() => { void settings.aiEnabled; void settings.aiProvider; refreshAi
       :model="settings.aiModel"
       :base-url="settings.aiBaseUrl"
       :has-key="aiHasKey"
-      @open-settings="settingsOpen = true"
+      @open-settings="(section?: string) => openSettingsAt(section ?? 'integrations')"
     />
     <CommandPalette :open="paletteOpen" @close="paletteOpen = false" />
     <QuickSwitcher :open="quickSwitcherOpen" @close="quickSwitcherOpen = false" />
     <SettingsPanel
       :open="settingsOpen"
-      @close="settingsOpen = false; refreshAiHasKey()"
+      :initial-section="settingsInitialSection"
+      @close="settingsOpen = false; settingsInitialSection = null; refreshAiHasKey()"
     />
     <MarkdownHelp :open="helpOpen" @close="helpOpen = false" />
     <GlobalSearch :open="searchOpen" @close="searchOpen = false" />
     <RagSearch
       :open="ragSearchOpen"
       @close="ragSearchOpen = false"
-      @open-settings="ragSearchOpen = false; settingsOpen = true"
+      @open-settings="(section?: string) => { ragSearchOpen = false; openSettingsAt(section ?? 'writing'); }"
     />
     <CjkProofread :open="cjkProofreadOpen" @close="cjkProofreadOpen = false" />
     <AboutDialog :open="aboutOpen" @close="aboutOpen = false" />

@@ -115,6 +115,11 @@ interface Settings {
   // editor. Default ON — can be turned off for users who don't like
   // the keyboard interception.
   slashCommandsEnabled: boolean;
+  // v3.6: PNG export — show "Created with SoloMD · solomd.app" footer
+  // under the rendered note. Default ON (mild self-promotion is fine
+  // for a free MIT app), but explicitly toggleable in Settings → Export
+  // for users who don't want the watermark on screenshots they share.
+  imageExportBranding: boolean;
 }
 
 /** v2.5 PDF / print export defaults. */
@@ -227,6 +232,7 @@ function defaults(): Settings {
     pomodoroAutoEngageFocus: true,
     pomodoroDefaultMinutes: 25,
     slashCommandsEnabled: true,
+    imageExportBranding: true,
   };
 }
 
@@ -537,6 +543,10 @@ export const useSettingsStore = defineStore('settings', {
     },
     toggleSlashCommandsEnabled() {
       this.slashCommandsEnabled = !this.slashCommandsEnabled;
+      this.persist();
+    },
+    toggleImageExportBranding() {
+      this.imageExportBranding = !this.imageExportBranding;
       this.persist();
     },
   },

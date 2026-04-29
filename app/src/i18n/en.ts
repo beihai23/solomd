@@ -168,6 +168,8 @@ export const en = {
       codeThemeDark: 'Always dark',
       frontmatterHint: 'Override per document with a `pdf:` block in YAML front matter (pageSize / margin / font / fontSize / footer).',
     },
+    imageExportBranding: 'Append "Created with SoloMD" footer when exporting as image',
+    imageExportBrandingHint: 'On by default — mild self-promotion on shared screenshots. Turn off if you don\'t want the watermark, and short notes will also export tighter without the trailing card.',
     spellCheck: 'Spell Check (browser)',
     focusMode: 'Focus Mode — dim non-active paragraphs',
     typewriterMode: 'Typewriter Mode — keep cursor centered',

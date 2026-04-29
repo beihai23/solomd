@@ -360,12 +360,19 @@ const liveEditTheme = EditorView.theme({
  * Bundle for the v2.3 "live edit" view mode. Wire into Editor.vue as the
  * rich-extensions value when `viewMode === 'liveEdit'` and the tab is
  * markdown.
+ *
+ * v3.6 (issue #44): pass the optional `blocks` extensions in to add
+ * image / table live-render widgets (cm-live-blocks). The caller is
+ * responsible for building those with workspace + file-path context;
+ * we just splice them into the bundle so they live in the same
+ * compartment as the rest of the live-edit machinery.
  */
-export function liveEditExtension() {
+export function liveEditExtension(blocks: any[] = []) {
   return [
     syntaxHighlighting(liveEditHighlightStyle),
     liveRenderPlugin,
     liveEditTheme,
+    ...blocks,
   ];
 }
 

@@ -170,6 +170,8 @@ export const zh: I18n = {
       codeThemeDark: '始终深色',
       frontmatterHint: '可在每个文档的 YAML front matter 中以 `pdf:` 块覆盖（pageSize / margin / font / fontSize / footer）。',
     },
+    imageExportBranding: '导出图片时附加 "Created with SoloMD" 水印',
+    imageExportBrandingHint: '默认开启 —— 在分享截图上做点温和宣传。如果不希望有水印可以关掉，关掉后短笔记导出也会更紧凑（不再有那段尾部留白）。',
     spellCheck: '拼写检查 (浏览器)',
     focusMode: '专注模式 — 淡化非活动段落',
     typewriterMode: '打字机模式 — 光标始终居中',

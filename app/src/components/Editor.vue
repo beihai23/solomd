@@ -26,6 +26,7 @@ import { useSettingsStore, buildEditorFontStack } from '../stores/settings';
 import type { Tab } from '../types';
 import { livePreviewExtension, richHighlightOnly } from '../lib/cm-live-preview';
 import { liveEditExtension } from '../lib/cm-live-render';
+import { liveBlocksPlugin, liveBlocksTheme, extractImageRoot } from '../lib/cm-live-blocks';
 import { imagePasteExtension, insertImageFromPath as cmInsertImageFromPath } from '../lib/cm-image-paste';
 import { focusModeExtension, typewriterModeExtension } from '../lib/cm-focus-mode';
 import { wikilinkExtension, wikilinkComplete } from '../lib/cm-wikilink';
@@ -138,7 +139,19 @@ function richExtensionsFor(tab: Tab) {
   // the WYSIWYG bundle ALREADY includes rich highlighting + marker hiding,
   // and stacking livePreviewExtension on top would cause duplicate
   // marker-replace decorations.
-  if (settings.viewMode === 'liveEdit') return liveEditExtension();
+  if (settings.viewMode === 'liveEdit') {
+    // v3.6 issue #44: in live-edit mode, also collapse standalone image
+    // lines + GFM tables into block widgets when the cursor is elsewhere.
+    // Cursor enters → widget unmounts → source returns. Image paths
+    // resolve via the same extractImageRoot used by Preview/Export.
+    return liveEditExtension([
+      liveBlocksPlugin({
+        getImageRoot: () => extractImageRoot(tab.content || ''),
+        getFilePath: () => tab.filePath,
+      }),
+      liveBlocksTheme,
+    ]);
+  }
   return settings.livePreview ? livePreviewExtension() : richHighlightOnly();
 }
 

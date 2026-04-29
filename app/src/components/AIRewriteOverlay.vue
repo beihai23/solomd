@@ -51,7 +51,7 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  (e: 'open-settings'): void;
+  (e: 'open-settings', section?: string): void;
 }>();
 
 // --- State ----------------------------------------------------------------
@@ -293,7 +293,11 @@ function onSetKey(): void {
   // sits on top of the Settings dialog and the user has to dismiss it
   // manually before they can configure anything.
   close();
-  emit('open-settings');
+  // AI settings live under the `integrations` category — pass the
+  // section so the Settings panel jumps there directly instead of
+  // landing on the default `basics` tab. (Same fix as the toolbar
+  // AI button's "Enable AI rewrite first" path.)
+  emit('open-settings', 'integrations');
 }
 
 watch(

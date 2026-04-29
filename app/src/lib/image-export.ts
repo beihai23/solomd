@@ -14,12 +14,23 @@ import mermaid from 'mermaid';
 import { renderMarkdown, extractImageRoot } from './markdown';
 import { rewriteImageUrls } from './image-resolve';
 
+export interface ImageExportOptions {
+  /** When true, append a "Created with SoloMD · solomd.app" footer.
+   *  Default true (mirroring the settings store default); pass false
+   *  to opt out per-call. */
+  branding?: boolean;
+}
+
 const IMAGE_CSS = `
   body { margin: 0; }
   .img-page {
     box-sizing: border-box;
     width: 800px;
-    padding: 48px 56px 56px;
+    /* Bottom padding is set per-export based on whether the SoloMD
+       footer is rendered. With the footer, 56px gives the watermark
+       breathing room from the content above. Without it, 36px keeps
+       short notes from looking like they have a void underneath. */
+    padding: 48px 56px 36px;
     color: #1f1d1a;
     background: #ffffff;
     font: 15px/1.75 -apple-system, BlinkMacSystemFont, "Segoe UI", "Inter", Roboto,
@@ -66,7 +77,11 @@ const IMAGE_CSS = `
   .img-page .mermaid-block svg { max-width: 100%; height: auto; }
   .img-page .katex-display { overflow-x: auto; margin: 1em 0; }
 
-  /* Watermark / branding */
+  /* Watermark / branding — rendered when settings.imageExportBranding
+     is on (default ON in v3.6). Toggleable in Settings → Export so
+     users who'd rather not have a watermark on shared screenshots can
+     opt out cleanly, without us having forced "no brand" on everyone. */
+  .img-page--branded { padding-bottom: 56px; }
   .img-footer {
     margin-top: 28px;
     padding-top: 14px;
@@ -101,7 +116,12 @@ async function processMermaidBlocks(container: HTMLElement) {
   }
 }
 
-export async function markdownToImageBlob(source: string, _title?: string, filePath?: string): Promise<Blob> {
+export async function markdownToImageBlob(
+  source: string,
+  _title?: string,
+  filePath?: string,
+  opts: ImageExportOptions = {},
+): Promise<Blob> {
   const rawHtml = renderMarkdown(source || '');
   const html = rewriteImageUrls(rawHtml, extractImageRoot(source || ''), filePath);
 
@@ -115,14 +135,19 @@ export async function markdownToImageBlob(source: string, _title?: string, fileP
   root.style.zIndex = '-1';
 
   const page = document.createElement('article');
-  page.className = 'img-page';
+  page.className = opts.branding ? 'img-page img-page--branded' : 'img-page';
   page.innerHTML = html;
 
-  // Add a small branded footer
-  const footer = document.createElement('div');
-  footer.className = 'img-footer';
-  footer.innerHTML = `Created with <span class="brand">SoloMD</span> · solomd.app`;
-  page.appendChild(footer);
+  // Branded footer default ON — settings.imageExportBranding controls
+  // it (Settings → Export). When the user disables it, we tighten the
+  // bottom padding via `.img-page--branded` not being applied so short
+  // notes export tight.
+  if (opts.branding) {
+    const footer = document.createElement('div');
+    footer.className = 'img-footer';
+    footer.innerHTML = `Created with <span class="brand">SoloMD</span> · solomd.app`;
+    page.appendChild(footer);
+  }
 
   root.appendChild(styleEl);
   root.appendChild(page);
@@ -132,11 +157,20 @@ export async function markdownToImageBlob(source: string, _title?: string, fileP
     await processMermaidBlocks(page);
     await new Promise((r) => setTimeout(r, 60));
 
+    // Pass explicit width + height to html2canvas so the captured canvas
+    // is exactly the rendered article's bounding box. Without this,
+    // html2canvas can grab the full window viewport on some platforms,
+    // producing a tall image with empty space below short notes.
+    const rect = page.getBoundingClientRect();
     const canvas = await html2canvas(page, {
       scale: 2,
       useCORS: true,
       backgroundColor: '#ffffff',
       logging: false,
+      width: Math.ceil(rect.width),
+      height: Math.ceil(rect.height),
+      windowWidth: Math.ceil(rect.width),
+      windowHeight: Math.ceil(rect.height),
     });
 
     return new Promise<Blob>((resolve, reject) => {

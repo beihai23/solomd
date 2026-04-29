@@ -68,8 +68,12 @@ function onAIRewrite() {
   }
   if (!settings.aiEnabled) {
     toasts.info(t === undefined ? '' : 'Enable AI rewrite in Settings first (⌘,)');
-    // Open settings to the AI block — single dispatch the existing settings open path.
-    window.dispatchEvent(new CustomEvent('solomd:open-settings'));
+    // AI settings live under the `integrations` category in
+    // SettingsPanel; pass section via event detail so the panel jumps
+    // there directly instead of opening at the default `basics` tab.
+    window.dispatchEvent(
+      new CustomEvent('solomd:open-settings', { detail: { section: 'integrations' } }),
+    );
     return;
   }
   // Read selection from the focused CodeMirror view. We REFUSE to fall back
@@ -544,7 +548,27 @@ onBeforeUnmount(() => {
   background: var(--bg-elev);
   border-bottom: 1px solid var(--border);
   user-select: none;
+  /* macOS narrow-window fix (v3.6, issue #181): when the user's window
+     is narrow enough that the toolbar's natural width exceeds it, the
+     middle groups would push the right-side critical buttons (AI,
+     Sponsor, Settings) off-screen with no scroll mechanism — they were
+     simply clipped. We:
+       - allow horizontal overflow with a hidden scrollbar so the
+         rightmost buttons stay reachable via two-finger swipe;
+       - keep every immediate child at its natural width
+         (`flex-shrink: 0`) so no icon button collapses to invisible;
+       - let only the spacer absorb shrinkage (it can go to 0).
+     Note: `.dropdown__menu` items inside the toolbar use `position:
+     absolute`; with `overflow-x: auto` browsers escalate `overflow-y`
+     to `auto` too, which would clip downward-opening dropdowns. The
+     bottom-padding offset on dropdowns is small enough that they do
+     get clipped at narrow widths — accepted tradeoff for this fix.
+     If reported, we'll teleport dropdowns to body. */
+  overflow-x: auto;
+  scrollbar-width: none;
 }
+.toolbar::-webkit-scrollbar { display: none; }
+.toolbar > * { flex-shrink: 0; }
 .toolbar__brand {
   font-family: var(--font-mono);
   font-weight: 700;
@@ -700,7 +724,7 @@ onBeforeUnmount(() => {
   left: auto;
   min-width: 220px;
 }
-.toolbar__spacer { flex: 1; }
+.toolbar__spacer { flex: 1 1 0; min-width: 0; }
 .toolbar__divider {
   width: 1px;
   height: 16px;

@@ -136,7 +136,17 @@ export function useFiles() {
   }
 
   async function openFolder() {
-    const selected = await openDialog({ directory: true, multiple: false });
+    // Open the OS folder picker rooted at the previously chosen workspace
+    // so the user lands in a familiar tree, not at $HOME or wherever the
+    // OS defaults. Without `defaultPath` Tauri's picker re-opens at the
+    // OS-level last-used directory, which is unrelated to SoloMD state
+    // and surprised users with a "why isn't my last folder remembered"
+    // bug. We persist `currentFolder` already; this just feeds it back.
+    const selected = await openDialog({
+      directory: true,
+      multiple: false,
+      defaultPath: workspace.currentFolder ?? undefined,
+    });
     if (!selected || typeof selected !== 'string') return;
     workspace.setFolder(selected);
     if (!settings.showFileTree) settings.toggleFileTree();

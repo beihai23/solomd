@@ -404,7 +404,9 @@ export function useExport() {
     if (!path) return;
     const tid = toasts.info('Generating image…', 0);
     try {
-      const blob = await markdownToImageBlob(ctx.content, ctx.baseName, ctx.filePath);
+      const blob = await markdownToImageBlob(ctx.content, ctx.baseName, ctx.filePath, {
+        branding: settings.imageExportBranding,
+      });
       const buffer = new Uint8Array(await blob.arrayBuffer());
       await invoke('write_binary_file', { path, data: Array.from(buffer) });
       toasts.dismiss(tid);
@@ -422,7 +424,9 @@ export function useExport() {
     if (!ctx) return;
     const tid = toasts.info('Capturing image…', 0);
     try {
-      const blob = await markdownToImageBlob(ctx.content, ctx.baseName, ctx.filePath);
+      const blob = await markdownToImageBlob(ctx.content, ctx.baseName, ctx.filePath, {
+        branding: settings.imageExportBranding,
+      });
       const bytes = new Uint8Array(await blob.arrayBuffer());
       // Use Tauri's clipboard plugin (browser Clipboard API doesn't support
       // images in webview contexts).
@@ -440,7 +444,9 @@ export function useExport() {
           filters: [{ name: 'PNG Image', extensions: ['png'] }],
         });
         if (path) {
-          const blob2 = await markdownToImageBlob(ctx.content, ctx.baseName);
+          const blob2 = await markdownToImageBlob(ctx.content, ctx.baseName, ctx.filePath, {
+            branding: settings.imageExportBranding,
+          });
           const buffer = new Uint8Array(await blob2.arrayBuffer());
           await invoke('write_binary_file', { path, data: Array.from(buffer) });
           toasts.success('Clipboard failed — saved as PNG instead');
