@@ -5,13 +5,13 @@ import Footer from '../../components/Footer.astro';
 import Giscus from '../../components/Giscus.astro';
 
 const lang = 'zh' as const;
-const VERSION = '3.5.5';
+const VERSION = '3.6.1';
 const baseUrl = `https://github.com/zhitongblog/solomd/releases/download/v${VERSION}`;
 ---
 
 <Layout
-  title="SoloMD v3.5.5 新功能"
-  description="潜伏 6 周的 Win UI 中文字体回退终于被定位并修了。匿名遥测整体从 Aptabase 迁到自建 Cloudflare D1 端点。还有 @beihai23 的 PR #48：PDF 导出超时、outline 按钮换位、Mermaid 浮窗对比度。"
+  title="SoloMD v3.6 新功能"
+  description="实时编辑模式下的图片 / 表格内联渲染（#44）—— 一直留着的缺口补齐了。同时打包 5 处打磨：AI 按钮跳转、PNG 导出尺寸、可选水印、文件夹记忆、Mac 工具栏溢出。v3.6.1 同日 hotfix 回退两个 v3.6.0 出去后才发现的回归 —— 图片导出和工具栏下拉都恢复正常。"
   lang={lang}
 >
   <Header lang={lang} />
@@ -25,13 +25,12 @@ const baseUrl = `https://github.com/zhitongblog/solomd/releases/download/v${VERS
         <span class="version-tag">v{VERSION}</span>
         <time>2026 年 4 月</time>
       </p>
-      <h1>Win 字体修复、自建遥测、polish。</h1>
+      <h1>实时编辑下的块级渲染，加 5 处打磨。</h1>
       <p class="lead">
-        三件事打包发了一个 patch：潜伏 <strong>6 周的 Win UI 中文字体
-        回退</strong>终于被定位并修了；匿名遥测整体<strong>从 Aptabase
-        迁到自建 Cloudflare D1 端点</strong>（数据通路里没有任何
-        第三方 SaaS）；还有 <strong>@beihai23 的一个 polish PR</strong>
-        覆盖 PDF 导出超时、outline 按钮位置、Mermaid 浮窗对比度。
+        v3.6 补齐 v2.3 起一直留着的实时编辑缺口（<strong>整行图片
+        和 GFM 表格的内联渲染</strong>，issue #44），并打包了 v3.5.5
+        之后用户反馈攒下的 <strong>5 处打磨</strong>。v3.6.1 是
+        v3.6.0 当天发现的两个回归的 hotfix —— 都已经完整回退，详见下方。
       </p>
 
       <div class="cta-row">
@@ -41,78 +40,78 @@ const baseUrl = `https://github.com/zhitongblog/solomd/releases/download/v${VERS
       </div>
 
       <section>
-        <h2>🇨🇳 Win UI 中文字体修复（issue #43）</h2>
+        <h2>🔨 #44 —— 实时编辑下的图片 / 表格块</h2>
         <p>
-          从 v0.1.12 起，Win11 用户看到 UI 中文渲染变细变虚，跟原生
-          ClearType 不一样。根因：自带的 <code>"SoloMD CJK"</code>
-          字体（一个 43&nbsp;KB 的 LXGW WenKai 子集，本来是给 iOS
-          模拟器兜底用的）被放到了 font-family chain 的<em>第一位</em>。
-          加上它的 <code>unicode-range: U+3400-9FFF</code>，浏览器对
-          所有中文字符都优先用它，<em>"YaHei、PingFang、Noto Sans CJK
-          全跳过"</em>。
-        </p>
-        <p>
-          修复就一行：把它挪到 chain 末尾。unicode-range 控的是
-          下载触发，chain 顺序控的是优先级。每个真实平台都会先找到
-          系统 CJK 字体；只有 iOS 模拟器（它本来的目的）才回落到
-          这个兜底字体。
-        </p>
-        <p class="thread-note">
-          完整诊断 →
-          <a href="/zh/blog/v3-5-5-font-fix-self-hosted-analytics/">v3.5.5 博客</a>。
-          Issue 讨论 →
-          <a href="https://github.com/zhitongblog/solomd/issues/43">#43</a>。
-          报告人 <a href="https://github.com/sparkdonn-netizen">@sparkdonn-netizen</a>。
-        </p>
-      </section>
-
-      <section>
-        <h2>📊 自建匿名遥测 —— Aptabase → Cloudflare D1</h2>
-        <p>
-          之前用 Aptabase 收集启动数 + 功能使用频率，但 dashboard
-          显示只有 ~2 个活跃用户，跟 3,400+ 下载量对不上，没法用。
-          没去查这家 SaaS 哪里出问题，直接砍掉，换成 Cloudflare
-          Pages Function + D1 自建。
+          实时编辑模式下，markdown 源码自带格式实时渲染。但有两类
+          块级元素之前没渲染：
         </p>
         <ul>
-          <li>桌面端 POST 到 <code>solomd.app/api/track</code>。匿名设备 UUID 在 localStorage。<strong>没有 IP，没有 User-Agent，没有指纹。</strong></li>
-          <li>服务端 validator 丢弃疑似 PII 数据；一律返 204。</li>
-          <li>D1 免费额度按当前体量 3 倍冗余（5M reads/day、100k writes/day）。</li>
-          <li>管理面板 <code>solomd.app/admin/</code> 用 Bearer token，看每日活跃 / 版本分布 / OS / locale。</li>
+          <li>整行只是一张图片（<code>![alt](url)</code>，前后没有别的文字）的行，会折叠成一个真的 <code>&lt;img&gt;</code>。图片 src 走预览面板同款的解析管线。</li>
+          <li>表头 + 分隔线 + 至少一行内容的 GFM 表格块，会折叠成真正的 <code>&lt;table&gt;</code>，markdown-it 渲染。</li>
         </ul>
         <p>
-          退订开关在 Settings → 发送匿名使用数据（默认开）。
-          架构说明在仓库的 <code>web/ANALYTICS.md</code>。
+          光标进入匹配区任意一行 → widget 立刻卸载，源码恢复。不需要
+          切换视图模式。
         </p>
       </section>
 
       <section>
-        <h2>🐛 PR #48 —— @beihai23 的 4 处 polish</h2>
+        <h2>✅ 5 处打磨</h2>
         <ol>
-          <li><strong>PDF 导出 30 秒超时</strong> —— 用 <code>Promise.race</code> 套住整个流程；html2pdf.js / Mermaid 卡死时不再无限冻 UI。DOM 清理逻辑改成幂等。</li>
-          <li><strong>Outline 按钮搬到 Tab 上</strong> —— 编辑区左上角浮动 ≌ 按钮去掉了，每个 Markdown tab 自带一个 ≌ 切大纲。</li>
-          <li><strong>Mermaid 浮窗对比度</strong> —— lightbox 里的 SVG 自动套主题适配背景卡片（浅色白底，深色深石板）。</li>
-          <li><strong>HTML 规范</strong> —— <code>&lt;table&gt;</code> 加上 <code>&lt;tbody&gt;</code>，消 Vite warning。</li>
+          <li><strong>AI 按钮跳错设置位置。</strong>工具栏 AI 没启用时跳转，现在直接落到「集成」分类，不再是默认的「基础」。</li>
+          <li><strong>图片导出按内容裁剪。</strong>短笔记导出后高度严格匹配实际渲染区域，不再有底部留白。</li>
+          <li><strong>"Created with SoloMD" 水印做成选项。</strong>默认开（适度宣传），<strong>设置 → 导出</strong>可以关。</li>
+          <li><strong>文件夹选择器记住上次工作区。</strong>系统对话框现在打开在 SoloMD 已经加载的工作区位置。</li>
+          <li><strong>Mac 窄窗口工具栏溢出。</strong>右侧关键按钮（AI / Sponsor / 设置）在任意窗口宽度都能触达。<em>（注意：这条修复在 v3.6.1 被回退了 —— 见下方。）</em></li>
         </ol>
       </section>
 
       <section>
-        <h2>🔮 下一步 —— v3.6</h2>
+        <h2>🩹 v3.6.1 hotfix</h2>
         <p>
-          Issue <a href="https://github.com/zhitongblog/solomd/issues/44">#44</a>
-          —— 实时编辑模式下图片和表格的内联渲染 —— 是下一个要做的。
-          这是一个 CodeMirror block-decoration 扩展：光标不在源码行
-          时显示渲染后的图片/表格，光标进入则展开成源码。不是改 CSS
-          能解决的，是真正的编辑器扩展。再之后：iPad / Mac App
-          Store 重新提交还排着队。
+          有两个回归 v3.6.0 自测时漏掉了。都在 v3.6.1 完整回退，
+          同日发出：
+        </p>
+        <ul>
+          <li>
+            <strong>图片导出空白。</strong>所有平台都炸了，不只是 Win。
+            v3.6 给 html2canvas 显式传了
+            <code>windowWidth/Height</code>，跟 article 在
+            <code>left: -10000px</code> 的 off-screen 渲染技巧冲突，
+            导出回来是空白 PNG。回退到 html2canvas 默认行为；
+            "短笔记底部留白"的需求其实早被 watermark 选项覆盖了
+            （footer + bottom padding 都跟着开关变）。
+          </li>
+          <li>
+            <strong>工具栏下拉点击穿透到编辑器。</strong>所有下拉
+            菜单 —— 新建 / 打开 / 插入 / 复制 / 导出 —— 弹出来但点击
+            落到编辑器上。原因是为修 #181（Mac 窄窗口）加在
+            <code>.toolbar</code> 上的 <code>overflow-x: auto</code>，
+            浏览器把 <code>overflow-y</code> 一并降级成 clip，绝对
+            定位的下拉被剪掉。回退；#181 改用
+            <code>&lt;Teleport&gt;</code> 的方案排到 v3.7。
+          </li>
+        </ul>
+        <p>
+          自测从此变成 tag push 之前的硬性流程 —— v3.6.1 出去前两个
+          flow 都在真实浏览器里跑过。
+        </p>
+      </section>
+
+      <section>
+        <h2>🔮 下一步 —— v3.7</h2>
+        <p>
+          排首位：用 <code>&lt;Teleport&gt;</code> 重做 Mac 窄窗口
+          菜单修复；iPad / Mac App Store 重新提交；以及
+          <a href="https://github.com/zhitongblog/solomd/discussions">Discussions</a>
+          + <a href="https://github.com/zhitongblog/solomd/issues">issues</a>
+          里下一周期攒到的内容。
         </p>
       </section>
 
       <p class="thanks-row">
-        感谢 <strong>@beihai23（王志刚）</strong>贡献 PR #48 ——
-        Ta 的第三个 PR，每个都是高质量修复 ——
-        以及 <strong>@sparkdonn-netizen</strong> 提供的截图
-        让 #43 真正能定位。早期版本 →
+        感谢 <strong>@beihai23</strong>（v3.5.5 PR #48）和
+        <strong>@sparkdonn-netizen</strong>（#43 截图）。早期版本 →
         <a href="/zh/blog/">浏览博客 →</a>
       </p>
     </article>
@@ -153,21 +152,12 @@ const baseUrl = `https://github.com/zhitongblog/solomd/releases/download/v${VERS
     font-family: var(--font-mono);
     color: var(--accent-deep);
   }
-  /* Inline links accent-colored; excludes CTA buttons so global
-     .btn--primary / --secondary color rules win. See en page for why. */
   .whats-new a:not(.btn) { color: var(--accent); }
   .cta-row {
     display: flex;
     flex-wrap: wrap;
     gap: 12px;
     margin: 28px 0 8px;
-  }
-  .thread-note {
-    font-size: 13px;
-    color: var(--text-muted);
-    border-left: 2px solid var(--border);
-    padding-left: 14px;
-    margin-top: 14px;
   }
   .thanks-row {
     margin-top: 64px;

@@ -5,13 +5,13 @@ import Footer from '../components/Footer.astro';
 import Giscus from '../components/Giscus.astro';
 
 const lang = 'en' as const;
-const VERSION = '3.5.5';
+const VERSION = '3.6.1';
 const baseUrl = `https://github.com/zhitongblog/solomd/releases/download/v${VERSION}`;
 ---
 
 <Layout
-  title="What's new in SoloMD v3.5.5"
-  description="A 6-week-old Windows UI font regression finally diagnosed and fixed. Telemetry migrated off Aptabase to a self-hosted Cloudflare D1 endpoint. Plus PR #48 from @beihai23 with PDF export timeout, outline-in-tab, mermaid overlay contrast."
+  title="What's new in SoloMD v3.6"
+  description="Live-edit image and table inline rendering (#44) — the long-standing live-edit gap is closed. Plus 5 polish fixes batched in: AI button routing, image export crop-to-content, optional watermark, folder picker memory, and Mac toolbar overflow. (v3.6.1 hotfix patches two regressions discovered after v3.6.0 shipped — image export and toolbar dropdowns are working again.)"
   lang={lang}
 >
   <Header lang={lang} />
@@ -25,14 +25,14 @@ const baseUrl = `https://github.com/zhitongblog/solomd/releases/download/v${VERS
         <span class="version-tag">v{VERSION}</span>
         <time>April 2026</time>
       </p>
-      <h1>Win font fix, self-hosted analytics, polish.</h1>
+      <h1>Live-edit blocks, plus 5 polish fixes.</h1>
       <p class="lead">
-        Three things rolled into one patch: a <strong>6-week-old Windows
-        UI font regression</strong> finally diagnosed and fixed, telemetry
-        migrated <strong>off Aptabase to our own Cloudflare D1
-        endpoint</strong> (zero third-party SaaS in the data path), and
-        a <strong>polish PR from @beihai23</strong> covering PDF export
-        timeout, outline button location, and Mermaid overlay contrast.
+        v3.6 closes the long-standing live-edit gap (<strong>image &
+        table inline rendering</strong>, issue #44) and bundles
+        <strong>five polish fixes</strong> batched in from rapid
+        feedback after v3.5.5. v3.6.1 is a hotfix patch for two
+        regressions caught the same day v3.6.0 went out — both fully
+        reverted, see below.
       </p>
 
       <div class="cta-row">
@@ -42,86 +42,83 @@ const baseUrl = `https://github.com/zhitongblog/solomd/releases/download/v${VERS
       </div>
 
       <section>
-        <h2>🇨🇳 The Windows UI font fix (issue #43)</h2>
+        <h2>🔨 #44 — Live-edit image & table block widgets</h2>
         <p>
-          From v0.1.12 onward, Win11 users saw the UI Chinese render
-          slightly thin and inconsistent — visibly different from native
-          ClearType. The cause: a bundled <code>"SoloMD CJK"</code>
-          font (a 43&nbsp;KB LXGW WenKai subset, intended as the
-          iOS-Simulator fallback) was placed <em>first</em> in the
-          font-family chain. Combined with its
-          <code>unicode-range: U+3400-9FFF</code>, this told every
-          browser: <em>"for any CJK character, prefer SoloMD CJK over
-          everything that follows"</em>. So Windows YaHei, macOS PingFang,
-          Linux Noto Sans CJK — all bypassed.
-        </p>
-        <p>
-          The fix is one line: move the bundle to the <em>end</em> of
-          the chain. unicode-range still gates download, chain order
-          determines preference. Native CJK fonts win on every real
-          platform; only the iOS Simulator (its actual use case) falls
-          through to the bundle.
-        </p>
-        <p class="thread-note">
-          Full diagnosis →
-          <a href="/blog/v3-5-5-font-fix-self-hosted-analytics/">v3.5.5 blog post</a>.
-          Issue thread →
-          <a href="https://github.com/zhitongblog/solomd/issues/43">#43</a>.
-          Reported by <a href="https://github.com/sparkdonn-netizen">@sparkdonn-netizen</a>.
-        </p>
-      </section>
-
-      <section>
-        <h2>📊 Self-hosted analytics — Aptabase → Cloudflare D1</h2>
-        <p>
-          We had been using Aptabase to count app launches and feature
-          usage. The dashboard showed ~2 active users despite 3,400+
-          downloads, which made it hard to reason about anything. Rather
-          than diagnose the third-party SaaS, the entire integration is
-          gone — replaced by a single Cloudflare Pages Function backed
-          by D1.
+          In live-edit view (the toolbar's pen-on-paper icon), markdown
+          source has rich formatting applied inline. Until v3.6, two
+          block-level kinds didn't render in place:
         </p>
         <ul>
-          <li>Desktop POSTs to <code>solomd.app/api/track</code>. Anonymous device UUID in localStorage. <strong>No IP, no User-Agent, no fingerprint.</strong></li>
-          <li>Validator drops anything PII-shaped; returns 204 in every case.</li>
-          <li>D1 free tier covers us by 3× at current volume (5M reads/day, 100k writes/day).</li>
-          <li>Token-protected dashboard at <code>solomd.app/admin/</code> shows daily activity, version distribution, OS, locale.</li>
+          <li>A line whose <em>entire content</em> is an image (<code>![alt](url)</code> with no surrounding prose) collapses to an actual <code>&lt;img&gt;</code> widget. Image source resolves through the same pipeline as the Preview pane.</li>
+          <li>A header row + separator + at least one body row collapses to a real <code>&lt;table&gt;</code>, rendered through markdown-it.</li>
         </ul>
         <p>
-          Opt-out toggle stays in Settings → 发送匿名使用数据
-          (default on). Architecture writeup at <code>web/ANALYTICS.md</code>.
+          Both widgets unmount the moment the cursor enters any line
+          inside the matched block range — no view-mode switch needed.
         </p>
       </section>
 
       <section>
-        <h2>🐛 PR #48 — @beihai23 polish, four small wins</h2>
+        <h2>✅ Five polish fixes</h2>
         <ol>
-          <li><strong>PDF export 30-second timeout</strong> — wraps the work in <code>Promise.race</code>; html2pdf.js / Mermaid getting stuck no longer freezes the UI. DOM cleanup is now idempotent.</li>
-          <li><strong>Outline button moved into the tab bar</strong> — gone is the floating ≌ at the top-left of the editor. Each Markdown tab now has its own ≌ to toggle the outline pane for that tab.</li>
-          <li><strong>Mermaid SVG overlay contrast</strong> — lightbox SVG gets a theme-matching background card (white on light, dark slate on dark).</li>
-          <li><strong>HTML cleanup</strong> — wraps <code>&lt;table&gt;</code> rows in <code>&lt;tbody&gt;</code>, eliminating a Vite warning.</li>
+          <li><strong>AI button → wrong settings location.</strong> Toolbar AI fallback now opens the <em>Integrations</em> tab directly, not the default <em>Basics</em>.</li>
+          <li><strong>Image export crop-to-content.</strong> Short notes export at their actual rendered height, not with empty space below.</li>
+          <li><strong>"Created with SoloMD" watermark — now a setting.</strong> Default ON for mild brand visibility; toggle off in <strong>Settings → Export</strong>.</li>
+          <li><strong>Folder picker remembers last workspace.</strong> The OS folder dialog now opens at the workspace SoloMD already has loaded.</li>
+          <li><strong>Mac narrow-window toolbar overflow.</strong> Right-side critical buttons (AI / Sponsor / Settings) reachable at any window width. <em>(Note: this fix was reverted in v3.6.1 — see below.)</em></li>
         </ol>
       </section>
 
       <section>
-        <h2>🔮 What's next — v3.6</h2>
+        <h2>🩹 v3.6.1 hotfix</h2>
         <p>
-          Issue <a href="https://github.com/zhitongblog/solomd/issues/44">#44</a>
-          — image and table inline rendering inside live edit mode — is
-          next up. It's a CodeMirror block-decoration extension that
-          renders images and tables in their final form when the cursor
-          isn't on the source line, and expands to source when the caret
-          enters. Not a CSS change; a real editor extension. Beyond #44:
-          iPad / Mac App Store resubmission gates queued.
+          Two regressions made it past my v3.6.0 self-test. Both fully
+          reverted in v3.6.1, shipped same day:
+        </p>
+        <ul>
+          <li>
+            <strong>Image export blank.</strong> Universal — not just
+            Windows. The new <code>windowWidth/Height</code> hint to
+            html2canvas conflicted with the off-screen render trick;
+            output came back blank. Reverted to default html2canvas
+            auto-sizing. The crop-to-content concern was already
+            handled by the watermark toggle (footer + bottom padding).
+          </li>
+          <li>
+            <strong>Toolbar dropdowns clicked through to editor.</strong>
+            Every dropdown — New / Open / Insert / Copy / Export —
+            opened but clicks fell through to the editor below. The
+            <code>overflow-x: auto</code> rule on <code>.toolbar</code>
+            (added for the Mac narrow-window fix #181) caused browsers
+            to escalate <code>overflow-y</code> to clip too. Reverted;
+            #181 is re-queued for v3.7 with a <code>&lt;Teleport&gt;</code>-based
+            dropdown approach that doesn't need overflow on the
+            toolbar.
+          </li>
+        </ul>
+        <p>
+          Self-test is now a hard step before any tag push — both
+          flows verified in a real browser session before v3.6.1
+          went out.
+        </p>
+      </section>
+
+      <section>
+        <h2>🔮 What's next — v3.7</h2>
+        <p>
+          Top of the queue: re-do the Mac narrow-window menu fix
+          properly (with <code>&lt;Teleport&gt;</code>), iPad / Mac
+          App Store resubmission, and whatever lands in
+          <a href="https://github.com/zhitongblog/solomd/discussions">Discussions</a>
+          + <a href="https://github.com/zhitongblog/solomd/issues">issues</a>
+          over the next cycle.
         </p>
       </section>
 
       <p class="thanks-row">
-        Thanks <strong>@beihai23 (王志刚)</strong> for PR #48 — third
-        contribution from this developer, all of them quality fixes —
-        and <strong>@sparkdonn-netizen</strong> for the screenshots that
-        made #43 actually solvable. Earlier:
-        <a href="/blog/">browse the blog →</a>
+        Thanks <strong>@beihai23</strong> (PR #48 in v3.5.5) and
+        <strong>@sparkdonn-netizen</strong> (#43 screenshots) for the
+        prior cycle. Earlier: <a href="/blog/">browse the blog →</a>
       </p>
     </article>
     <Giscus lang={lang} />
@@ -161,24 +158,12 @@ const baseUrl = `https://github.com/zhitongblog/solomd/releases/download/v${VERS
     font-family: var(--font-mono);
     color: var(--accent-deep);
   }
-  /* Inline links are accent-colored; the :not(.btn) excludes CTA
-     buttons so the global .btn--primary / .btn--secondary color rules
-     win. (Astro scopes this selector with a [data-astro-cid-…] suffix
-     which raises specificity above the bare global a.btn--primary,
-     hence the explicit exclusion instead of relying on cascade.) */
   .whats-new a:not(.btn) { color: var(--accent); }
   .cta-row {
     display: flex;
     flex-wrap: wrap;
     gap: 12px;
     margin: 28px 0 8px;
-  }
-  .thread-note {
-    font-size: 13px;
-    color: var(--text-muted);
-    border-left: 2px solid var(--border);
-    padding-left: 14px;
-    margin-top: 14px;
   }
   .thanks-row {
     margin-top: 64px;
