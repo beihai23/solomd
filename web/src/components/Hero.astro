@@ -104,6 +104,15 @@ const initialDownloadsText = initialDownloads > 0 ? fmtDownloads(initialDownload
       </div>
     </div>
     <a href="#download" class="hero__all-platforms">{tr.hero.ctaAllPlatforms}</a>
+    {lang === 'zh' && (
+      <a
+        href={`https://gitee.com/zhitong45/solomd/releases/tag/v${VERSION}`}
+        class="hero__gitee"
+        rel="noopener"
+      >
+        🪞 国内用户：从 Gitee 镜像下载（更快）→
+      </a>
+    )}
     <div class="hero__chips">
       {tr.hero.chips.map((c) => <span class="chip">{c}</span>)}
     </div>
@@ -301,7 +310,23 @@ const initialDownloadsText = initialDownloads > 0 ? fmtDownloads(initialDownload
     color: var(--text-muted);
     font-size: 13px;
     text-decoration: none;
-    margin: 18px 0 36px;
+    margin: 18px 0 12px;
+  }
+  /* zh-only Gitee mirror hint, sits right below the "all platforms"
+     link. Subtle red-orange to evoke Gitee's brand without competing
+     with the primary CTA. */
+  .hero__gitee {
+    display: inline-block;
+    color: #c71d23;
+    font-size: 13px;
+    font-weight: 500;
+    text-decoration: none;
+    border-bottom: 1px dashed #c71d23;
+    padding: 0 0 1px;
+    margin: 0 0 36px;
+  }
+  .hero__gitee:hover {
+    border-bottom-style: solid;
   }
   .hero__all-platforms:hover {
     color: var(--accent);
