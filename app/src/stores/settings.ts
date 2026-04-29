@@ -115,6 +115,8 @@ interface Settings {
   // editor. Default ON — can be turned off for users who don't like
   // the keyboard interception.
   slashCommandsEnabled: boolean;
+  // v3.5: persistent search sidebar panel (replaces the old modal popup).
+  showSearchPanel: boolean;
   // v3.6: PNG export — show "Created with SoloMD · solomd.app" footer
   // under the rendered note. Default ON (mild self-promotion is fine
   // for a free MIT app), but explicitly toggleable in Settings → Export
@@ -232,6 +234,7 @@ function defaults(): Settings {
     pomodoroAutoEngageFocus: true,
     pomodoroDefaultMinutes: 25,
     slashCommandsEnabled: true,
+    showSearchPanel: false,
     imageExportBranding: true,
   };
 }

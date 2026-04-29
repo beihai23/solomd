@@ -94,6 +94,7 @@ watch(
 
 const host = ref<HTMLDivElement | null>(null);
 let view: EditorView | null = null;
+let cleanupRelayout: (() => void) | null = null;
 
 const themeCompartment = new Compartment();
 const langCompartment = new Compartment();
@@ -262,9 +263,15 @@ onMounted(() => {
   if (import.meta.env.DEV) {
     (window as unknown as { __solomdActiveView?: EditorView }).__solomdActiveView = view;
   }
+  // Sidebar toggle changes the available editor width but CodeMirror's
+  // ResizeObserver may lag. Listen for a custom event and force a re-measure.
+  const onRelayout = () => view?.requestMeasure();
+  window.addEventListener('solomd:relayout', onRelayout);
+  cleanupRelayout = () => window.removeEventListener('solomd:relayout', onRelayout);
 });
 
 onBeforeUnmount(() => {
+  cleanupRelayout?.();
   if (import.meta.env.DEV) {
     const w = window as unknown as { __solomdActiveView?: EditorView };
     if (w.__solomdActiveView === view) delete w.__solomdActiveView;

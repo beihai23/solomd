@@ -502,6 +502,52 @@ fn collect_yaml_tags(value: &serde_json::Value, out: &mut Vec<String>) {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_strip_inline_code_basic() {
+        let stripped = strip_inline_code("purple bg `#1A1033` + text `#9B7EE0`");
+        assert!(!stripped.contains('#'), "inline code should be stripped: {:?}", stripped);
+    }
+
+    #[test]
+    fn test_body_tags_skip_inline_code() {
+        let body = "- Active item: purple bg `#1A1033` + text `#9B7EE0` + fontWeight 600\n- Inactive: no fill + text `#94A3B8`\n- Sub-item: padding `[8,12,8,40]`, fontSize 13\n\n#real-tag";
+        let tags = extract_body_tags(body);
+        assert!(tags.contains(&"real-tag".to_string()), "should find #real-tag");
+        assert!(!tags.iter().any(|t| t.contains("9B7EE0")), "should NOT pick up hex color from inline code");
+        assert!(!tags.iter().any(|t| t.contains("1A1033")), "should NOT pick up hex color from inline code");
+        assert!(!tags.iter().any(|t| t.contains("94A3B8")), "should NOT pick up hex color from inline code");
+    }
+
+    #[test]
+    fn test_body_tags_skip_table_inline_code() {
+        let body = "\
+| 属性 | 值 |
+|------|-----|
+| 页面背景 | `#0A0F1A` (深色) |
+| Header 背景 | `#0F172A` |
+| 卡片背景 | `#111B27` |
+| 边框 | `#1E293B` |
+| Primary 强调色 | `#F59E0B` (amber) |
+| 主文本 | `#F1F5F9` |
+| 次级文本 | `#94A3B8` |
+| 按钮主色 | `#F59E0B` fill, `#000000` text |
+| 状态绿 | `#48BB78` (completed/claimed) |
+| 状态灰 | `#64748B` (locked/disabled) |
+";
+        let tags = extract_body_tags(body);
+        let hex_tags: Vec<&String> = tags.iter().filter(|t| t.chars().all(|c| c.is_ascii_hexdigit())).collect();
+        assert!(
+            hex_tags.is_empty(),
+            "hex color codes inside backticks should NOT be tags, but found: {:?}",
+            hex_tags
+        );
+    }
+}
+
 fn extract_headings(body: &str) -> Vec<String> {
     static RE: Lazy<Regex> = Lazy::new(|| Regex::new(r"^(#{1,6})\s+(.+?)\s*$").expect("heading regex"));
     let mut out = Vec::new();

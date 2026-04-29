@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onBeforeUnmount, ref, watch, watchEffect, computed, provide } from 'vue';
+import { onMounted, onBeforeUnmount, ref, watch, watchEffect, computed, provide, nextTick } from 'vue';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
@@ -93,6 +93,7 @@ function openSettingsAt(section: string | null = null) {
 }
 const helpOpen = ref(false);
 const searchOpen = ref(false);
+const searchPrefill = ref('');
 const ragSearchOpen = ref(false);
 const cjkProofreadOpen = ref(false);
 const aboutOpen = ref(false);
@@ -149,7 +150,7 @@ useShortcuts({
   openPalette: () => (paletteOpen.value = true),
   openSettings: () => (settingsOpen.value = true),
   openHelp: () => (helpOpen.value = true),
-  openGlobalSearch: () => (searchOpen.value = true),
+  openGlobalSearch: () => (searchOpen.value = !searchOpen.value),
   openRagSearch: () => (ragSearchOpen.value = true),
   openQuickSwitcher: () => (quickSwitcherOpen.value = true),
   openCjkProofread: () => (cjkProofreadOpen.value = true),
@@ -344,6 +345,18 @@ function onOpenCjkProofreadEvent() {
   cjkProofreadOpen.value = true;
 }
 
+function onFilterTag(tag: string) {
+  const newPrefill = `#${tag}`;
+  if (searchOpen.value && searchPrefill.value === newPrefill) {
+    // Same tag clicked while panel is open — re-trigger by clearing and resetting
+    searchPrefill.value = '';
+    nextTick(() => { searchPrefill.value = newPrefill; });
+  } else {
+    searchPrefill.value = newPrefill;
+  }
+  searchOpen.value = true;
+}
+
 let unlistenOpened: UnlistenFn | null = null;
 let unlistenMenu: UnlistenFn | null = null;
 
@@ -395,7 +408,7 @@ function dispatchMenuAction(id: string) {
       settingsOpen.value = true;
       break;
     case 'search.global':
-      searchOpen.value = true;
+      searchOpen.value = !searchOpen.value;
       break;
     case 'help.markdown':
       helpOpen.value = true;
@@ -616,13 +629,22 @@ const showHistoryPane = computed(
     tabs.activeTab?.language === 'markdown' &&
     !!workspace.currentFolder,
 );
+const showSearchPane = computed(() => searchOpen.value);
 const showRightSidebar = computed(
   () =>
+    searchOpen.value ||
     showOutlinePane.value ||
     showBacklinksPane.value ||
     showTagsPane.value ||
     showHistoryPane.value,
 );
+watch(showRightSidebar, () => {
+  nextTick(() => {
+    requestAnimationFrame(() => {
+      window.dispatchEvent(new CustomEvent('solomd:relayout'));
+    });
+  });
+});
 const basesOpen = ref(false);
 const aiHasKey = ref(false);
 async function refreshAiHasKey() {
@@ -652,7 +674,7 @@ watchEffect(() => { void settings.aiEnabled; void settings.aiProvider; refreshAi
         @open-palette="paletteOpen = true"
         @open-settings="openSettingsAt()"
         @open-help="helpOpen = true"
-        @open-search="searchOpen = true"
+        @open-search="searchOpen = !searchOpen"
       />
       <TelemetryBanner />
       <div class="workspace">
@@ -661,10 +683,13 @@ watchEffect(() => { void settings.aiEnabled; void settings.aiProvider; refreshAi
           v-if="showRightSidebar && settings.outlineSide === 'left'"
           class="side-sidebar side-sidebar--left"
         >
-          <Outline v-if="showOutlinePane" :cursor-line="cursorLine" @goto="onOutlineGoto" />
-          <BacklinksPanel v-if="showBacklinksPane" />
-          <TagsPanel v-if="showTagsPane" />
-          <HistoryPanel v-if="showHistoryPane" />
+          <GlobalSearch v-if="showSearchPane" :open="true" :prefill="searchPrefill" @close="searchOpen = false" />
+          <template v-else>
+            <Outline v-if="showOutlinePane" :cursor-line="cursorLine" @goto="onOutlineGoto" />
+            <BacklinksPanel v-if="showBacklinksPane" />
+            <TagsPanel v-if="showTagsPane" @filter-tag="onFilterTag" />
+            <HistoryPanel v-if="showHistoryPane" />
+          </template>
         </aside>
         <div class="content">
           <BasesView v-if="basesOpen" />
@@ -674,10 +699,13 @@ watchEffect(() => { void settings.aiEnabled; void settings.aiProvider; refreshAi
           v-if="showRightSidebar && settings.outlineSide !== 'left'"
           class="side-sidebar side-sidebar--right"
         >
-          <Outline v-if="showOutlinePane" :cursor-line="cursorLine" @goto="onOutlineGoto" />
-          <BacklinksPanel v-if="showBacklinksPane" />
-          <TagsPanel v-if="showTagsPane" />
-          <HistoryPanel v-if="showHistoryPane" />
+          <GlobalSearch v-if="showSearchPane" :open="true" :prefill="searchPrefill" @close="searchOpen = false" />
+          <template v-else>
+            <Outline v-if="showOutlinePane" :cursor-line="cursorLine" @goto="onOutlineGoto" />
+            <BacklinksPanel v-if="showBacklinksPane" />
+            <TagsPanel v-if="showTagsPane" @filter-tag="onFilterTag" />
+            <HistoryPanel v-if="showHistoryPane" />
+          </template>
         </aside>
       </div>
       <StatusBar :line="cursorLine" :col="cursorCol" />
@@ -699,7 +727,6 @@ watchEffect(() => { void settings.aiEnabled; void settings.aiProvider; refreshAi
       @close="settingsOpen = false; settingsInitialSection = null; refreshAiHasKey()"
     />
     <MarkdownHelp :open="helpOpen" @close="helpOpen = false" />
-    <GlobalSearch :open="searchOpen" @close="searchOpen = false" />
     <RagSearch
       :open="ragSearchOpen"
       @close="ragSearchOpen = false"

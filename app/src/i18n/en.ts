@@ -305,6 +305,9 @@ export const en = {
     yesterdayBtn: 'Yesterday',
     tomorrowBtn: 'Tomorrow',
   },
+  search: {
+    heading: 'Search',
+  },
   daily: {
     openToday: "Open Today's Note",
     openYesterday: "Open Yesterday's Note",

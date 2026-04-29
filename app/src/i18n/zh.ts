@@ -306,6 +306,9 @@ export const zh: I18n = {
     yesterdayBtn: '昨天',
     tomorrowBtn: '明天',
   },
+  search: {
+    heading: '搜索',
+  },
   daily: {
     openToday: '打开今日笔记',
     openYesterday: '打开昨日笔记',
