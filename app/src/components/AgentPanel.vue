@@ -13,6 +13,8 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { useWorkspaceStore } from '../stores/workspace';
 import { useSettingsStore } from '../stores/settings';
+import { useTabsStore } from '../stores/tabs';
+import { useWorkspaceIndexStore } from '../stores/workspaceIndex';
 import { useAgentPanelStore } from '../stores/agentPanel';
 import { providerById, type ProviderId } from '../lib/ai-providers';
 import { useI18n } from '../i18n';
@@ -23,6 +25,8 @@ const emit = defineEmits<{
 
 const workspace = useWorkspaceStore();
 const settings = useSettingsStore();
+const tabs = useTabsStore();
+const workspaceIndex = useWorkspaceIndexStore();
 const agent = useAgentPanelStore();
 const { t } = useI18n();
 
@@ -38,6 +42,28 @@ const inputRef = ref<HTMLTextAreaElement | null>(null);
  */
 const SYSTEM_PROMPT =
   'You are a helpful writing and research assistant inside SoloMD, a local-first markdown editor. The user is chatting with you about their notes. Be concise and accurate. Use markdown formatting in replies when helpful. If the user asks about specific notes you have not been shown, ask which note they mean rather than fabricating content.';
+
+/**
+ * Build a workspace-context system message describing where the user is.
+ * The agent gets vault path, active file, total note count — enough to
+ * answer "what file am I editing?" without yet having tool calls. The next
+ * commit on `feat/v4-panel` adds an explicit "include active note content"
+ * toggle and the commit after that adds proper MCP tool calls.
+ */
+function buildVaultContext(): string {
+  const folder = workspace.currentFolder;
+  if (!folder) return '';
+  const activeFile = tabs.activeTab?.filePath || '(no active file)';
+  const noteCount = workspaceIndex.entries.length;
+  const lines = [
+    `User's vault is at: ${folder}`,
+    `Active file: ${activeFile}`,
+  ];
+  if (noteCount > 0) {
+    lines.push(`Workspace contains ${noteCount} indexed note${noteCount === 1 ? '' : 's'}.`);
+  }
+  return lines.join('\n');
+}
 
 const hasFolder = computed(() => !!workspace.currentFolder);
 const aiConfigured = computed(() => settings.aiEnabled);
@@ -85,8 +111,10 @@ async function send() {
     .filter((m) => m.role === 'user' || m.role === 'assistant')
     .map((m) => ({ role: m.role, content: m.content }));
 
+  const ctx = buildVaultContext();
+  const systemContent = ctx ? `${SYSTEM_PROMPT}\n\n${ctx}` : SYSTEM_PROMPT;
   const messages = [
-    { role: 'system', content: SYSTEM_PROMPT },
+    { role: 'system', content: systemContent },
     ...history,
   ];
 
