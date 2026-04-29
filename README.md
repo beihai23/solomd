@@ -7,7 +7,7 @@
 [![Downloads](https://img.shields.io/github/downloads/zhitongblog/solomd/total)](https://github.com/zhitongblog/solomd/releases)
 [![Website](https://img.shields.io/badge/website-solomd.app-ff9f40.svg)](https://solomd.app)
 
-🇨🇳 **[中文 README →](README.zh.md)**
+🇨🇳 **[中文 README →](README.zh.md)** · 🪞 **[Gitee mirror →](https://gitee.com/zhitong45/solomd)** (faster downloads from China)
 
 [**Download**](https://github.com/zhitongblog/solomd/releases/latest) · [**Website**](https://solomd.app) · [**Security**](https://solomd.app/security) · [**FAQ**](https://solomd.app/#faq) · [中文站点](https://solomd.app/zh)
 

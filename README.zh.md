@@ -6,10 +6,11 @@
 [![License: MIT](https://img.shields.io/github/license/zhitongblog/solomd?color=orange)](LICENSE)
 [![下载量](https://img.shields.io/github/downloads/zhitongblog/solomd/total)](https://github.com/zhitongblog/solomd/releases)
 [![官网](https://img.shields.io/badge/官网-solomd.app-ff9f40.svg)](https://solomd.app/zh)
+[![Gitee 镜像](https://img.shields.io/badge/镜像-gitee.com%2Fzhitong45%2Fsolomd-c71d23.svg)](https://gitee.com/zhitong45/solomd)
 
 🌐 **[English README →](README.md)**
 
-[**下载**](https://github.com/zhitongblog/solomd/releases/latest) · [**官网**](https://solomd.app/zh) · [**安全说明**](https://solomd.app/zh/security) · [**FAQ**](https://solomd.app/zh#faq)
+[**下载**](https://github.com/zhitongblog/solomd/releases/latest) · [**Gitee 镜像下载**](https://gitee.com/zhitong45/solomd/releases) · [**官网**](https://solomd.app/zh) · [**安全说明**](https://solomd.app/zh/security) · [**FAQ**](https://solomd.app/zh#faq)
 
 ![SoloMD 编辑器](web/public/demo/solomd-demo.svg)
 
