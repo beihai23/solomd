@@ -157,20 +157,20 @@ export async function markdownToImageBlob(
     await processMermaidBlocks(page);
     await new Promise((r) => setTimeout(r, 60));
 
-    // Pass explicit width + height to html2canvas so the captured canvas
-    // is exactly the rendered article's bounding box. Without this,
-    // html2canvas can grab the full window viewport on some platforms,
-    // producing a tall image with empty space below short notes.
-    const rect = page.getBoundingClientRect();
+    // Let html2canvas auto-size to the element's natural bounding box.
+    // v3.6 originally passed explicit width/height/windowWidth/windowHeight
+    // here, which broke export entirely on every platform: the page sits
+    // at `left: -10000px` (off-screen render trick), and telling
+    // html2canvas the window was only 800px wide put the element
+    // *outside* the captured viewport — output came back blank. The
+    // crop-to-content concern that change tried to address turned out
+    // to be the forced footer + extra bottom padding, both of which are
+    // already handled by the `imageExportBranding` toggle above.
     const canvas = await html2canvas(page, {
       scale: 2,
       useCORS: true,
       backgroundColor: '#ffffff',
       logging: false,
-      width: Math.ceil(rect.width),
-      height: Math.ceil(rect.height),
-      windowWidth: Math.ceil(rect.width),
-      windowHeight: Math.ceil(rect.height),
     });
 
     return new Promise<Blob>((resolve, reject) => {

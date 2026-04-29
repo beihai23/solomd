@@ -548,26 +548,17 @@ onBeforeUnmount(() => {
   background: var(--bg-elev);
   border-bottom: 1px solid var(--border);
   user-select: none;
-  /* macOS narrow-window fix (v3.6, issue #181): when the user's window
-     is narrow enough that the toolbar's natural width exceeds it, the
-     middle groups would push the right-side critical buttons (AI,
-     Sponsor, Settings) off-screen with no scroll mechanism — they were
-     simply clipped. We:
-       - allow horizontal overflow with a hidden scrollbar so the
-         rightmost buttons stay reachable via two-finger swipe;
-       - keep every immediate child at its natural width
-         (`flex-shrink: 0`) so no icon button collapses to invisible;
-       - let only the spacer absorb shrinkage (it can go to 0).
-     Note: `.dropdown__menu` items inside the toolbar use `position:
-     absolute`; with `overflow-x: auto` browsers escalate `overflow-y`
-     to `auto` too, which would clip downward-opening dropdowns. The
-     bottom-padding offset on dropdowns is small enough that they do
-     get clipped at narrow widths — accepted tradeoff for this fix.
-     If reported, we'll teleport dropdowns to body. */
-  overflow-x: auto;
-  scrollbar-width: none;
+  /* NB: do NOT set overflow on this element. Each toolbar group hosts
+     `.dropdown__menu` items via `position: absolute`, which need to
+     escape this strip downward into the editor area. v3.6.0 added
+     `overflow-x: auto` here to address Mac narrow-window clipping
+     (issue #181) — but the browser then escalated overflow-y to
+     auto/clip too, so every dropdown (New / Open / Insert / Copy /
+     Export) was silently truncated and click events fell through to
+     the editor below. v3.6.1 reverts the overflow rule; the original
+     #181 fix needs to be redone with `<Teleport>` for dropdowns or a
+     media-query-based group collapse. Tracked for v3.7. */
 }
-.toolbar::-webkit-scrollbar { display: none; }
 .toolbar > * { flex-shrink: 0; }
 .toolbar__brand {
   font-family: var(--font-mono);
