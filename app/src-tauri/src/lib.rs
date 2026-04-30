@@ -10,6 +10,9 @@ pub mod rag;
 pub mod capture_endpoint;
 // v2.4 outbound integrations — CLI + MCP sidecar discovery, surfaced in Settings.
 pub mod integrations;
+// v4.0 P4 — MCP federation profile storage (named bundles of workspaces +
+// "Copy Claude Desktop config" rendering).
+pub mod mcp_profiles;
 // v2.5 F6 CJK proofread — flags common Chinese typos with one-click fixes.
 pub mod cjk_proofread;
 // v2.5 community theme marketplace — manifest fetched JS-side, CSS files
@@ -107,6 +110,10 @@ pub fn run() {
             integrations::cli_status,
             integrations::mcp_path,
             integrations::mcp_claude_desktop_config_path,
+            mcp_profiles::mcp_profiles_list,
+            mcp_profiles::mcp_profiles_save,
+            mcp_profiles::mcp_profiles_delete,
+            mcp_profiles::mcp_profiles_export_config,
             cjk_proofread::cjk_proofread,
             themes::theme_install,
             themes::theme_uninstall,

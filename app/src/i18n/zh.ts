@@ -363,6 +363,41 @@ export const zh: I18n = {
     },
     mcpWriteNote:
       'write_note 与 append_to_note 默认关闭，需通过 --allow-write 启用。',
+    // ---- v4.0 P4 federation: MCP profiles (TODO(zh) — bulk translate
+    // after the v4.0 merge per the cross-pillar contract C8). -----------
+    profilesHeading: 'MCP profiles', // TODO(zh)
+    profilesIntro:
+      'Bundle multiple workspaces under a single solomd-mcp instance, then copy a ready-to-paste Claude Desktop config block. Each profile lists the workspaces (alias + path) the MCP server will expose; the first entry is the default — tool calls without an explicit `workspace` argument fall through to it.', // TODO(zh)
+    profilesEmpty: 'No profiles yet.', // TODO(zh)
+    profilesCreate: 'New profile', // TODO(zh)
+    profilesDuplicate: 'Duplicate', // TODO(zh)
+    profilesDelete: 'Delete', // TODO(zh)
+    profilesRename: 'Rename', // TODO(zh)
+    profilesNameLabel: 'Profile name', // TODO(zh)
+    profilesAllowWrite: 'Allow write (passes --allow-write)', // TODO(zh)
+    profilesAllowWriteHint:
+      'Off by default. Turn on only if you want the MCP client to modify notes.', // TODO(zh)
+    profilesEntriesHeading: 'Workspaces (first one is the default)', // TODO(zh)
+    profilesAddEntry: 'Add workspace', // TODO(zh)
+    profilesRemoveEntry: 'Remove', // TODO(zh)
+    profilesMoveUp: 'Move up', // TODO(zh)
+    profilesMoveDown: 'Move down', // TODO(zh)
+    profilesAliasLabel: 'Alias', // TODO(zh)
+    profilesAliasPlaceholder: 'e.g. work', // TODO(zh)
+    profilesPathLabel: 'Path', // TODO(zh)
+    profilesPathPlaceholder: '/Users/me/Documents/Notes', // TODO(zh)
+    profilesPickPath: 'Browse…', // TODO(zh)
+    profilesUseCurrentWorkspace: 'Use currently open folder', // TODO(zh)
+    profilesSave: 'Save', // TODO(zh)
+    profilesSaved: 'Profile saved.', // TODO(zh)
+    profilesDeleteConfirm: 'Delete profile "{name}"?', // TODO(zh)
+    profilesCopyConfigBtn: 'Copy Claude Desktop config', // TODO(zh)
+    profilesCopiedToast: 'Claude Desktop config copied to clipboard.', // TODO(zh)
+    profilesValidationFailed: 'Cannot save: {msg}', // TODO(zh)
+    profilesNamePlaceholder: 'work-and-home', // TODO(zh)
+    profilesNewProfileDefault: 'New profile', // TODO(zh)
+    profilesNoMcpBinary:
+      'solomd-mcp not bundled in this dev build — the snippet uses a placeholder path.', // TODO(zh)
   },
   ai: {
     settingsHeading: 'AI 改写',
