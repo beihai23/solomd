@@ -546,3 +546,283 @@ mod tests {
         let _ = fs::remove_dir_all(&tmp);
     }
 }
+
+// ---------------------------------------------------------------------------
+// P2 (recipes) compatibility surface
+//
+// P1 (panel) and P2 (recipes) were built in parallel branches. P1's
+// `RunHandle::start` takes typed args + emits the seed line; P2's
+// `RunHandle::create` takes a fully-built `RunMeta` and lets the caller
+// drive `emit_run_started` / `emit_run_ended` / `finalize` explicitly.
+// We keep both APIs — P1 callers (panel + agent_tools) stay on `start`
+// and `append_trace`; P2 callers (recipe_runner) use the structured
+// `RunMeta` flow below. They share the same on-disk layout (C1) and the
+// same seq counter / file handles.
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RunStatus {
+    Running,
+    Ok,
+    Error,
+    Cancelled,
+    Rejected,
+    Accepted,
+}
+
+impl RunStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            RunStatus::Running => "running",
+            RunStatus::Ok => "ok",
+            RunStatus::Error => "error",
+            RunStatus::Cancelled => "cancelled",
+            RunStatus::Rejected => "rejected",
+            RunStatus::Accepted => "accepted",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct TokenCounts {
+    pub input: u64,
+    pub output: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecipeMeta {
+    pub name: String,
+    pub path: String,
+    pub trigger: String,
+    pub branch: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RunMeta {
+    pub run_id: String,
+    pub kind: String,
+    pub started_at: i64,
+    pub ended_at: Option<i64>,
+    pub status: String,
+    pub workspace: String,
+    pub provider: String,
+    pub model: String,
+    pub recipe: Option<RecipeMeta>,
+    #[serde(default)]
+    pub tokens: TokenCounts,
+    #[serde(default)]
+    pub cost_usd_estimate: f64,
+    #[serde(default)]
+    pub error: Option<String>,
+    #[serde(default)]
+    pub accepted: Option<bool>,
+}
+
+impl RunHandle {
+    /// P2 recipes path — caller mints a `run_id`, builds a `RunMeta`, and
+    /// passes both in. Writes the run dir + seeds run.md header from
+    /// `meta`. Does **not** emit a `run_started` trace line — caller owns
+    /// that via `emit_run_started` so they can include extra fields
+    /// (recipe block, replayed_from, etc.) without us guessing.
+    pub fn create(workspace: &Path, run_id: &str, meta: RunMeta) -> Result<Self, String> {
+        let runs_root = workspace.join(".solomd").join("agent-runs");
+        let dir = runs_root.join(run_id);
+        fs::create_dir_all(&dir).map_err(|e| format!("agent_run mkdir: {e}"))?;
+
+        // meta.json
+        let json = serde_json::to_string_pretty(&meta)
+            .map_err(|e| format!("serialise meta: {e}"))?;
+        fs::write(dir.join("meta.json"), json).map_err(|e| format!("meta.json write: {e}"))?;
+
+        // run.md header — match P1's panel format when kind == "panel",
+        // P2's recipe format when kind == "recipe".
+        let header = if meta.kind == "recipe" {
+            let name = meta
+                .recipe
+                .as_ref()
+                .map(|r| r.name.as_str())
+                .unwrap_or("Recipe");
+            format!(
+                "---\nrun_id: {}\nkind: recipe\nprovider: {}\nmodel: {}\nstarted_at: {}\n---\n\n# Recipe run · {} · {}\n\n",
+                meta.run_id, meta.provider, meta.model, format_run_iso(meta.started_at as u64),
+                name, meta.run_id
+            )
+        } else {
+            format!(
+                "---\nrun_id: {}\nkind: panel\nprovider: {}\nmodel: {}\nstarted_at: {}\n---\n\n# Panel chat · {}\n\n",
+                meta.run_id, meta.provider, meta.model, format_run_iso(meta.started_at as u64),
+                meta.run_id
+            )
+        };
+        fs::write(dir.join("run.md"), header).map_err(|e| format!("run.md write: {e}"))?;
+
+        let trace_file = fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(dir.join("trace.jsonl"))
+            .map_err(|e| format!("trace.jsonl open: {e}"))?;
+        let run_md_file = fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(dir.join("run.md"))
+            .map_err(|e| format!("run.md reopen: {e}"))?;
+
+        let kind = if meta.kind == "recipe" { RunKind::Recipe } else { RunKind::Panel };
+
+        Ok(RunHandle {
+            run_id: run_id.to_string(),
+            dir,
+            workspace: workspace.to_path_buf(),
+            kind,
+            provider: meta.provider.clone(),
+            model: meta.model.clone(),
+            started_at: meta.started_at as u64,
+            seq: Mutex::new(0),
+            trace_file: Mutex::new(Some(trace_file)),
+            run_md_file: Mutex::new(Some(run_md_file)),
+        })
+    }
+
+    /// `root` = `dir` (P2 naming).
+    #[allow(dead_code)]
+    pub fn root(&self) -> &Path {
+        &self.dir
+    }
+
+    /// Untyped trace-step append used by the P2 recipe runner. Same on-disk
+    /// shape as `append_trace`; the caller hands us a `serde_json::Value`
+    /// describing the step, we inject `ts`/`seq`/`run_id` and write one line.
+    pub fn append_step(&self, mut step: Value) -> Result<(), String> {
+        let now_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        let seq_num = self.next_seq();
+        if let Value::Object(map) = &mut step {
+            map.insert("ts".into(), serde_json::json!(now_ms));
+            map.insert("seq".into(), serde_json::json!(seq_num));
+            map.insert("run_id".into(), serde_json::json!(self.run_id.clone()));
+        }
+        let line = serde_json::to_string(&step).map_err(|e| format!("serialise step: {e}"))?;
+        let mut g = self.trace_file.lock().map_err(|_| "trace lock".to_string())?;
+        if let Some(f) = g.as_mut() {
+            writeln!(f, "{line}").map_err(|e| format!("trace write: {e}"))?;
+            f.flush().ok();
+        }
+        Ok(())
+    }
+
+    /// Append free-form text to `run.md` (P2 naming for `append_run_md`).
+    pub fn append_markdown(&self, text: &str) -> Result<(), String> {
+        // Reuse the typed path — it already has the right locking + flush.
+        self.append_run_md(text)
+    }
+
+    /// Re-write `meta.json` from a `RunMeta` (P2 path). The P1 `finish`
+    /// method takes scalar params + status enum and updates only those
+    /// fields; this overwrites the whole meta block which the recipe
+    /// runner builds end-to-end.
+    pub fn finalize(&self, meta: &RunMeta) -> Result<(), String> {
+        let json = serde_json::to_string_pretty(meta).map_err(|e| format!("serialise meta: {e}"))?;
+        fs::write(self.dir.join("meta.json"), json).map_err(|e| format!("write meta: {e}"))
+    }
+
+    /// Convenience — build + append a `run_started` trace step from a
+    /// `RunMeta`. Per P3's contract clarification (C2), the run-level
+    /// `panel`/`recipe` discriminator goes on `run_kind` (not `kind`,
+    /// which already names the line type).
+    pub fn emit_run_started(&self, meta: &RunMeta) -> Result<(), String> {
+        let mut step = serde_json::json!({
+            "kind": "run_started",
+            "provider": meta.provider,
+            "model": meta.model,
+            "run_kind": meta.kind,
+        });
+        if let Value::Object(map) = &mut step {
+            if let Some(r) = &meta.recipe {
+                map.insert("recipe".into(), serde_json::json!(r));
+            }
+        }
+        self.append_step(step)
+    }
+
+    /// Convenience — build + append a `run_ended` trace step from the
+    /// final `RunMeta`. Caller must have populated `status`, token
+    /// counters, and `error` before calling.
+    pub fn emit_run_ended(&self, meta: &RunMeta) -> Result<(), String> {
+        let step = serde_json::json!({
+            "kind": "run_ended",
+            "status": meta.status,
+            "tokens_in_total": meta.tokens.input,
+            "tokens_out_total": meta.tokens.output,
+            "cost_usd_estimate": meta.cost_usd_estimate,
+            "error": meta.error,
+        });
+        self.append_step(step)
+    }
+}
+
+/// Read every run's `meta.json` under the workspace, sorted newest-first.
+pub fn list_runs(workspace: &Path) -> Vec<RunMeta> {
+    let dir = workspace.join(".solomd").join("agent-runs");
+    let entries = match fs::read_dir(&dir) {
+        Ok(e) => e,
+        Err(_) => return Vec::new(),
+    };
+    let mut out = Vec::new();
+    for entry in entries.flatten() {
+        let p = entry.path();
+        if !p.is_dir() {
+            continue;
+        }
+        let meta_path = p.join("meta.json");
+        let raw = match fs::read_to_string(&meta_path) {
+            Ok(r) => r,
+            Err(_) => continue,
+        };
+        if let Ok(m) = serde_json::from_str::<RunMeta>(&raw) {
+            out.push(m);
+        }
+    }
+    out.sort_by(|a, b| b.started_at.cmp(&a.started_at));
+    out
+}
+
+pub fn read_run_meta(workspace: &Path, run_id: &str) -> Result<RunMeta, String> {
+    let path = workspace
+        .join(".solomd")
+        .join("agent-runs")
+        .join(run_id)
+        .join("meta.json");
+    let raw = fs::read_to_string(&path).map_err(|e| format!("read meta: {e}"))?;
+    serde_json::from_str(&raw).map_err(|e| format!("parse meta: {e}"))
+}
+
+pub fn write_run_meta(workspace: &Path, run_id: &str, meta: &RunMeta) -> Result<(), String> {
+    let path = workspace
+        .join(".solomd")
+        .join("agent-runs")
+        .join(run_id)
+        .join("meta.json");
+    let json = serde_json::to_string_pretty(meta).map_err(|e| format!("serialise meta: {e}"))?;
+    fs::write(&path, json).map_err(|e| format!("write meta: {e}"))
+}
+
+pub fn read_trace(workspace: &Path, run_id: &str) -> Result<String, String> {
+    let path = workspace
+        .join(".solomd")
+        .join("agent-runs")
+        .join(run_id)
+        .join("trace.jsonl");
+    fs::read_to_string(&path).map_err(|e| format!("read trace: {e}"))
+}
+
+pub fn read_run_md(workspace: &Path, run_id: &str) -> Result<String, String> {
+    let path = workspace
+        .join(".solomd")
+        .join("agent-runs")
+        .join(run_id)
+        .join("run.md");
+    fs::read_to_string(&path).map_err(|e| format!("read run.md: {e}"))
+}

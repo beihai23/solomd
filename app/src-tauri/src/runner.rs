@@ -58,12 +58,28 @@ mod dev_bridge;
 #[path = "watcher.rs"]
 mod watcher;
 
-// v4.0 pillar 1: in-process agent tool registry + run persistence.
+// v4.0 Pillar 1 — agent tool registry + run-dir persistence.
 #[path = "agent_run.rs"]
 mod agent_run;
-
 #[path = "agent_tools.rs"]
 mod agent_tools;
+// v4.0 Pillar 3 — canonical trace emitter + reader + Tauri wrappers.
+#[path = "trace.rs"]
+mod trace;
+#[path = "agent_trace.rs"]
+mod agent_trace;
+// v4.0 Pillar 5 — Ollama polish (detect / pull / install-page).
+#[path = "ollama.rs"]
+mod ollama;
+// v4.0 Pillar 2 — Agent Recipes. Declared here in addition to lib.rs so
+// the desktop binary (driven from `main.rs` → `runner.rs`) picks them
+// up. `commands.rs` and `git_history.rs` reference
+// `crate::recipe_runner::*`, which must resolve in both compilation
+// roots (the lib AND the bin).
+#[path = "recipes.rs"]
+mod recipes;
+#[path = "recipe_runner.rs"]
+mod recipe_runner;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
@@ -407,6 +423,7 @@ pub fn run_with(initial_file: Option<String>) {
     let app = builder
         .manage(PendingOpen(Mutex::new(pending)))
         .manage(watcher::WatcherState::new())
+        .manage(recipe_runner::RecipesState::new())
         .invoke_handler(tauri::generate_handler![
             commands::read_file,
             commands::read_binary_file,
@@ -502,6 +519,25 @@ pub fn run_with(initial_file: Option<String>) {
             agent_tools::agent_tool_append_to_note,
             agent_tools::agent_tool_read_agent_trace,
             agent_tools::agent_list_runs,
+            agent_trace::agent_trace_read,
+            agent_trace::agent_trace_list,
+            agent_trace::agent_trace_replay_from,
+            ollama::ollama_detect,
+            ollama::ollama_pull,
+            ollama::ollama_cancel_pull,
+            ollama::open_ollama_install_page,
+            recipe_runner::recipes_list,
+            recipe_runner::recipes_get,
+            recipe_runner::recipes_save,
+            recipe_runner::recipes_delete,
+            recipe_runner::recipes_run_now,
+            recipe_runner::recipes_pending_runs,
+            recipe_runner::recipes_history,
+            recipe_runner::recipes_read_trace,
+            recipe_runner::recipes_read_run_md,
+            recipe_runner::recipes_run_diff,
+            recipe_runner::recipes_accept_run,
+            recipe_runner::recipes_reject_run,
         ])
         .on_menu_event(|app_handle, event| {
             // Forward every menu click to the frontend as a single event
@@ -538,6 +574,12 @@ pub fn run_with(initial_file: Option<String>) {
             {
                 dev_bridge::spawn(app.handle().clone());
             }
+
+            // v4.0 Pillar 2 — start the cron-trigger loop. Sleeps until
+            // a `schedule` recipe is due; harmless when no recipes are
+            // loaded yet (the loop polls workspace state every minute
+            // and recipes are loaded eagerly by `recipes_list`).
+            recipe_runner::spawn_cron_loop(app.handle().clone());
             Ok(())
         })
         .build(tauri::generate_context!())

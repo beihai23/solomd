@@ -25,7 +25,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::Serialize;
 
-use crate::trace::{self, Emitter, RunKind, TraceLine};
+use super::trace::{self, Emitter, RunKind, TraceLine};
 
 /// Per-run summary used by the panel's "recent runs" list and the Recipes
 /// Settings page. Read from `<run_dir>/meta.json` (P1 writes it). For
@@ -158,17 +158,17 @@ pub async fn agent_trace_replay_from(
         // through `append` so the new line gets a fresh ts + new seq.
         let payload = strip_reserved_fields(&line.payload);
         let kind = match line.kind.as_str() {
-            "run_started" => crate::trace::TraceKind::RunStarted,
-            "prompt" => crate::trace::TraceKind::Prompt,
-            "model_call" => crate::trace::TraceKind::ModelCall,
-            "model_chunk" => crate::trace::TraceKind::ModelChunk,
-            "model_done" => crate::trace::TraceKind::ModelDone,
-            "tool_call" => crate::trace::TraceKind::ToolCall,
-            "tool_result" => crate::trace::TraceKind::ToolResult,
-            "git_commit" => crate::trace::TraceKind::GitCommit,
-            "note" => crate::trace::TraceKind::Note,
-            "run_ended" => crate::trace::TraceKind::RunEnded,
-            _ => crate::trace::TraceKind::Note, // unknown → keep as note
+            "run_started" => super::trace::TraceKind::RunStarted,
+            "prompt" => super::trace::TraceKind::Prompt,
+            "model_call" => super::trace::TraceKind::ModelCall,
+            "model_chunk" => super::trace::TraceKind::ModelChunk,
+            "model_done" => super::trace::TraceKind::ModelDone,
+            "tool_call" => super::trace::TraceKind::ToolCall,
+            "tool_result" => super::trace::TraceKind::ToolResult,
+            "git_commit" => super::trace::TraceKind::GitCommit,
+            "note" => super::trace::TraceKind::Note,
+            "run_ended" => super::trace::TraceKind::RunEnded,
+            _ => super::trace::TraceKind::Note, // unknown → keep as note
         };
         em.append(kind, payload).map_err(|e| format!("append: {e}"))?;
     }

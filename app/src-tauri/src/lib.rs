@@ -31,19 +31,26 @@ pub mod crypto;
 // edit / split modes pop a reload-vs-keep dialog.
 pub mod watcher;
 
-// v4.0 pillar 1: in-process agent tool registry + run persistence (panel
-// chat). Recipes (P2) and trace replay (P3) build on top of these modules.
+// v4.0 Pillar 1: in-process agent tool registry + run persistence (panel
+// chat). agent_run (RunHandle) is the canonical run-dir owner; both the
+// panel runner and the recipe runner attach to it.
 pub mod agent_run;
 pub mod agent_tools;
 // v4.0 Pillar 3 — canonical agent trace emitter + reader. agent_run's
 // append_trace will adopt trace::Emitter in a follow-up; for now they
 // coexist (agent_run writes the run-dir scaffolding + trace lines, trace
-// owns the canonical reader and the typed Emitter API used by P3's
-// MCP/Vue surfaces and P2's recipe runner).
+// owns the typed Emitter API + reader used by the MCP read_agent_trace
+// tool, the TraceView.vue component, and (post-merge) the recipe runner).
 pub mod trace;
 // v4.0 Pillar 3 — Tauri command wrappers for the trace module
 // (agent_trace_read / agent_trace_list / agent_trace_replay_from).
 pub mod agent_trace;
+// v4.0 Pillar 2 — Agent Recipes. `recipes` parses the YAML schema +
+// owns the `.solomd/agents/` loader; `recipe_runner` drives one recipe
+// end-to-end, hooks save / commit / cron / manual triggers, and gates
+// writes behind the AutoGit branch sandbox + write-cap.
+pub mod recipes;
+pub mod recipe_runner;
 
 // v2.3 dev WebDriver bridge — debug builds only.
 #[cfg(debug_assertions)]
@@ -61,6 +68,7 @@ pub fn run() {
 
     builder
         .manage(watcher::WatcherState::new())
+        .manage(recipe_runner::RecipesState::new())
         .setup(|app| {
             #[cfg(debug_assertions)]
             {
@@ -70,6 +78,10 @@ pub fn run() {
             {
                 let _ = app;
             }
+            // v4.0 Pillar 2 — start the cron-trigger loop. Sleeps until
+            // a `schedule` recipe is due; harmless when no recipes are
+            // loaded yet (the loop polls workspace state every minute).
+            recipe_runner::spawn_cron_loop(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -176,6 +188,18 @@ pub fn run() {
             agent_trace::agent_trace_read,
             agent_trace::agent_trace_list,
             agent_trace::agent_trace_replay_from,
+            recipe_runner::recipes_list,
+            recipe_runner::recipes_get,
+            recipe_runner::recipes_save,
+            recipe_runner::recipes_delete,
+            recipe_runner::recipes_run_now,
+            recipe_runner::recipes_pending_runs,
+            recipe_runner::recipes_history,
+            recipe_runner::recipes_read_trace,
+            recipe_runner::recipes_read_run_md,
+            recipe_runner::recipes_run_diff,
+            recipe_runner::recipes_accept_run,
+            recipe_runner::recipes_reject_run,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
