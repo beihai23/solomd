@@ -215,20 +215,27 @@ pub async fn recipes_run_now(
 // Pending-run accept / reject
 // ---------------------------------------------------------------------------
 
-/// List runs whose status is `ok` and `accepted == None` — these are the
-/// pending-review entries pinned to the top of the Recipes panel.
+/// List recipe runs whose status is `ok` and `accepted == None` — these
+/// are the pending-review entries pinned to the top of the Recipes panel.
+/// Panel chat runs (kind == "panel") never need accept/reject because they
+/// don't write to an AutoGit branch — they're filtered out here.
 #[tauri::command]
 pub async fn recipes_pending_runs(workspace: String) -> Result<Vec<RunMeta>, String> {
     let runs = agent_run::list_runs(Path::new(&workspace));
     Ok(runs
         .into_iter()
-        .filter(|r| r.status == "ok" && r.accepted.is_none())
+        .filter(|r| r.kind == "recipe" && r.status == "ok" && r.accepted.is_none())
         .collect())
 }
 
+/// History tab in the Recipes panel — only shows recipe runs (panel chats
+/// have their own listing under AI settings).
 #[tauri::command]
 pub async fn recipes_history(workspace: String) -> Result<Vec<RunMeta>, String> {
-    Ok(agent_run::list_runs(Path::new(&workspace)))
+    Ok(agent_run::list_runs(Path::new(&workspace))
+        .into_iter()
+        .filter(|r| r.kind == "recipe")
+        .collect())
 }
 
 #[tauri::command]

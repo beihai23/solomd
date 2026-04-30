@@ -336,8 +336,12 @@ function renderRuns(text: string) {
 async function openWikilink(target: string, heading?: string) {
   // Resolve via the workspace index (Rust-backed). The store's `resolve()`
   // does stem → title → substring fallback so partial matches still open.
+  // LLMs frequently emit `[[name.md]]` even though the canonical wikilink
+  // form is bare-stem; strip a trailing `.md`/`.markdown`/`.mdown` so the
+  // resolver's stem index hits.
   if (!target) return;
-  const path = await workspaceIndex.resolve(target);
+  const cleaned = target.replace(/\.(md|markdown|mdown)$/i, '');
+  const path = await workspaceIndex.resolve(cleaned);
   if (!path) {
     errorMsg.value = `Could not resolve [[${target}]] in this workspace`;
     return;

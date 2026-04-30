@@ -923,19 +923,19 @@ export const zh: I18n = {
     dateBefore: '之前（含）',
   },
 
-  // v4.0 pillar 1: Agent settings (under AI settings) — TODO(zh) bulk translation post-merge
+  // v4.0 Pillar 1：智能体相关设置（位于 AI 改写设置下方）
   agentSettings: {
-    heading: 'Agent (chat tools + write access)',
-    allowWrite: 'Allow agent to write to vault',
+    heading: '智能体（工具调用 + 写入权限）',
+    allowWrite: '允许智能体写入 vault',
     allowWriteHint:
-      'Off by default. When on, the agent can call write_note / append_to_note from chat. Read-only tools (list, read, search, backlinks, tags, outline, autogit log/diff) work either way.',
-    loopCap: 'Tool loop cap',
-    loopCapHint: 'Max LLM ↔ tool round-trips per chat turn (1–20). Default 8.',
-    recentRuns: 'Recent runs',
-    noWorkspace: 'Open a folder to see this workspace\'s agent runs.',
-    loading: 'Loading…',
-    noRuns: 'No agent runs yet for this workspace.',
-    refresh: 'Refresh',
+      '默认关闭。开启后，智能体可在对话中调用 write_note / append_to_note。只读工具（list / read / search / backlinks / tags / outline / autogit log/diff）不受此开关影响。',
+    loopCap: '工具循环上限',
+    loopCapHint: '每轮对话允许的 LLM ↔ 工具往返次数（1–20）。默认 8。',
+    recentRuns: '最近运行',
+    noWorkspace: '请先打开一个文件夹以查看本 workspace 的智能体运行历史。',
+    loading: '加载中…',
+    noRuns: '本 workspace 暂无智能体运行记录。',
+    refresh: '刷新',
   },
 
   // v4.0 pillar 1: Inline Agent Panel
