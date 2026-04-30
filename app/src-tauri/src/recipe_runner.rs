@@ -6,28 +6,30 @@
 //!   2. Hooking save / commit / cron / manual triggers and dispatching to
 //!      `run_recipe`.
 //!   3. Driving one recipe: mint a run id, create the AutoGit branch,
-//!      ask the LLM for a response, count writes, finalize the trace.
+//!      check it out, hand off to the canonical `ai_chat` tool-call loop
+//!      in `ai_proxy.rs`, then commit any working-tree changes onto the
+//!      agent branch and restore HEAD to main.
 //!
-//! ## P1 merge note
+//! ## Integration with `ai_proxy::ai_chat`
 //!
-//! When P1 (Agent Panel) lands on `main`, it will introduce:
-//!   - a canonical `RunHandle` we can subsume our minimal one into
-//!     (currently in `agent_run.rs`)
-//!   - a real tool-call loop inside `ai_chat`
-//!   - the in-process `agent_tool_*` registry
+//! The chat machinery lives in `ai_proxy`: `run_chat_anthropic_loop`,
+//! `run_chat_openai_loop`, and `run_chat_ollama` each own a multi-turn
+//! tool-call loop that emits the same `solomd://ai-*` events the panel
+//! listens for and writes the same `trace.jsonl`/`run.md` artifacts the
+//! recipes UI consumes. We pass our own `RunHandle` into the loop so
+//! every model_call / tool_call / tool_result lands in the recipe's run
+//! directory, and we mint a `request-id` namespaced as `recipe-<run-id>`
+//! so the panel's listeners ignore our chunks.
 //!
-//! Until then this module fakes the agent loop with a single-shot
-//! provider call and `// TODO(merge-P1)` markers at every spot the loop
-//! should be inserted. The placeholder DOES NOT actually exercise tool
-//! calls — it just streams a response, parses any `[[wikilink]]`-style
-//! references, and finalizes. That's enough to demonstrate the wiring
-//! end-to-end (run dir, trace, branch sandbox, write-cap, accept/reject).
-//!
-//! Do NOT duplicate P1's tool registry here — that's wasted work and a
-//! merge conflict farm.
+//! Recipes enforce a per-run write cap via the registry exposed by
+//! `agent_tools::install_recipe_write_cap`; the chat loop's calls into
+//! `dispatch_tool` consult that registry on every `write_note` /
+//! `append_to_note` invocation and refuse cleanly once the recipe has
+//! used its allotment.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -37,6 +39,11 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
 
 use super::agent_run::{self, RecipeMeta, RunHandle, RunMeta, RunStatus, TokenCounts};
+use super::agent_tools;
+use super::ai_proxy::{
+    self, resolve_provider, run_chat_anthropic_loop, run_chat_ollama, run_chat_openai_loop,
+    ChatMessage, ChatRequest,
+};
 use super::recipes::{
     self, Recipe, TriggerCtx, TriggerKind, WRITE_CAP_MAX,
 };
@@ -561,10 +568,12 @@ pub struct RunResult {
 ///   2. mint run id + create AutoGit branch
 ///   3. `RunHandle::create` writes meta.json + run.md header
 ///   4. resolve prompt + emit `prompt` step
-///   5. call provider (placeholder shim — TODO(merge-P1))
-///   6. for each suggested write the (eventual) tool loop produces,
-///      enforce write-cap and commit on the agent branch
-///   7. finalize meta.json
+///   5. hand off to `ai_proxy`'s tool-call loop with the recipe's
+///      provider / model / tools / write-cap installed, pre-checking out
+///      the agent branch so writes land in its working tree
+///   6. sweep working-tree changes into a single commit on the agent
+///      branch and emit `git_commit` trace step
+///   7. restore HEAD to main and finalize meta.json
 pub async fn run_recipe(
     app: &AppHandle,
     workspace: &Path,
@@ -683,28 +692,20 @@ pub async fn run_recipe(
     }));
     let _ = handle.append_markdown(&format!("## Prompt\n\n{prompt_resolved}\n\n"));
 
-    // Emit a model_call step + invoke the placeholder shim.
-    let _ = handle.append_step(serde_json::json!({
-        "kind": "model_call",
-        "provider": meta.provider,
-        "model": meta.model,
-        "messages_n": 2,
-        "tools_n": recipe.tools.len(),
-    }));
-
-    // TODO(merge-P1): replace `single_shot_chat` with the multi-turn
-    // tool-call loop landing in `ai_chat`. For now, treat the LLM as a
-    // single completion and parse text back into trace as `model_done`.
+    // Hand off to the canonical chat loop in `ai_proxy`. The loop is
+    // responsible for emitting `model_call` / `model_done` / `tool_call`
+    // / `tool_result` lines onto the run handle's trace; we don't write
+    // those here.
     let final_meta_arc = Arc::new(Mutex::new(meta));
-    let exec = single_shot_chat(
+    let exec = run_recipe_chat_loop(
         app,
         workspace,
         recipe,
-        &ctx,
         &prompt_resolved,
         Arc::clone(&handle),
         Arc::clone(&final_meta_arc),
         &branch_name,
+        &run_id,
     )
     .await;
 
@@ -875,68 +876,63 @@ fn create_agent_branch(workspace: &Path, branch: &str) -> Result<(), String> {
 }
 
 // ---------------------------------------------------------------------------
-// Single-shot chat shim (PLACEHOLDER until P1's tool loop merges)
+// Recipe chat loop — bridges to `ai_proxy`'s canonical tool-call loop.
 // ---------------------------------------------------------------------------
 //
-// This intentionally does the smallest thing that's still useful:
-//   * Resolves the provider (defaulting to the user's settings or
-//     `ollama` if `local`).
-//   * Calls the provider's REST endpoint with one user message + a
-//     system prompt that lists the allowed tools (so the model behaves
-//     consistently when P1's loop drops in).
-//   * Captures the full text reply, emits a single `model_done` step,
-//     and treats *no* tool calls as the success case.
+// The recipe runner does NOT own a chat implementation. It assembles a
+// `ChatRequest` from the recipe's `provider` / `model` / `tools` /
+// `allow-write` / `write-cap` / `base_url`, picks the right
+// `run_chat_*_loop` based on `api_format`, and hands our `RunHandle` in
+// so the trace + run.md keep accumulating into the recipe's run dir.
 //
-// When P1 merges, swap this for `ai_chat` + the registered tool loop.
+// AutoGit branch sandbox: per the architecture decision, we pre-checkout
+// the agent branch BEFORE the chat loop. Tool calls (write_note /
+// append_to_note) write directly into the working tree; after the loop
+// returns we sweep up any working-tree changes into a single commit on
+// the agent branch and then restore HEAD to main. The trade-off is that
+// while a recipe is running the user's tabs may briefly see writes via
+// the file watcher — the cure (a per-run branch override pushed through
+// `dispatch_tool`) is much more invasive and was deferred. See:
+//   TODO(v4-recipe-watcher): suppress watcher reloads on recipe writes.
 
 #[allow(clippy::too_many_arguments)]
-async fn single_shot_chat(
-    _app: &AppHandle,
+async fn run_recipe_chat_loop(
+    app: &AppHandle,
     workspace: &Path,
     recipe: &Recipe,
-    _ctx: &TriggerCtx,
     prompt: &str,
     handle: Arc<RunHandle>,
     meta_arc: Arc<Mutex<RunMeta>>,
     branch: &str,
+    run_id: &str,
 ) -> Result<(), String> {
-    // System prompt mirrors what P1's tool registry will eventually use,
-    // so a recipe written today won't drift in behaviour after merge.
-    let tools_list = recipe.tools.join(", ");
-    let system = format!(
-        "You are a SoloMD agent running a recipe.\n\
-         Allowed tools: {tools_list}.\n\
-         Write-cap: {} (writes beyond this will be refused).\n\
-         Respond with the result; if you would call a tool, name it and the file.\n",
-        recipe.write_cap
-    );
-
+    // ----- 1. Resolve provider / api_format / model / api_key -----
     let provider = {
         let m = meta_arc.lock().unwrap();
         if m.provider.is_empty() {
-            // Fallback for empty provider on the recipe — let the LLM call
-            // fail with a clear error rather than silently pick a default.
+            // No provider on the recipe and none in the meta — fall back
+            // to anthropic so the call surfaces a clear "no key" error
+            // rather than silently picking a default the user didn't ask
+            // for. Same heuristic the shim used pre-merge.
             "anthropic".to_string()
         } else {
             m.provider.clone()
         }
     };
+    let canonical_provider = resolve_provider(&provider).to_string();
 
-    let api_format = if provider == "ollama" {
+    let api_format = if canonical_provider == "ollama" {
         "ollama".to_string()
-    } else if provider == "claude" || provider == "anthropic" {
+    } else if canonical_provider == "claude" || canonical_provider == "anthropic" {
         "anthropic".to_string()
     } else {
         "openai".to_string()
     };
 
-    // Run a one-turn chat. Errors here translate to run status=error.
     let model = {
         let m = meta_arc.lock().unwrap();
         if m.model.is_empty() {
-            // Reasonable default per provider, picked to match the
-            // recipe's written-down example in `docs/roadmap.md`.
-            match provider.as_str() {
+            match canonical_provider.as_str() {
                 "anthropic" | "claude" => "claude-sonnet-4-6".to_string(),
                 "ollama" => "qwen2.5:7b".to_string(),
                 _ => "gpt-4.1-mini".to_string(),
@@ -946,128 +942,316 @@ async fn single_shot_chat(
         }
     };
 
-    let reply = match provider_call(&api_format, &provider, &model, &system, prompt, recipe.base_url.as_deref()).await {
-        Ok(t) => t,
-        Err(e) => {
-            // Emit a model_done step with finish_reason=error so the
-            // trace replay path stays consistent.
-            let _ = handle.append_step(serde_json::json!({
-                "kind": "model_done",
-                "text": "",
-                "tokens_in": 0,
-                "tokens_out": 0,
-                "finish_reason": "error",
-            }));
-            return Err(e);
+    // Reflect the resolved canonical names back into the run meta so the
+    // history/trace UI sees the actual values dispatched.
+    {
+        let mut m = meta_arc.lock().unwrap();
+        m.provider = canonical_provider.clone();
+        m.model = model.clone();
+    }
+
+    let api_key = if api_format == "ollama" {
+        String::new()
+    } else {
+        match ai_proxy::get_api_key(&canonical_provider) {
+            Ok(k) => k,
+            Err(e) => return Err(format!("recipe '{}' provider '{}': {e}", recipe.slug, canonical_provider)),
         }
     };
 
-    let tokens_out = estimate_tokens(&reply);
-    let tokens_in = estimate_tokens(prompt) + estimate_tokens(&system);
-    let _ = handle.append_step(serde_json::json!({
-        "kind": "model_done",
-        "text": truncate_for_trace(&reply),
-        "tokens_in": tokens_in,
-        "tokens_out": tokens_out,
-        "finish_reason": "stop",
-    }));
-    let _ = handle.append_markdown(&format!("## Assistant\n\n{reply}\n\n"));
+    // ----- 2. Build ChatRequest -----
+    // System prompt mirrors the panel's contract for tool-enabled chats:
+    // tell the model the tool registry it has and the write cap. The loop
+    // itself materialises the tool schema array via `agent_tools`.
+    let tools_list = recipe.tools.join(", ");
+    let system_text = format!(
+        "You are a SoloMD agent running a recipe ({}).\n\
+         Allowed tools: {tools_list}.\n\
+         Write-cap: {} (writes beyond this will be refused).\n\
+         Use the tools to gather information and (when allow-write is set) save results.\n",
+        recipe.name, recipe.write_cap
+    );
 
-    {
-        let mut m = meta_arc.lock().unwrap();
-        m.tokens.input = tokens_in;
-        m.tokens.output = tokens_out;
-    }
+    let messages = vec![
+        ChatMessage {
+            role: "system".to_string(),
+            content: system_text,
+            tool_call_id: None,
+        },
+        ChatMessage {
+            role: "user".to_string(),
+            content: prompt.to_string(),
+            tool_call_id: None,
+        },
+    ];
 
-    // Apply C4.2 write-cap to any ```write_note path: …``` blocks the
-    // model emits. This is a best-effort placeholder so the cap is
-    // exercised in tests; P1's tool loop is the real thing.
-    if recipe.allow_write {
-        let writes = parse_write_blocks(&reply);
-        let cap = recipe.write_cap.min(WRITE_CAP_MAX);
-        let mut count: u32 = 0;
-        for (path_rel, content) in writes {
-            if count >= cap {
-                let _ = handle.append_step(serde_json::json!({
-                    "kind": "tool_result",
-                    "tool_call_id": format!("tc_{}", count),
-                    "result": "",
-                    "error": "write-cap exceeded",
-                }));
-                let mut m = meta_arc.lock().unwrap();
-                m.error = Some("write-cap exceeded".to_string());
-                return Err("write-cap exceeded".to_string());
-            }
-            count += 1;
-            // Resolve write target relative to the workspace.
-            let abs = workspace.join(&path_rel);
-            if let Some(parent) = abs.parent() {
-                let _ = std::fs::create_dir_all(parent);
-            }
-            std::fs::write(&abs, &content).map_err(|e| format!("write_note: {e}"))?;
-            let sha = commit_on_branch(workspace, branch, &path_rel, &format!("agent: write_note {}", path_rel))?;
-            let _ = handle.append_step(serde_json::json!({
-                "kind": "git_commit",
-                "branch": branch,
-                "sha": sha,
-                "summary": format!("agent: write_note {}", path_rel),
-                "files": [path_rel],
-            }));
+    let req = ChatRequest {
+        provider: canonical_provider.clone(),
+        api_format: Some(api_format.clone()),
+        model: model.clone(),
+        messages,
+        base_url: recipe.base_url.clone(),
+        tools: Some(recipe.tools.clone()),
+        allow_write: Some(recipe.allow_write),
+        run_id: Some(run_id.to_string()),
+        workspace: Some(workspace.to_string_lossy().to_string()),
+        // Bound the tool-loop independently of the write-cap. ai_proxy
+        // already clamps to [1, 20]; pick a value that lets the model
+        // recover from a few read tools before its writes.
+        tool_loop_cap: Some(8),
+    };
+
+    // ----- 3. Pre-checkout agent branch + install write-cap -----
+    let prev_head = checkout_branch(workspace, branch)?;
+    let cap = recipe.write_cap.min(WRITE_CAP_MAX);
+    agent_tools::install_recipe_write_cap(workspace, cap);
+
+    // ----- 4. Drive the loop -----
+    // request_id: we namespace it under `recipe-` so panel listeners
+    // ignore our chunk events. Cancellation is wired via Arc<AtomicBool>
+    // (always false today; future cancel command will flip it). Token
+    // counts are deliberately left at 0 — the sister worktree
+    // `v4-fix/tokens` is rebasing in the real per-turn outcome accounting.
+    let request_id = format!("recipe-{run_id}");
+    let cancel = Arc::new(AtomicBool::new(false));
+
+    let chat_result = match api_format.as_str() {
+        "anthropic" => {
+            run_chat_anthropic_loop(
+                app,
+                &request_id,
+                &req,
+                &api_key,
+                cancel.clone(),
+                Some(Arc::clone(&handle)),
+            )
+            .await
+        }
+        "openai" => {
+            run_chat_openai_loop(
+                app,
+                &request_id,
+                &req,
+                &api_key,
+                cancel.clone(),
+                Some(Arc::clone(&handle)),
+            )
+            .await
+        }
+        "ollama" => {
+            // Ollama path doesn't support tool-use today (see ai_proxy
+            // comment) — degrades to a streaming text-only chat. Recipes
+            // that need writes against Ollama will end up with status=ok
+            // and zero commits. Surface this in run.md so the user sees
+            // why nothing was committed.
+            let _ = handle.append_markdown(
+                "> note: ollama path is text-only — tool calls are not dispatched.\n\n",
+            );
+            run_chat_ollama(app, &request_id, &req, cancel.clone()).await
+        }
+        other => Err(format!("unknown api_format: {other}")),
+    };
+
+    // Final assistant text → append to run.md regardless of error so a
+    // partial run is inspectable.
+    if let Ok(text) = &chat_result {
+        if !text.is_empty() {
+            let _ = handle.append_markdown(&format!("## Assistant\n\n{text}\n\n"));
         }
     }
 
+    // ----- 5. Commit any working-tree changes onto the agent branch -----
+    // Even when the chat returned an error we still try to capture the
+    // partial state — losing the trail is worse than a half-complete
+    // commit. Committing happens BEFORE we pop the cap registry so the
+    // commit message can mention how much of the cap was used.
+    let writes_consumed = agent_tools::current_recipe_write_cap(workspace)
+        .map(|(used, _cap)| used)
+        .unwrap_or(0);
+
+    if let Err(e) = commit_branch_changes(workspace, branch, &handle, recipe, writes_consumed) {
+        // Log + continue — the chat result is the important signal.
+        let _ = handle.append_step(serde_json::json!({
+            "kind": "note",
+            "text": format!("commit_branch_changes failed: {e}"),
+        }));
+    }
+
+    // ----- 6. Cleanup: clear write-cap registry, restore HEAD to main -----
+    agent_tools::clear_recipe_write_cap(workspace);
+    if let Err(e) = restore_head(workspace, &prev_head) {
+        let _ = handle.append_step(serde_json::json!({
+            "kind": "note",
+            "text": format!("restore_head failed: {e}"),
+        }));
+    }
+
+    chat_result.map(|_| ())
+}
+
+/// Check out the given branch — assume it already exists (the caller
+/// just minted it). Returns the previous HEAD's branch name (so we can
+/// switch back at the end). When HEAD wasn't a branch (detached), we
+/// return the bare ref name.
+fn checkout_branch(workspace: &Path, branch: &str) -> Result<String, String> {
+    let repo = Repository::open(workspace).map_err(|e| format!("git open: {e}"))?;
+    let prev = repo
+        .head()
+        .ok()
+        .and_then(|h| h.shorthand().map(|s| s.to_string()))
+        .unwrap_or_else(|| "main".to_string());
+
+    let branch_ref = format!("refs/heads/{branch}");
+    let obj = repo
+        .revparse_single(&branch_ref)
+        .map_err(|e| format!("revparse {branch_ref}: {e}"))?;
+    let mut opts = git2::build::CheckoutBuilder::new();
+    opts.safe();
+    repo.checkout_tree(&obj, Some(&mut opts))
+        .map_err(|e| format!("checkout_tree: {e}"))?;
+    repo.set_head(&branch_ref)
+        .map_err(|e| format!("set_head: {e}"))?;
+    Ok(prev)
+}
+
+/// Restore HEAD to the named branch. Best-effort — if the branch is
+/// gone (user deleted it during the run), fall back to "main" / "master".
+fn restore_head(workspace: &Path, branch: &str) -> Result<(), String> {
+    let repo = Repository::open(workspace).map_err(|e| format!("git open: {e}"))?;
+    let target = if repo.find_branch(branch, BranchType::Local).is_ok() {
+        branch.to_string()
+    } else if repo.find_branch("main", BranchType::Local).is_ok() {
+        "main".to_string()
+    } else if repo.find_branch("master", BranchType::Local).is_ok() {
+        "master".to_string()
+    } else {
+        return Err(format!("no branch to restore HEAD to (tried {branch}/main/master)"));
+    };
+    let target_ref = format!("refs/heads/{target}");
+    let obj = repo
+        .revparse_single(&target_ref)
+        .map_err(|e| format!("revparse {target_ref}: {e}"))?;
+    let mut opts = git2::build::CheckoutBuilder::new();
+    opts.force();
+    repo.checkout_tree(&obj, Some(&mut opts))
+        .map_err(|e| format!("checkout_tree restore: {e}"))?;
+    repo.set_head(&target_ref)
+        .map_err(|e| format!("set_head restore: {e}"))?;
     Ok(())
 }
 
-/// Approximate token count — chars / 4. Good enough for cost estimation
-/// before the real counts come back from the provider.
-fn estimate_tokens(s: &str) -> u64 {
-    (s.chars().count() / 4) as u64
-}
+/// Sweep up the working tree's changes (relative to the agent branch's
+/// tip) into a single commit on the agent branch. Emits a `git_commit`
+/// trace step listing the touched files. No-op when nothing changed.
+fn commit_branch_changes(
+    workspace: &Path,
+    branch: &str,
+    handle: &RunHandle,
+    recipe: &Recipe,
+    writes_consumed: u32,
+) -> Result<(), String> {
+    let repo = Repository::open(workspace).map_err(|e| format!("git open: {e}"))?;
+    let mut index = repo.index().map_err(|e| format!("index: {e}"))?;
+    // Stage everything (new + modified + deleted) under the workspace
+    // root. We don't honour `.gitignore` exclusions explicitly — the
+    // existing repo config already covers that.
+    index
+        .add_all(["*"].iter(), git2::IndexAddOption::DEFAULT, None)
+        .map_err(|e| format!("index add_all: {e}"))?;
+    index.write().map_err(|e| format!("index write: {e}"))?;
+    let tree_oid = index
+        .write_tree()
+        .map_err(|e| format!("write_tree: {e}"))?;
 
-/// C2 §2KB — truncate the trace `text` field at 2048 chars and tack on
-/// an ellipsis sentinel so the replay path knows it was clipped.
-fn truncate_for_trace(s: &str) -> String {
-    const LIMIT: usize = 2048;
-    if s.chars().count() <= LIMIT {
-        s.to_string()
+    // Look up the agent branch's current tip so we can:
+    //   a) skip the commit when the tree is unchanged, and
+    //   b) supply it as the parent.
+    let parent_commit = repo
+        .find_branch(branch, BranchType::Local)
+        .map_err(|e| format!("find branch {branch}: {e}"))?
+        .into_reference()
+        .peel_to_commit()
+        .map_err(|e| format!("peel branch: {e}"))?;
+
+    if parent_commit.tree_id() == tree_oid {
+        // Nothing to commit — recipe finished cleanly without writes.
+        return Ok(());
+    }
+
+    let tree = repo.find_tree(tree_oid).map_err(|e| format!("find_tree: {e}"))?;
+    let cfg = repo.config().map_err(|e| format!("config: {e}"))?;
+    let name = cfg
+        .get_string("user.name")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| "SoloMD Agent".to_string());
+    let email = cfg
+        .get_string("user.email")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| "agent@solomd.local".to_string());
+    let sig = git2::Signature::now(&name, &email).map_err(|e| format!("sig: {e}"))?;
+
+    let summary = if writes_consumed > 0 {
+        format!(
+            "agent: {} ({} write{})",
+            recipe.slug,
+            writes_consumed,
+            if writes_consumed == 1 { "" } else { "s" }
+        )
     } else {
-        let truncated: String = s.chars().take(LIMIT).collect();
-        format!("{truncated}…(truncated)")
-    }
-}
+        format!("agent: {}", recipe.slug)
+    };
 
-// Parse simple write blocks from the model's reply.
-//
-// Format (NOT real Markdown — the runner just scans for the literal
-// fence prefix below):
-//
-//     ~~~write_note path: relative/path.md
-//     <body lines>
-//     ~~~
-//
-// We don't try to be clever — if P1's tool loop is doing this for real,
-// the loop replaces this entire path. The placeholder just exists so
-// the write-cap path can be exercised.
-fn parse_write_blocks(reply: &str) -> Vec<(String, String)> {
-    let mut out = Vec::new();
-    let mut lines = reply.lines();
-    while let Some(line) = lines.next() {
-        let trimmed = line.trim();
-        if let Some(rest) = trimmed.strip_prefix("```write_note path:") {
-            let path = rest.trim().to_string();
-            let mut body = String::new();
-            for inner in lines.by_ref() {
-                if inner.trim_start().starts_with("```") {
-                    break;
+    let oid = repo
+        .commit(
+            Some(&format!("refs/heads/{branch}")),
+            &sig,
+            &sig,
+            &summary,
+            &tree,
+            &[&parent_commit],
+        )
+        .map_err(|e| format!("commit: {e}"))?;
+
+    // Diff parent → new commit to enumerate the touched files for the
+    // trace. Best-effort: failures here just mean an empty `files` list.
+    let new_commit = repo.find_commit(oid).map_err(|e| format!("find new: {e}"))?;
+    let new_tree = new_commit.tree().map_err(|e| format!("new tree: {e}"))?;
+    let parent_tree = parent_commit
+        .tree()
+        .map_err(|e| format!("parent tree: {e}"))?;
+    let mut files: Vec<String> = Vec::new();
+    if let Ok(diff) = repo.diff_tree_to_tree(Some(&parent_tree), Some(&new_tree), None) {
+        diff.foreach(
+            &mut |delta, _progress| {
+                let p = delta
+                    .new_file()
+                    .path()
+                    .or_else(|| delta.old_file().path())
+                    .map(|p| p.to_string_lossy().to_string());
+                if let Some(p) = p {
+                    if !files.contains(&p) {
+                        files.push(p);
+                    }
                 }
-                body.push_str(inner);
-                body.push('\n');
-            }
-            out.push((path, body));
-        }
+                true
+            },
+            None,
+            None,
+            None,
+        )
+        .ok();
     }
-    out
+
+    let _ = handle.append_step(serde_json::json!({
+        "kind": "git_commit",
+        "branch": branch,
+        "sha": oid.to_string(),
+        "summary": summary,
+        "files": files,
+    }));
+    Ok(())
 }
 
 fn commit_on_branch(
@@ -1123,159 +1307,6 @@ fn commit_on_branch(
     // confused by the in-progress staging area.
     let _ = index.read(true);
     Ok(oid.to_string())
-}
-
-// ---------------------------------------------------------------------------
-// Provider call — minimal one-shot. Mirrors `ai_proxy`'s shape but
-// non-streaming because the recipe runner doesn't need chunking.
-// ---------------------------------------------------------------------------
-
-async fn provider_call(
-    api_format: &str,
-    provider: &str,
-    model: &str,
-    system: &str,
-    user: &str,
-    base_url: Option<&str>,
-) -> Result<String, String> {
-    // Resolve the API key from the OS keychain — same `solomd:ai-<provider>`
-    // entry that `ai_proxy::ai_set_key` writes. No key needed for ollama.
-    let api_key = if api_format == "ollama" {
-        String::new()
-    } else {
-        let entry = keyring::Entry::new("solomd", &format!("ai-{provider}"))
-            .map_err(|e| format!("keychain: {e}"))?;
-        entry
-            .get_password()
-            .map_err(|e| format!("recipe '{provider}' has no API key in keychain — open Settings → AI to set one ({e})"))?
-    };
-
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(180))
-        .build()
-        .map_err(|e| format!("http: {e}"))?;
-
-    match api_format {
-        "openai" => {
-            let base = base_url
-                .map(|s| s.trim_end_matches('/').to_string())
-                .filter(|s| !s.is_empty())
-                .unwrap_or_else(|| "https://api.openai.com/v1".to_string());
-            let url = format!("{base}/chat/completions");
-            let body = serde_json::json!({
-                "model": model,
-                "messages": [
-                    {"role":"system","content": system},
-                    {"role":"user","content": user},
-                ],
-                "stream": false,
-            });
-            let res = client
-                .post(&url)
-                .bearer_auth(&api_key)
-                .json(&body)
-                .send()
-                .await
-                .map_err(|e| format!("openai: {e}"))?;
-            let status = res.status();
-            let raw = res.text().await.map_err(|e| format!("openai read: {e}"))?;
-            if !status.is_success() {
-                return Err(format!("openai {status}: {}", truncate(&raw, 300)));
-            }
-            let v: serde_json::Value =
-                serde_json::from_str(&raw).map_err(|e| format!("openai parse: {e}"))?;
-            let text = v
-                .get("choices")
-                .and_then(|c| c.get(0))
-                .and_then(|c| c.get("message"))
-                .and_then(|m| m.get("content"))
-                .and_then(|s| s.as_str())
-                .unwrap_or("")
-                .to_string();
-            Ok(text)
-        }
-        "anthropic" => {
-            let base = base_url
-                .map(|s| s.trim_end_matches('/').to_string())
-                .filter(|s| !s.is_empty())
-                .unwrap_or_else(|| "https://api.anthropic.com".to_string());
-            let url = format!("{base}/v1/messages");
-            let body = serde_json::json!({
-                "model": model,
-                "system": system,
-                "messages": [{"role":"user","content": user}],
-                "max_tokens": 4096,
-                "stream": false,
-            });
-            let res = client
-                .post(&url)
-                .header("x-api-key", &api_key)
-                .header("anthropic-version", "2023-06-01")
-                .json(&body)
-                .send()
-                .await
-                .map_err(|e| format!("anthropic: {e}"))?;
-            let status = res.status();
-            let raw = res.text().await.map_err(|e| format!("anthropic read: {e}"))?;
-            if !status.is_success() {
-                return Err(format!("anthropic {status}: {}", truncate(&raw, 300)));
-            }
-            let v: serde_json::Value =
-                serde_json::from_str(&raw).map_err(|e| format!("anthropic parse: {e}"))?;
-            let text = v
-                .get("content")
-                .and_then(|c| c.get(0))
-                .and_then(|c| c.get("text"))
-                .and_then(|s| s.as_str())
-                .unwrap_or("")
-                .to_string();
-            Ok(text)
-        }
-        "ollama" => {
-            let base = base_url
-                .map(|s| s.trim_end_matches('/').to_string())
-                .filter(|s| !s.is_empty())
-                .unwrap_or_else(|| "http://localhost:11434".to_string());
-            let url = format!("{base}/api/chat");
-            let body = serde_json::json!({
-                "model": model,
-                "messages": [
-                    {"role":"system","content": system},
-                    {"role":"user","content": user},
-                ],
-                "stream": false,
-            });
-            let res = client
-                .post(&url)
-                .json(&body)
-                .send()
-                .await
-                .map_err(|e| format!("ollama: {e}"))?;
-            let status = res.status();
-            let raw = res.text().await.map_err(|e| format!("ollama read: {e}"))?;
-            if !status.is_success() {
-                return Err(format!("ollama {status}: {}", truncate(&raw, 300)));
-            }
-            let v: serde_json::Value =
-                serde_json::from_str(&raw).map_err(|e| format!("ollama parse: {e}"))?;
-            let text = v
-                .get("message")
-                .and_then(|m| m.get("content"))
-                .and_then(|s| s.as_str())
-                .unwrap_or("")
-                .to_string();
-            Ok(text)
-        }
-        other => Err(format!("unknown api_format: {other}")),
-    }
-}
-
-fn truncate(s: &str, n: usize) -> String {
-    if s.chars().count() <= n {
-        s.to_string()
-    } else {
-        s.chars().take(n).collect::<String>() + "…"
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1353,33 +1384,44 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parse_write_blocks_basic() {
-        let reply = "ok\n```write_note path: a.md\nhello\n```\nthen\n```write_note path: b.md\nworld\n```\n";
-        let blocks = parse_write_blocks(reply);
-        assert_eq!(blocks.len(), 2);
-        assert_eq!(blocks[0].0, "a.md");
-        assert!(blocks[0].1.contains("hello"));
-        assert_eq!(blocks[1].0, "b.md");
+    fn provider_for_resolves_local_alias() {
+        let r = Recipe {
+            name: "x".into(),
+            slug: "x".into(),
+            path: None,
+            trigger: TriggerKind::Manual,
+            schedule: None,
+            match_glob: None,
+            tag: None,
+            prompt: "".into(),
+            allow_write: false,
+            write_cap: 1,
+            provider: "local".into(),
+            model: "qwen2.5:1.5b".into(),
+            base_url: None,
+            tools: vec![],
+        };
+        assert_eq!(provider_for(&r), "ollama");
     }
 
     #[test]
-    fn truncate_for_trace_short_passthrough() {
-        let s = "abc";
-        assert_eq!(truncate_for_trace(s), s);
-    }
-
-    #[test]
-    fn truncate_for_trace_long_clipped() {
-        let s: String = "x".repeat(3000);
-        let out = truncate_for_trace(&s);
-        assert!(out.ends_with("…(truncated)"));
-        assert!(out.chars().count() < 3000);
-    }
-
-    #[test]
-    fn estimate_tokens_smoke() {
-        // chars/4 — exact value not load-bearing, just non-zero for non-empty.
-        assert_eq!(estimate_tokens(""), 0);
-        assert!(estimate_tokens("hello world") > 0);
+    fn provider_for_passes_through_other() {
+        let r = Recipe {
+            name: "x".into(),
+            slug: "x".into(),
+            path: None,
+            trigger: TriggerKind::Manual,
+            schedule: None,
+            match_glob: None,
+            tag: None,
+            prompt: "".into(),
+            allow_write: false,
+            write_cap: 1,
+            provider: "anthropic".into(),
+            model: "claude".into(),
+            base_url: None,
+            tools: vec![],
+        };
+        assert_eq!(provider_for(&r), "anthropic");
     }
 }
