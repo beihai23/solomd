@@ -13,9 +13,15 @@
  * we only display the presence of a key, never the key itself.
  */
 
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
-import { PROVIDERS, providerById, type ProviderId } from '../lib/ai-providers';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import {
+  OLLAMA_RECOMMENDED_MODEL,
+  PROVIDERS,
+  providerById,
+  type ProviderId,
+} from '../lib/ai-providers';
 import { useSettingsStore } from '../stores/settings';
 import { useWorkspaceStore } from '../stores/workspace';
 import { useTabsStore } from '../stores/tabs';
@@ -24,6 +30,24 @@ import { useI18n } from '../i18n';
 const settingsStore = useSettingsStore();
 const workspaceStore = useWorkspaceStore();
 const tabsStore = useTabsStore();
+
+// ---------------------------------------------------------------------------
+// Ollama detect / pull state (v4.0 Pillar 5)
+// ---------------------------------------------------------------------------
+
+interface OllamaDetection {
+  ok: boolean;
+  version?: string | null;
+  models: string[];
+}
+
+interface OllamaPullEvent {
+  request_id: string;
+  status: string;
+  completed?: number | null;
+  total?: number | null;
+  done: boolean;
+}
 
 const { t } = useI18n();
 
@@ -82,6 +106,124 @@ const modelChoices = computed<string[]>(() => {
 
 const needsKey = computed(() => props.provider !== 'ollama');
 
+// ---------------------------------------------------------------------------
+// Ollama detection cache (v4.0 Pillar 5)
+//
+// We keep the last result + timestamp in module scope so flipping the
+// provider dropdown back to Ollama within 30s reuses the cached probe
+// rather than re-hitting localhost. AISettings is mounted/unmounted as the
+// user opens / closes the Settings panel, but the cache outlives that.
+// ---------------------------------------------------------------------------
+
+let cachedDetection: OllamaDetection | null = null;
+let cachedDetectionAt = 0;
+const DETECT_TTL_MS = 30_000;
+
+const detection = ref<OllamaDetection | null>(null);
+const detecting = ref(false);
+// Pull progress state. `pullStatus` mirrors the Ollama status string
+// ("pulling abc123" / "verifying sha256 digest" / "success") so the user
+// sees what stage we're in; `pullPct` is 0–1 derived from completed/total.
+const pulling = ref(false);
+const pullStatus = ref('');
+const pullPct = ref<number | null>(null);
+const pullError = ref<string | null>(null);
+const pullDone = ref(false);
+let pullRequestId = '';
+let pullUnlisten: UnlistenFn | null = null;
+
+async function detectOllama(force = false): Promise<void> {
+  // Hot-path: the same panel opening twice within TTL skips the IPC.
+  if (
+    !force
+    && cachedDetection
+    && Date.now() - cachedDetectionAt < DETECT_TTL_MS
+  ) {
+    detection.value = cachedDetection;
+    return;
+  }
+  detecting.value = true;
+  try {
+    const d = await invoke<OllamaDetection>('ollama_detect');
+    detection.value = d;
+    cachedDetection = d;
+    cachedDetectionAt = Date.now();
+  } catch {
+    const fallback: OllamaDetection = { ok: false, models: [] };
+    detection.value = fallback;
+    cachedDetection = fallback;
+    cachedDetectionAt = Date.now();
+  } finally {
+    detecting.value = false;
+  }
+}
+
+async function openInstallPage(): Promise<void> {
+  try {
+    await invoke('open_ollama_install_page');
+  } catch (e) {
+    status.value = { kind: 'err', msg: String(e) };
+  }
+}
+
+async function ensurePullListener(): Promise<void> {
+  if (pullUnlisten) return;
+  pullUnlisten = await listen<OllamaPullEvent>('solomd://ollama-pull', (ev) => {
+    if (ev.payload.request_id !== pullRequestId) return;
+    pullStatus.value = ev.payload.status;
+    const c = ev.payload.completed ?? null;
+    const t = ev.payload.total ?? null;
+    pullPct.value = c != null && t != null && t > 0 ? Math.min(1, c / t) : null;
+    if (ev.payload.done) {
+      pullDone.value = true;
+    }
+  });
+}
+
+async function pullRecommended(): Promise<void> {
+  if (pulling.value) return;
+  await ensurePullListener();
+  pulling.value = true;
+  pullDone.value = false;
+  pullError.value = null;
+  pullStatus.value = '';
+  pullPct.value = null;
+  pullRequestId = `pull-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  try {
+    await invoke('ollama_pull', {
+      model: OLLAMA_RECOMMENDED_MODEL,
+      requestId: pullRequestId,
+    });
+    // After the pull resolves, re-detect so the model dropdown picks up
+    // the new entry without the user having to hit Refresh.
+    await detectOllama(true);
+  } catch (e) {
+    pullError.value = String(e);
+  } finally {
+    pulling.value = false;
+  }
+}
+
+async function cancelPull(): Promise<void> {
+  if (!pulling.value || !pullRequestId) return;
+  try {
+    await invoke('ollama_cancel_pull', { requestId: pullRequestId });
+  } catch {
+    /* idempotent — surface nothing */
+  }
+}
+
+/** Curated presets first, then any other locally-installed model the user
+ *  pulled themselves (e.g. `llama3.2`). De-duped against the preset list. */
+const ollamaModelOptions = computed(() => {
+  const cfg = currentProviderConfig.value;
+  const presets = cfg?.presets ?? [];
+  const installed = detection.value?.models ?? [];
+  const presetModels = new Set(presets.map((p) => p.model));
+  const others = installed.filter((m) => !presetModels.has(m));
+  return { presets, others };
+});
+
 async function refreshHasKey(p: ProviderId): Promise<void> {
   try {
     const v = await invoke<boolean>('ai_has_key', { provider: p });
@@ -101,11 +243,22 @@ watch(
     keyInput.value = '';
     status.value = null;
     refreshHasKey(p);
+    // Re-probe Ollama on every switch INTO ollama (force = false uses
+    // the 30s cache so back-and-forth flips don't spam localhost).
+    if (p === 'ollama') void detectOllama(false);
   },
 );
 
 onMounted(() => {
   void refreshAll();
+  if (props.provider === 'ollama') void detectOllama(false);
+});
+
+onUnmounted(() => {
+  if (pullUnlisten) {
+    pullUnlisten();
+    pullUnlisten = null;
+  }
 });
 
 async function saveKey(): Promise<void> {
@@ -404,7 +557,143 @@ function onProviderChange(ev: Event): void {
         </div>
       </div>
 
-      <p v-else class="ai-settings__note">{{ t('ai.ollamaNote') }}</p>
+      <!-- Ollama-specific block: detection pill, install / refresh / pull
+           buttons, and a model picker (presets + other-detected). v4.0 P5. -->
+      <div v-else class="ai-settings__ollama">
+        <p class="ai-settings__note">{{ t('ai.ollamaNote') }}</p>
+
+        <div class="ai-settings__ollama-row">
+          <span
+            v-if="!detection || detecting"
+            class="ai-settings__pill"
+          >
+            ◌ {{ t('ai.verifying') }}
+          </span>
+          <span
+            v-else-if="detection.ok && detection.models.length > 0"
+            class="ai-settings__pill ai-settings__pill--ok"
+          >
+            ● {{ t('ai.ollama.detected', { n: detection.models.length }) }}
+          </span>
+          <span
+            v-else-if="detection.ok"
+            class="ai-settings__pill ai-settings__pill--warn"
+          >
+            ● {{ t('ai.ollama.detectedNoModels') }}
+          </span>
+          <span v-else class="ai-settings__pill ai-settings__pill--err">
+            ● {{ t('ai.ollama.notDetected') }}
+          </span>
+
+          <span v-if="detection?.ok && detection.version" class="ai-settings__hint">
+            {{ t('ai.ollama.version', { version: detection.version }) }}
+          </span>
+
+          <button
+            type="button"
+            class="ai-settings__btn"
+            :disabled="detecting"
+            @click="detectOllama(true)"
+          >
+            {{ t('ai.ollama.refresh') }}
+          </button>
+          <button
+            v-if="detection && !detection.ok"
+            type="button"
+            class="ai-settings__btn ai-settings__btn--primary"
+            @click="openInstallPage"
+          >
+            {{ t('ai.ollama.install') }}
+          </button>
+        </div>
+
+        <!-- Pull-recommended CTA when Ollama is up but has zero models. -->
+        <div
+          v-if="detection?.ok && detection.models.length === 0 && !pullDone"
+          class="ai-settings__ollama-row"
+        >
+          <button
+            type="button"
+            class="ai-settings__btn ai-settings__btn--primary"
+            :disabled="pulling"
+            @click="pullRecommended"
+          >
+            {{ pulling
+              ? t('ai.ollama.pulling', { model: OLLAMA_RECOMMENDED_MODEL })
+              : t('ai.ollama.pullRecommended', { model: OLLAMA_RECOMMENDED_MODEL })
+            }}
+          </button>
+          <button
+            v-if="pulling"
+            type="button"
+            class="ai-settings__btn"
+            @click="cancelPull"
+          >
+            {{ t('ai.ollama.cancelPull') }}
+          </button>
+        </div>
+
+        <!-- Pull progress bar + status line. Visible during the pull and
+             for one render after `pullDone` (so the user sees "Pulled —
+             ready" before the model picker block takes over). -->
+        <div v-if="pulling || pullDone || pullError" class="ai-settings__ollama-row ai-settings__pull">
+          <div class="ai-settings__pullbar" :aria-valuenow="pullPct ?? 0">
+            <div
+              class="ai-settings__pullbar-fill"
+              :style="{ width: pullPct != null ? `${(pullPct * 100).toFixed(1)}%` : '6%' }"
+              :class="{ 'ai-settings__pullbar-fill--indeterminate': pullPct == null && pulling }"
+            />
+          </div>
+          <span class="ai-settings__hint">
+            <template v-if="pullError">{{ t('ai.ollama.pullFailed') }}: {{ pullError }}</template>
+            <template v-else-if="pullDone">{{ t('ai.ollama.pulled') }}</template>
+            <template v-else>{{ pullStatus }}</template>
+          </span>
+        </div>
+
+        <!-- Model picker once we have at least one local model. Presets
+             are radio chips (cheap, scannable); "Other:" gives access to
+             everything else the user has pulled. -->
+        <div
+          v-if="detection?.ok && detection.models.length > 0"
+          class="ai-settings__ollama-models"
+        >
+          <span class="ai-settings__label">{{ t('ai.ollama.modelLabel') }}</span>
+          <div class="ai-settings__chips">
+            <label
+              v-for="p in ollamaModelOptions.presets"
+              :key="p.id"
+              class="ai-settings__chip"
+              :class="{
+                'ai-settings__chip--selected': model === p.model,
+                'ai-settings__chip--missing': !detection.models.includes(p.model),
+              }"
+            >
+              <input
+                type="radio"
+                name="ollama-preset"
+                :value="p.model"
+                :checked="model === p.model"
+                @change="emit('update:model', p.model)"
+              />
+              <span>{{ t(p.labelKey) }}</span>
+            </label>
+          </div>
+          <div v-if="ollamaModelOptions.others.length > 0" class="ai-settings__row">
+            <span class="ai-settings__label">{{ t('ai.ollama.otherModel') }}</span>
+            <select
+              class="ai-settings__input"
+              :value="ollamaModelOptions.others.includes(model) ? model : ''"
+              @change="emit('update:model', ($event.target as HTMLSelectElement).value)"
+            >
+              <option value="" disabled>—</option>
+              <option v-for="m in ollamaModelOptions.others" :key="m" :value="m">
+                {{ m }}
+              </option>
+            </select>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- v4.0 pillar 1 — Agent Panel settings. -->
@@ -581,6 +870,10 @@ function onProviderChange(ev: Event): void {
   color: #d97706;
   border-color: rgba(217, 119, 6, 0.4);
 }
+.ai-settings__pill--err {
+  color: #dc2626;
+  border-color: rgba(220, 38, 38, 0.4);
+}
 .ai-settings__msg--ok { color: #16a34a; }
 .ai-settings__msg--err { color: #dc2626; }
 .ai-settings__note {
@@ -682,5 +975,84 @@ function onProviderChange(ev: Event): void {
   padding: 4px 10px;
   font-size: 11px;
   align-self: flex-start;
+}
+
+/* v4.0 P5 — Ollama detect / pull / model-picker block */
+.ai-settings__ollama {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ai-settings__ollama-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.ai-settings__pull {
+  flex-direction: column;
+  align-items: stretch;
+}
+.ai-settings__pullbar {
+  width: 100%;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+.ai-settings__pullbar-fill {
+  height: 100%;
+  background: var(--accent, #6366f1);
+  transition: width 120ms ease-out;
+}
+@keyframes ai-settings-pullbar-indeterminate {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(2000%); }
+}
+.ai-settings__pullbar-fill--indeterminate {
+  width: 6%;
+  animation: ai-settings-pullbar-indeterminate 1.4s ease-in-out infinite;
+}
+.ai-settings__ollama-models {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ai-settings__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.ai-settings__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 11px;
+  cursor: pointer;
+  background: var(--bg);
+  color: var(--text);
+}
+.ai-settings__chip:hover {
+  border-color: var(--accent);
+}
+.ai-settings__chip input {
+  /* Radio is the source of truth for a11y; visually we use the chip
+     border + background to indicate selection. */
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+.ai-settings__chip--selected {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent, #6366f1) 12%, var(--bg));
+}
+.ai-settings__chip--missing {
+  /* Preset model not yet pulled — still selectable so the user can pick
+     it before pulling, but visually faded. */
+  opacity: 0.55;
 }
 </style>
