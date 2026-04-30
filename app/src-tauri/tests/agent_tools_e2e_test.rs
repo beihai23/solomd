@@ -228,7 +228,7 @@ fn read_agent_trace_parses_stored_steps() {
         ..Default::default()
     })
     .unwrap();
-    h.finish("ok", 0, 0, None).unwrap();
+    h.finish("ok", 0, 0, 0.0, None).unwrap();
 
     let run_id = h.run_id.clone();
     let res: Value =

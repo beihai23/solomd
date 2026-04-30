@@ -39,6 +39,9 @@ pub mod watcher;
 // panel runner and the recipe runner attach to it.
 pub mod agent_run;
 pub mod agent_tools;
+// v4.0 — provider pricing table for cost estimates written into
+// agent-runs/<id>/meta.json.cost_usd_estimate.
+pub mod pricing;
 // v4.0 Pillar 3 — canonical agent trace emitter + reader. agent_run's
 // append_trace will adopt trace::Emitter in a follow-up; for now they
 // coexist (agent_run writes the run-dir scaffolding + trace lines, trace
