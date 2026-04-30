@@ -4862,6 +4862,7 @@ dependencies = [
  "tauri-plugin-opener",
  "tauri-plugin-window-state",
  "tokio",
+ "tracing",
  "walkdir",
  "winreg 0.52.0",
  "zip",

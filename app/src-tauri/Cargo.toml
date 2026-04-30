@@ -113,6 +113,12 @@ argon2 = "0.5"
 chacha20poly1305 = "0.10"
 rand = "0.8"
 
+# v4.0 Pillar 3 — agent trace emitter logs malformed-line skips through
+# `tracing` so they show up in the same diagnostic stream Tauri itself
+# uses. The crate is already in the dependency tree (pulled by tauri /
+# tao); listing it here just unlocks the macros.
+tracing = "0.1"
+
 # Platform-specific deps for "Set as default editor" feature.
 [target.'cfg(target_os = "macos")'.dependencies]
 core-foundation = "0.10"
