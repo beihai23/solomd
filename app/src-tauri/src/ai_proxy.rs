@@ -34,6 +34,7 @@ use tauri::{AppHandle, Emitter};
 // mod ai_proxy` in runner.rs). Both put our siblings one scope up.
 use super::agent_run::{RunHandle, RunKind, TraceStep};
 use super::agent_tools;
+use super::pricing;
 
 // ---------------------------------------------------------------------------
 // Provider aliases
@@ -502,7 +503,12 @@ pub async fn ai_chat(app: AppHandle, request: ChatRequest) -> Result<String, Str
     let id_for_task = request_id.clone();
     let app_clone = app.clone();
     tauri::async_runtime::spawn(async move {
-        let result = match format.as_str() {
+        // Each provider runner now returns `(full_text, tokens_in_total,
+        // tokens_out_total)` so the panel can persist real numbers into
+        // meta.json + the run_ended trace step. The cost is computed
+        // here with the shared pricing table — provider+model aware,
+        // 0 for unknown pairs.
+        let result: Result<(String, u64, u64), String> = match format.as_str() {
             "openai" => {
                 run_chat_openai_loop(
                     &app_clone,
@@ -532,10 +538,16 @@ pub async fn ai_chat(app: AppHandle, request: ChatRequest) -> Result<String, Str
         };
 
         match &result {
-            Ok(full_text) => {
+            Ok((full_text, tokens_in, tokens_out)) => {
+                let cost = pricing::estimate_cost_usd(
+                    &request.provider,
+                    &request.model,
+                    *tokens_in,
+                    *tokens_out,
+                );
                 if let Some(rh) = &run_handle {
                     let _ = rh.append_run_md(&format!("## Assistant\n\n{}\n\n", full_text));
-                    let _ = rh.finish("ok", 0, 0, None);
+                    let _ = rh.finish("ok", *tokens_in, *tokens_out, cost, None);
                 }
                 let _ = app_clone.emit(
                     "solomd://ai-done",
@@ -548,7 +560,12 @@ pub async fn ai_chat(app: AppHandle, request: ChatRequest) -> Result<String, Str
             Err(err) => {
                 if let Some(rh) = &run_handle {
                     let status = if err == "cancelled" { "cancelled" } else { "error" };
-                    let _ = rh.finish(status, 0, 0, Some(err.clone()));
+                    // We don't have per-turn totals on the error path —
+                    // the runner returned early. Persist 0/0 + 0 cost and
+                    // let the user see the "error" status; partial token
+                    // counts can be read from any model_done lines in the
+                    // trace.jsonl if needed.
+                    let _ = rh.finish(status, 0, 0, 0.0, Some(err.clone()));
                 }
                 let _ = app_clone.emit(
                     "solomd://ai-error",
@@ -1069,6 +1086,11 @@ async fn run_chat_anthropic(
                         }
                     }
                     "message_stop" => {
+                        // This legacy single-turn path is the rewrite
+                        // overlay's Anthropic runner — usage capture not
+                        // wired (rewrite UI doesn't surface a cost
+                        // footer); the v4.0 panel goes through
+                        // run_chat_anthropic_loop above.
                         return Ok(full);
                     }
                     "error" => {
@@ -1173,7 +1195,7 @@ async fn run_chat_ollama(
     request_id: &str,
     req: &ChatRequest,
     cancel: Arc<AtomicBool>,
-) -> Result<String, String> {
+) -> Result<(String, u64, u64), String> {
     let base = req
         .base_url
         .as_ref()
@@ -1211,6 +1233,12 @@ async fn run_chat_ollama(
 
     let mut full = String::new();
     let mut buf = String::new();
+    // Ollama's final `done: true` chunk carries `prompt_eval_count` (input
+    // tokens consumed by the prompt + system) and `eval_count` (output
+    // tokens generated). Cost lookup is 0 for ollama anyway, but we still
+    // surface the counts for the trace footer + Recent Runs list.
+    let mut tokens_in: u64 = 0;
+    let mut tokens_out: u64 = 0;
     let mut stream = resp.bytes_stream();
     while let Some(chunk) = stream.next().await {
         if cancel.load(Ordering::SeqCst) {
@@ -1238,15 +1266,29 @@ async fn run_chat_ollama(
                     emit_chunk(app, request_id, content);
                 }
             }
+            // `prompt_eval_count` / `eval_count` are typically only present
+            // on the final `done: true` chunk, but read them every chunk
+            // and keep the latest non-zero values just in case a build
+            // backports them earlier.
+            if let Some(n) = json.get("prompt_eval_count").and_then(|v| v.as_u64()) {
+                if n > tokens_in {
+                    tokens_in = n;
+                }
+            }
+            if let Some(n) = json.get("eval_count").and_then(|v| v.as_u64()) {
+                if n > tokens_out {
+                    tokens_out = n;
+                }
+            }
             if json.get("done").and_then(|b| b.as_bool()).unwrap_or(false) {
-                return Ok(full);
+                return Ok((full, tokens_in, tokens_out));
             }
             if let Some(err) = json.get("error").and_then(|s| s.as_str()) {
                 return Err(format!("ollama: {err}"));
             }
         }
     }
-    Ok(full)
+    Ok((full, tokens_in, tokens_out))
 }
 
 // ---------------------------------------------------------------------------
@@ -1270,6 +1312,12 @@ struct TurnOutcome {
     /// layer 400s on the next request without it). Keyed by tool_call_id;
     /// only populated by the OpenAI-format streaming parser.
     tool_extras: std::collections::HashMap<String, Value>,
+    /// Usage extracted from this turn's stream end. Sum across loop
+    /// iterations to get the run-level totals. Stays at 0 when the
+    /// provider didn't emit a `usage` block (some self-hosted
+    /// OpenAI-compat servers and older models skip it).
+    tokens_in: u64,
+    tokens_out: u64,
 }
 
 /// Build the Anthropic-flavored `tools: [...]` array from the requested
@@ -1351,9 +1399,13 @@ async fn run_chat_anthropic_loop(
     api_key: &str,
     cancel: Arc<AtomicBool>,
     run_handle: Option<Arc<RunHandle>>,
-) -> Result<String, String> {
+) -> Result<(String, u64, u64), String> {
     let cap = req.tool_loop_cap.unwrap_or(8).max(1).min(20);
     let workspace = workspace_from_req(req);
+    // Accumulate run-level token totals across each turn. Anthropic
+    // resets `usage` per request, so summing per-turn is the right move.
+    let mut tokens_in_total: u64 = 0;
+    let mut tokens_out_total: u64 = 0;
 
     // Anthropic uses a separate `system` field. Pull system messages out.
     let system_str = req
@@ -1418,6 +1470,10 @@ async fn run_chat_anthropic_loop(
             cancel.clone(),
         )
         .await?;
+        // Sum per-turn usage into the run-level totals. Anthropic returns
+        // fresh numbers each turn (not cumulative) so plain addition works.
+        tokens_in_total = tokens_in_total.saturating_add(outcome.tokens_in);
+        tokens_out_total = tokens_out_total.saturating_add(outcome.tokens_out);
         if let Some(rh) = &run_handle {
             let _ = rh.append_trace(TraceStep {
                 kind: "model_done".to_string(),
@@ -1425,6 +1481,8 @@ async fn run_chat_anthropic_loop(
                 model: Some(req.model.clone()),
                 text: Some(outcome.text.clone()),
                 finish_reason: Some(outcome.finish_reason.clone()),
+                tokens_in: Some(outcome.tokens_in),
+                tokens_out: Some(outcome.tokens_out),
                 ..Default::default()
             });
         }
@@ -1432,13 +1490,13 @@ async fn run_chat_anthropic_loop(
 
         // No tool_use blocks → done.
         if outcome.tool_uses.is_empty() {
-            return Ok(last_text);
+            return Ok((last_text, tokens_in_total, tokens_out_total));
         }
 
         // Hit cap on the *previous* iteration check — safe since cap >= 1.
         if iter + 1 >= cap {
             // Treat as final turn even though the model wanted to call a tool.
-            return Ok(last_text);
+            return Ok((last_text, tokens_in_total, tokens_out_total));
         }
 
         // Append the assistant message verbatim (text + tool_use blocks).
@@ -1539,7 +1597,7 @@ async fn run_chat_anthropic_loop(
     }
 
     // Loop exited via cap. last_text is the final assistant text we got.
-    Ok(last_text)
+    Ok((last_text, tokens_in_total, tokens_out_total))
 }
 
 async fn anthropic_one_turn(
@@ -1603,6 +1661,14 @@ async fn anthropic_one_turn(
     }
     let mut blocks: BTreeMap<u64, Block> = BTreeMap::new();
     let mut stop_reason = String::new();
+    // Anthropic splits usage across two events:
+    //   - `message_start` carries `usage.input_tokens` (and any cache_*
+    //     fields). Output_tokens here is "1" as a placeholder.
+    //   - `message_delta` near the end carries the final `usage.output_tokens`.
+    // We capture both. cache_read_input_tokens is folded into tokens_in if
+    // present (the user paid for it on the route either way).
+    let mut tokens_in: u64 = 0;
+    let mut tokens_out: u64 = 0;
 
     let mut buf = String::new();
     let mut stream = resp.bytes_stream();
@@ -1633,6 +1699,35 @@ async fn anthropic_one_turn(
                 };
                 let kind = json.get("type").and_then(|t| t.as_str()).unwrap_or("");
                 match kind {
+                    "message_start" => {
+                        // `message_start` payload shape:
+                        //   { "type": "message_start",
+                        //     "message": { ..., "usage": { "input_tokens": N,
+                        //                                  "cache_read_input_tokens": K,
+                        //                                  "cache_creation_input_tokens": C,
+                        //                                  "output_tokens": 1 } } }
+                        if let Some(usage) = json.pointer("/message/usage") {
+                            let inp = usage
+                                .get("input_tokens")
+                                .and_then(|v| v.as_u64())
+                                .unwrap_or(0);
+                            let cache_read = usage
+                                .get("cache_read_input_tokens")
+                                .and_then(|v| v.as_u64())
+                                .unwrap_or(0);
+                            let cache_create = usage
+                                .get("cache_creation_input_tokens")
+                                .and_then(|v| v.as_u64())
+                                .unwrap_or(0);
+                            // Anthropic bills cache_creation_input_tokens at
+                            // a premium and cache_read_input_tokens at a
+                            // discount, but the user's pricing table is
+                            // per-token regardless — sum everything into
+                            // tokens_in so downstream cost math doesn't
+                            // under-count cached prefixes.
+                            tokens_in = inp.saturating_add(cache_read).saturating_add(cache_create);
+                        }
+                    }
                     "content_block_start" => {
                         let i = json.get("index").and_then(|v| v.as_u64()).unwrap_or(0);
                         let block_v = json.get("content_block").cloned().unwrap_or(Value::Null);
@@ -1681,11 +1776,23 @@ async fn anthropic_one_turn(
                                 stop_reason = reason.to_string();
                             }
                         }
+                        // `message_delta` is where Anthropic finalises
+                        // output_tokens (sibling of `delta`, not nested
+                        // inside it).
+                        if let Some(usage) = json.get("usage") {
+                            if let Some(n) = usage.get("output_tokens").and_then(|v| v.as_u64()) {
+                                if n > tokens_out {
+                                    tokens_out = n;
+                                }
+                            }
+                        }
                     }
                     "message_stop" => {
                         // Drain into TurnOutcome below.
                         let mut outcome = TurnOutcome::default();
                         outcome.finish_reason = stop_reason.clone();
+                        outcome.tokens_in = tokens_in;
+                        outcome.tokens_out = tokens_out;
                         for (_, b) in blocks {
                             match b.kind.as_str() {
                                 "text" => outcome.text.push_str(&b.text),
@@ -1720,6 +1827,8 @@ async fn anthropic_one_turn(
     // Stream ended without a `message_stop` — flush whatever we got.
     let mut outcome = TurnOutcome::default();
     outcome.finish_reason = stop_reason;
+    outcome.tokens_in = tokens_in;
+    outcome.tokens_out = tokens_out;
     for (_, b) in blocks {
         match b.kind.as_str() {
             "text" => outcome.text.push_str(&b.text),
@@ -1747,9 +1856,13 @@ async fn run_chat_openai_loop(
     api_key: &str,
     cancel: Arc<AtomicBool>,
     run_handle: Option<Arc<RunHandle>>,
-) -> Result<String, String> {
+) -> Result<(String, u64, u64), String> {
     let cap = req.tool_loop_cap.unwrap_or(8).max(1).min(20);
     let workspace = workspace_from_req(req);
+    // Run-level token totals — OpenAI Chat Completions resets `usage`
+    // per request, so a per-turn sum is the right accounting.
+    let mut tokens_in_total: u64 = 0;
+    let mut tokens_out_total: u64 = 0;
 
     // OpenAI Chat Completions wants `messages` as flat objects with optional
     // `tool_calls` / `tool_call_id`. Build the initial array preserving any
@@ -1798,6 +1911,10 @@ async fn run_chat_openai_loop(
             cancel.clone(),
         )
         .await?;
+        // Sum per-turn usage; OpenAI-compat servers reset the counters
+        // every request so a plain add is correct.
+        tokens_in_total = tokens_in_total.saturating_add(outcome.tokens_in);
+        tokens_out_total = tokens_out_total.saturating_add(outcome.tokens_out);
         if let Some(rh) = &run_handle {
             let _ = rh.append_trace(TraceStep {
                 kind: "model_done".to_string(),
@@ -1805,16 +1922,18 @@ async fn run_chat_openai_loop(
                 model: Some(req.model.clone()),
                 text: Some(outcome.text.clone()),
                 finish_reason: Some(outcome.finish_reason.clone()),
+                tokens_in: Some(outcome.tokens_in),
+                tokens_out: Some(outcome.tokens_out),
                 ..Default::default()
             });
         }
         last_text = outcome.text.clone();
 
         if outcome.tool_uses.is_empty() {
-            return Ok(last_text);
+            return Ok((last_text, tokens_in_total, tokens_out_total));
         }
         if iter + 1 >= cap {
-            return Ok(last_text);
+            return Ok((last_text, tokens_in_total, tokens_out_total));
         }
 
         // Append assistant message with tool_calls. content may be empty.
@@ -1928,7 +2047,7 @@ async fn run_chat_openai_loop(
         }
     }
 
-    Ok(last_text)
+    Ok((last_text, tokens_in_total, tokens_out_total))
 }
 
 async fn openai_one_turn(
@@ -1952,6 +2071,12 @@ async fn openai_one_turn(
         "model": req.model,
         "stream": true,
         "messages": history,
+        // OpenAI-compat servers only emit the final `usage` block when the
+        // client opts in via `stream_options.include_usage`. The Chat
+        // Completions API has accepted this since mid-2024; older self-
+        // hosted forks ignore it harmlessly. Without this, Gemini /
+        // DeepSeek / etc. silently drop usage and we book $0 for the run.
+        "stream_options": {"include_usage": true},
     });
     if tools.as_array().map(|a| !a.is_empty()).unwrap_or(false) {
         body["tools"] = tools.clone();
@@ -1990,6 +2115,14 @@ async fn openai_one_turn(
     let mut text = String::new();
     let mut tools_acc: BTreeMap<u64, ToolAccum> = BTreeMap::new();
     let mut finish_reason = String::new();
+    // Most providers send `usage` as a separate top-level field on the
+    // last data chunk (the one with empty choices, or a sibling of the
+    // `[DONE]` chunk). DeepSeek attaches it to the last choice's chunk
+    // instead. Capture both shapes and prefer the larger numbers when
+    // they conflict — the totals are monotonic-non-decreasing across the
+    // stream so this stays robust.
+    let mut tokens_in: u64 = 0;
+    let mut tokens_out: u64 = 0;
 
     let mut buf = String::new();
     let mut stream = resp.bytes_stream();
@@ -2018,6 +2151,8 @@ async fn openai_one_turn(
                     let mut outcome = TurnOutcome::default();
                     outcome.text = text;
                     outcome.finish_reason = finish_reason;
+                    outcome.tokens_in = tokens_in;
+                    outcome.tokens_out = tokens_out;
                     for (_, t) in tools_acc {
                         let args: Value = if t.arguments.trim().is_empty() {
                             Value::Object(Default::default())
@@ -2038,6 +2173,22 @@ async fn openai_one_turn(
                     Ok(v) => v,
                     Err(_) => continue,
                 };
+                // `usage` is emitted on the last chunk before [DONE] when
+                // include_usage is set. Some providers (DeepSeek) put it on
+                // the same chunk as the last delta, so we read it on every
+                // payload and keep the latest non-zero numbers.
+                if let Some(usage) = json.get("usage") {
+                    if let Some(n) = usage.get("prompt_tokens").and_then(|v| v.as_u64()) {
+                        if n > tokens_in {
+                            tokens_in = n;
+                        }
+                    }
+                    if let Some(n) = usage.get("completion_tokens").and_then(|v| v.as_u64()) {
+                        if n > tokens_out {
+                            tokens_out = n;
+                        }
+                    }
+                }
                 let choice = json.get("choices").and_then(|c| c.get(0));
                 if let Some(c) = choice {
                     if let Some(reason) = c.get("finish_reason").and_then(|s| s.as_str()) {
@@ -2092,6 +2243,8 @@ async fn openai_one_turn(
     let mut outcome = TurnOutcome::default();
     outcome.text = text;
     outcome.finish_reason = finish_reason;
+    outcome.tokens_in = tokens_in;
+    outcome.tokens_out = tokens_out;
     for (_, t) in tools_acc {
         let args: Value = if t.arguments.trim().is_empty() {
             Value::Object(Default::default())

@@ -63,6 +63,9 @@ mod watcher;
 mod agent_run;
 #[path = "agent_tools.rs"]
 mod agent_tools;
+// v4.0 — provider pricing table for cost estimates.
+#[path = "pricing.rs"]
+mod pricing;
 // v4.0 Pillar 3 — canonical trace emitter + reader + Tauri wrappers.
 #[path = "trace.rs"]
 mod trace;

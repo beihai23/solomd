@@ -372,20 +372,26 @@ impl RunHandle {
     }
 
     /// Close the run: drop file handles, write `run_ended` trace step, and
-    /// rewrite `meta.json` with final status + token totals + (optional) error.
+    /// rewrite `meta.json` with final status + token totals + cost estimate
+    /// + (optional) error. `cost_usd` is computed by the caller via
+    /// `pricing::estimate_cost_usd` (provider+model aware) — we just persist
+    /// whatever number is passed in. Pass `0.0` if you don't have one.
     pub fn finish(
         &self,
         status: &str,
         tokens_in: u64,
         tokens_out: u64,
+        cost_usd: f64,
         error: Option<String>,
     ) -> Result<(), String> {
-        // Final trace line.
+        // Final trace line. Mirrors the totals into trace.jsonl so the
+        // replay UI doesn't need meta.json to render the cost footer.
         let _ = self.append_trace(TraceStep {
             kind: "run_ended".to_string(),
             status: Some(status.to_string()),
             tokens_in_total: Some(tokens_in),
             tokens_out_total: Some(tokens_out),
+            cost_usd_estimate: Some(cost_usd),
             error: error.clone(),
             ..Default::default()
         });
@@ -416,6 +422,14 @@ impl RunHandle {
                 "tokens".to_string(),
                 json!({"input": tokens_in, "output": tokens_out}),
             );
+            // Write the cost estimate, even when zero — keeps the schema
+            // stable so downstream readers don't have to special-case
+            // "missing" vs "free".
+            if let Some(num) = serde_json::Number::from_f64(cost_usd) {
+                map.insert("cost_usd_estimate".to_string(), Value::Number(num));
+            } else {
+                map.insert("cost_usd_estimate".to_string(), Value::from(0.0_f64.to_string()));
+            }
             if let Some(e) = error {
                 map.insert("error".to_string(), Value::String(e));
             }
@@ -491,13 +505,14 @@ mod tests {
         .unwrap();
         h.append_run_md("## User\n\nhi\n").unwrap();
 
-        h.finish("ok", 5, 7, None).unwrap();
+        h.finish("ok", 5, 7, 0.0123, None).unwrap();
 
         let meta_raw = fs::read_to_string(h.dir.join("meta.json")).unwrap();
         let meta: Value = serde_json::from_str(&meta_raw).unwrap();
         assert_eq!(meta["status"], "ok");
         assert_eq!(meta["tokens"]["input"], 5);
         assert_eq!(meta["tokens"]["output"], 7);
+        assert!((meta["cost_usd_estimate"].as_f64().unwrap() - 0.0123).abs() < 1e-9);
 
         // trace.jsonl should have run_started + prompt + run_ended.
         let trace_raw = fs::read_to_string(h.dir.join("trace.jsonl")).unwrap();
@@ -510,6 +525,48 @@ mod tests {
         assert_eq!(last["status"], "ok");
 
         // Cleanup.
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn finish_persists_tokens_and_cost_into_meta_and_trace() {
+        // Mirrors the v4-tokens fix: build a run, call finish() with non-zero
+        // numbers, assert meta.json + trace.jsonl carry them through.
+        let tmp = std::env::temp_dir().join(format!("solomd-test-tokens-{}", mint_run_id()));
+        fs::create_dir_all(&tmp).unwrap();
+        let h = RunHandle::start(&tmp, RunKind::Panel, "openai", "gpt-4o", None).unwrap();
+
+        // Caller-side numbers — what the streaming parser would have summed
+        // across turns + the pricing module computed for the cost.
+        let t_in: u64 = 1234;
+        let t_out: u64 = 5678;
+        let cost: f64 = 0.0625;
+        h.finish("ok", t_in, t_out, cost, None).unwrap();
+
+        // meta.json should reflect both the totals AND the cost.
+        let meta: Value =
+            serde_json::from_str(&fs::read_to_string(h.dir.join("meta.json")).unwrap()).unwrap();
+        assert_eq!(meta["status"], "ok");
+        assert_eq!(meta["tokens"]["input"].as_u64().unwrap(), t_in);
+        assert_eq!(meta["tokens"]["output"].as_u64().unwrap(), t_out);
+        assert!(
+            (meta["cost_usd_estimate"].as_f64().unwrap() - cost).abs() < 1e-9,
+            "cost: {}",
+            meta["cost_usd_estimate"]
+        );
+
+        // The `run_ended` line in trace.jsonl should carry the same totals
+        // (this is the contract the TraceView footer reads).
+        let raw = fs::read_to_string(h.dir.join("trace.jsonl")).unwrap();
+        let last = raw
+            .lines()
+            .filter_map(|l| serde_json::from_str::<Value>(l).ok())
+            .rfind(|v| v["kind"] == "run_ended")
+            .expect("run_ended trace line");
+        assert_eq!(last["tokens_in_total"].as_u64().unwrap(), t_in);
+        assert_eq!(last["tokens_out_total"].as_u64().unwrap(), t_out);
+        assert!((last["cost_usd_estimate"].as_f64().unwrap() - cost).abs() < 1e-9);
+
         let _ = fs::remove_dir_all(&tmp);
     }
 
@@ -527,7 +584,7 @@ mod tests {
             ..Default::default()
         })
         .unwrap();
-        h.finish("ok", 0, 0, None).unwrap();
+        h.finish("ok", 0, 0, 0.0, None).unwrap();
 
         let raw = fs::read_to_string(h.dir.join("trace.jsonl")).unwrap();
         let lines: Vec<&str> = raw.lines().collect();
