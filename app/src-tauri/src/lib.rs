@@ -28,6 +28,12 @@ pub mod crypto;
 // edit / split modes pop a reload-vs-keep dialog.
 pub mod watcher;
 
+// v4.0 Pillar 3 — agent trace emitter (canonical) + reader.
+// P1's panel runner and P2's recipe runner both adopt this module on merge.
+pub mod trace;
+// v4.0 Pillar 3 — Tauri command wrappers for the trace module.
+pub mod agent_trace;
+
 // v2.3 dev WebDriver bridge — debug builds only.
 #[cfg(debug_assertions)]
 pub mod dev_bridge;
@@ -139,6 +145,9 @@ pub fn run() {
             crypto::crypto_decrypt_after_pull,
             watcher::watch_file,
             watcher::unwatch_file,
+            agent_trace::agent_trace_read,
+            agent_trace::agent_trace_list,
+            agent_trace::agent_trace_replay_from,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
