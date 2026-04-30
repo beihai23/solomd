@@ -35,6 +35,15 @@ pub mod watcher;
 // chat). Recipes (P2) and trace replay (P3) build on top of these modules.
 pub mod agent_run;
 pub mod agent_tools;
+// v4.0 Pillar 3 — canonical agent trace emitter + reader. agent_run's
+// append_trace will adopt trace::Emitter in a follow-up; for now they
+// coexist (agent_run writes the run-dir scaffolding + trace lines, trace
+// owns the canonical reader and the typed Emitter API used by P3's
+// MCP/Vue surfaces and P2's recipe runner).
+pub mod trace;
+// v4.0 Pillar 3 — Tauri command wrappers for the trace module
+// (agent_trace_read / agent_trace_list / agent_trace_replay_from).
+pub mod agent_trace;
 
 // v2.3 dev WebDriver bridge — debug builds only.
 #[cfg(debug_assertions)]
@@ -164,6 +173,9 @@ pub fn run() {
             agent_tools::agent_tool_append_to_note,
             agent_tools::agent_tool_read_agent_trace,
             agent_tools::agent_list_runs,
+            agent_trace::agent_trace_read,
+            agent_trace::agent_trace_list,
+            agent_trace::agent_trace_replay_from,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
