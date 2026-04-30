@@ -28,6 +28,11 @@ pub mod crypto;
 // edit / split modes pop a reload-vs-keep dialog.
 pub mod watcher;
 
+// v4.0 pillar 1: in-process agent tool registry + run persistence (panel
+// chat). Recipes (P2) and trace replay (P3) build on top of these modules.
+pub mod agent_run;
+pub mod agent_tools;
+
 // v2.3 dev WebDriver bridge — debug builds only.
 #[cfg(debug_assertions)]
 pub mod dev_bridge;
@@ -140,6 +145,18 @@ pub fn run() {
             crypto::crypto_decrypt_after_pull,
             watcher::watch_file,
             watcher::unwatch_file,
+            agent_tools::agent_tool_list_notes,
+            agent_tools::agent_tool_read_note,
+            agent_tools::agent_tool_search,
+            agent_tools::agent_tool_get_backlinks,
+            agent_tools::agent_tool_list_tags,
+            agent_tools::agent_tool_get_outline,
+            agent_tools::agent_tool_autogit_log,
+            agent_tools::agent_tool_autogit_diff,
+            agent_tools::agent_tool_write_note,
+            agent_tools::agent_tool_append_to_note,
+            agent_tools::agent_tool_read_agent_trace,
+            agent_tools::agent_list_runs,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
