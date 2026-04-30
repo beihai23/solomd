@@ -374,6 +374,14 @@ fn read_key(provider: &str) -> Result<String, String> {
         })
 }
 
+/// Public counterpart of `read_key`. The recipe runner (and any future
+/// outside-of-`ai_chat` caller that wants to drive `run_chat_*_loop`) needs
+/// this to fetch the per-provider key the same way the streaming
+/// entrypoint does. No new logic — just reuses the keychain entry helper.
+pub fn get_api_key(provider: &str) -> Result<String, String> {
+    read_key(provider)
+}
+
 // ---------------------------------------------------------------------------
 // Cancellation
 // ---------------------------------------------------------------------------
@@ -1190,7 +1198,7 @@ async fn run_ollama(
     Ok(full)
 }
 
-async fn run_chat_ollama(
+pub async fn run_chat_ollama(
     app: &AppHandle,
     request_id: &str,
     req: &ChatRequest,
@@ -1392,7 +1400,7 @@ fn json_preview(v: &Value) -> String {
 
 // ---- Anthropic tool-call loop --------------------------------------------
 
-async fn run_chat_anthropic_loop(
+pub async fn run_chat_anthropic_loop(
     app: &AppHandle,
     request_id: &str,
     req: &ChatRequest,
@@ -1849,7 +1857,7 @@ async fn anthropic_one_turn(
 
 // ---- OpenAI tool-call loop -----------------------------------------------
 
-async fn run_chat_openai_loop(
+pub async fn run_chat_openai_loop(
     app: &AppHandle,
     request_id: &str,
     req: &ChatRequest,
