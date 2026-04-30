@@ -16,7 +16,14 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { PROVIDERS, providerById, type ProviderId } from '../lib/ai-providers';
+import { useSettingsStore } from '../stores/settings';
+import { useWorkspaceStore } from '../stores/workspace';
+import { useTabsStore } from '../stores/tabs';
 import { useI18n } from '../i18n';
+
+const settingsStore = useSettingsStore();
+const workspaceStore = useWorkspaceStore();
+const tabsStore = useTabsStore();
 
 const { t } = useI18n();
 
@@ -162,6 +169,88 @@ async function verifyExisting(): Promise<void> {
     saving.value = false;
   }
 }
+
+// ---------------------------------------------------------------------------
+// v4.0 — Agent settings: allow-write toggle, tool_loop_cap, recent runs.
+// ---------------------------------------------------------------------------
+
+interface AgentRunMeta {
+  run_id: string;
+  kind: 'panel' | 'recipe';
+  started_at: number;
+  ended_at: number | null;
+  status: string;
+  workspace?: string;
+  provider?: string;
+  model?: string;
+  recipe?: { name: string } | null;
+  _dir?: string;
+  _run_md?: string;
+}
+
+const recentRuns = ref<AgentRunMeta[]>([]);
+const runsLoading = ref(false);
+
+async function refreshRuns(): Promise<void> {
+  const ws = workspaceStore.currentFolder;
+  if (!ws) {
+    recentRuns.value = [];
+    return;
+  }
+  runsLoading.value = true;
+  try {
+    recentRuns.value = await invoke<AgentRunMeta[]>('agent_list_runs', {
+      workspace: ws,
+    });
+  } catch (e) {
+    console.warn('failed to load agent runs', e);
+    recentRuns.value = [];
+  } finally {
+    runsLoading.value = false;
+  }
+}
+
+watch(
+  () => workspaceStore.currentFolder,
+  () => void refreshRuns(),
+);
+
+function fmtRunStartedAt(secs: number): string {
+  if (!secs) return '?';
+  try {
+    const d = new Date(secs * 1000);
+    return d.toLocaleString();
+  } catch {
+    return String(secs);
+  }
+}
+
+async function openRunMd(run: AgentRunMeta): Promise<void> {
+  if (!run._run_md) return;
+  // Open the run.md as a file tab. Mirror the openPath flow used by
+  // QuickSwitcher / FileTree — read_file + tabs.openFromDisk.
+  try {
+    const result = await invoke<{
+      content: string;
+      encoding: string;
+      language: string;
+      had_bom: boolean;
+    }>('read_file', { path: run._run_md });
+    tabsStore.openFromDisk({
+      filePath: run._run_md,
+      content: result.content,
+      encoding: result.encoding,
+      language: 'markdown',
+      hadBom: result.had_bom,
+    });
+  } catch (e) {
+    console.error('failed to open run.md', e);
+  }
+}
+
+onMounted(() => {
+  void refreshRuns();
+});
 
 async function clearKey(): Promise<void> {
   saving.value = true;
@@ -317,6 +406,68 @@ function onProviderChange(ev: Event): void {
 
       <p v-else class="ai-settings__note">{{ t('ai.ollamaNote') }}</p>
     </div>
+
+    <!-- v4.0 pillar 1 — Agent Panel settings. -->
+    <h3 class="ai-settings__heading ai-settings__heading--sub">{{ t('agentSettings.heading') }}</h3>
+    <div class="ai-settings__group">
+      <label class="ai-settings__row ai-settings__row--toggle">
+        <input
+          type="checkbox"
+          :checked="settingsStore.agentAllowWrite"
+          @change="settingsStore.toggleAgentAllowWrite()"
+        />
+        <span>
+          <span class="ai-settings__label">{{ t('agentSettings.allowWrite') }}</span>
+          <span class="ai-settings__hint">{{ t('agentSettings.allowWriteHint') }}</span>
+        </span>
+      </label>
+
+      <div class="ai-settings__row">
+        <label class="ai-settings__label" for="agent-loop-cap">{{ t('agentSettings.loopCap') }}</label>
+        <input
+          id="agent-loop-cap"
+          type="number"
+          min="1"
+          max="20"
+          step="1"
+          :value="settingsStore.agentToolLoopCap"
+          class="ai-settings__input ai-settings__input--narrow"
+          @change="settingsStore.setAgentToolLoopCap(Number(($event.target as HTMLInputElement).value))"
+        />
+        <span class="ai-settings__hint">{{ t('agentSettings.loopCapHint') }}</span>
+      </div>
+
+      <div class="ai-settings__row ai-settings__row--block">
+        <span class="ai-settings__label">{{ t('agentSettings.recentRuns') }}</span>
+        <div class="ai-settings__runs">
+          <p v-if="!workspaceStore.currentFolder" class="ai-settings__hint">
+            {{ t('agentSettings.noWorkspace') }}
+          </p>
+          <p v-else-if="runsLoading" class="ai-settings__hint">{{ t('agentSettings.loading') }}</p>
+          <p v-else-if="!recentRuns.length" class="ai-settings__hint">
+            {{ t('agentSettings.noRuns') }}
+          </p>
+          <ul v-else class="ai-settings__runs-list">
+            <li v-for="r in recentRuns" :key="r.run_id" class="ai-settings__run">
+              <button class="ai-settings__run-link" type="button" @click="openRunMd(r)">
+                <code class="ai-settings__run-id">{{ r.run_id }}</code>
+              </button>
+              <span class="ai-settings__run-meta">
+                <span :class="['ai-settings__run-pill', `ai-settings__run-pill--${r.status}`]">{{ r.status }}</span>
+                <span class="ai-settings__run-kind">{{ r.kind }}</span>
+                <span class="ai-settings__run-time">{{ fmtRunStartedAt(r.started_at) }}</span>
+              </span>
+            </li>
+          </ul>
+          <button
+            v-if="workspaceStore.currentFolder"
+            type="button"
+            class="ai-settings__btn ai-settings__btn--small"
+            @click="refreshRuns"
+          >{{ t('agentSettings.refresh') }}</button>
+        </div>
+      </div>
+    </div>
   </section>
 </template>
 
@@ -436,5 +587,100 @@ function onProviderChange(ev: Event): void {
   font-size: 11px;
   color: var(--text-muted);
   margin: 4px 0 0;
+}
+.ai-settings__heading--sub {
+  margin-top: 14px;
+}
+.ai-settings__row--block {
+  align-items: flex-start;
+}
+.ai-settings__input--narrow {
+  flex: 0 0 80px;
+  max-width: 80px;
+}
+.ai-settings__runs {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ai-settings__runs-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 240px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+}
+.ai-settings__run {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--border);
+}
+.ai-settings__run:last-child {
+  border-bottom: none;
+}
+.ai-settings__run-link {
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin: 0;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.ai-settings__run-link:hover code {
+  text-decoration: underline;
+}
+.ai-settings__run-id {
+  font-family: "JetBrains Mono", Menlo, Consolas, monospace;
+  font-size: 11px;
+  color: var(--accent, #6366f1);
+}
+.ai-settings__run-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.ai-settings__run-pill {
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: var(--bg-soft);
+  color: var(--text-muted);
+}
+.ai-settings__run-pill--ok {
+  color: #16a34a;
+  background: rgba(22, 163, 74, 0.12);
+}
+.ai-settings__run-pill--running {
+  color: #d97706;
+  background: rgba(217, 119, 6, 0.12);
+}
+.ai-settings__run-pill--error,
+.ai-settings__run-pill--cancelled,
+.ai-settings__run-pill--rejected {
+  color: #dc2626;
+  background: rgba(220, 38, 38, 0.12);
+}
+.ai-settings__run-kind {
+  font-style: italic;
+}
+.ai-settings__btn--small {
+  padding: 4px 10px;
+  font-size: 11px;
+  align-self: flex-start;
 }
 </style>

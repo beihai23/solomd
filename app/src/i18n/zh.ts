@@ -800,6 +800,21 @@ export const zh: I18n = {
     dateBefore: '之前（含）',
   },
 
+  // v4.0 pillar 1: Agent settings (under AI settings) — TODO(zh) bulk translation post-merge
+  agentSettings: {
+    heading: 'Agent (chat tools + write access)',
+    allowWrite: 'Allow agent to write to vault',
+    allowWriteHint:
+      'Off by default. When on, the agent can call write_note / append_to_note from chat. Read-only tools (list, read, search, backlinks, tags, outline, autogit log/diff) work either way.',
+    loopCap: 'Tool loop cap',
+    loopCapHint: 'Max LLM ↔ tool round-trips per chat turn (1–20). Default 8.',
+    recentRuns: 'Recent runs',
+    noWorkspace: 'Open a folder to see this workspace\'s agent runs.',
+    loading: 'Loading…',
+    noRuns: 'No agent runs yet for this workspace.',
+    refresh: 'Refresh',
+  },
+
   // v4.0 pillar 1: Inline Agent Panel
   agent: {
     heading: '智能体',
