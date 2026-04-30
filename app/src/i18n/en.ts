@@ -364,6 +364,40 @@ export const en = {
     },
     mcpWriteNote:
       'write_note + append_to_note are off by default. Pass --allow-write to opt in.',
+    // ---- v4.0 P4 federation: MCP profiles -----------------------------
+    profilesHeading: 'MCP profiles',
+    profilesIntro:
+      'Bundle multiple workspaces under a single solomd-mcp instance, then copy a ready-to-paste Claude Desktop config block. Each profile lists the workspaces (alias + path) the MCP server will expose; the first entry is the default — tool calls without an explicit `workspace` argument fall through to it.',
+    profilesEmpty: 'No profiles yet.',
+    profilesCreate: 'New profile',
+    profilesDuplicate: 'Duplicate',
+    profilesDelete: 'Delete',
+    profilesRename: 'Rename',
+    profilesNameLabel: 'Profile name',
+    profilesAllowWrite: 'Allow write (passes --allow-write)',
+    profilesAllowWriteHint:
+      'Off by default. Turn on only if you want the MCP client to modify notes.',
+    profilesEntriesHeading: 'Workspaces (first one is the default)',
+    profilesAddEntry: 'Add workspace',
+    profilesRemoveEntry: 'Remove',
+    profilesMoveUp: 'Move up',
+    profilesMoveDown: 'Move down',
+    profilesAliasLabel: 'Alias',
+    profilesAliasPlaceholder: 'e.g. work',
+    profilesPathLabel: 'Path',
+    profilesPathPlaceholder: '/Users/me/Documents/Notes',
+    profilesPickPath: 'Browse…',
+    profilesUseCurrentWorkspace: 'Use currently open folder',
+    profilesSave: 'Save',
+    profilesSaved: 'Profile saved.',
+    profilesDeleteConfirm: 'Delete profile "{name}"?',
+    profilesCopyConfigBtn: 'Copy Claude Desktop config',
+    profilesCopiedToast: 'Claude Desktop config copied to clipboard.',
+    profilesValidationFailed: 'Cannot save: {msg}',
+    profilesNamePlaceholder: 'work-and-home',
+    profilesNewProfileDefault: 'New profile',
+    profilesNoMcpBinary:
+      'solomd-mcp not bundled in this dev build — the snippet uses a placeholder path.',
   },
   // v4.0 Pillar 2 — Agent Recipes (Settings → Integrations panel).
   // TODO(zh): translate these once the en strings stabilise.
