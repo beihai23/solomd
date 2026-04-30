@@ -17,6 +17,8 @@ import { useTabsStore } from '../stores/tabs';
 import { useWorkspaceIndexStore } from '../stores/workspaceIndex';
 import { useAgentPanelStore } from '../stores/agentPanel';
 import { providerById, type ProviderId } from '../lib/ai-providers';
+import { parseWithWikilinks, chipLabel } from '../lib/wikilinks';
+import { useFiles } from '../composables/useFiles';
 import { useI18n } from '../i18n';
 
 const emit = defineEmits<{
@@ -28,6 +30,7 @@ const settings = useSettingsStore();
 const tabs = useTabsStore();
 const workspaceIndex = useWorkspaceIndexStore();
 const agent = useAgentPanelStore();
+const files = useFiles();
 const { t } = useI18n();
 
 const draft = ref('');
@@ -172,6 +175,13 @@ async function send() {
         model,
         messages,
         base_url: baseUrl,
+        // v4.0 — let the model decide which tools to call. The Rust side
+        // passes `null` ⇒ all read-only tools by default; write tools
+        // need explicit `allow_write: true`.
+        tools: null,
+        allow_write: settings.agentAllowWrite,
+        tool_loop_cap: settings.agentToolLoopCap,
+        workspace: workspace.currentFolder,
       },
     });
     agent.currentRunId = requestId;
@@ -216,6 +226,9 @@ function onKeydown(e: KeyboardEvent) {
 let unlistenChunk: UnlistenFn | null = null;
 let unlistenDone: UnlistenFn | null = null;
 let unlistenError: UnlistenFn | null = null;
+let unlistenToolCall: UnlistenFn | null = null;
+let unlistenToolResult: UnlistenFn | null = null;
+let unlistenRunStarted: UnlistenFn | null = null;
 
 onMounted(async () => {
   unlistenChunk = await listen<{ request_id: string; chunk: string }>(
@@ -230,6 +243,13 @@ onMounted(async () => {
     'solomd://ai-done',
     (e) => {
       if (!agent.currentRunId || e.payload.request_id !== agent.currentRunId) return;
+      // Drop any trailing empty assistant bubble (happens when the final
+      // turn was just text we already streamed but the loop appended an
+      // extra placeholder for a tool result that never came).
+      const last = agent.messages[agent.messages.length - 1];
+      if (last && last.role === 'assistant' && last.content === '') {
+        agent.messages.pop();
+      }
       agent.isStreaming = false;
       agent.currentRunId = null;
     },
@@ -245,14 +265,121 @@ onMounted(async () => {
       }
     },
   );
+
+  // v4.0 — tool-call events. Insert a `tool` placeholder card on call,
+  // fill the result when it lands.
+  unlistenToolCall = await listen<{
+    request_id: string;
+    run_id: string;
+    tool_call_id: string;
+    tool: string;
+    args: Record<string, unknown>;
+  }>('solomd://ai-tool-call', (e) => {
+    if (!agent.currentRunId || e.payload.request_id !== agent.currentRunId) return;
+    agent.insertToolCall({
+      toolCallId: e.payload.tool_call_id,
+      name: e.payload.tool,
+      args: e.payload.args,
+      runId: e.payload.run_id,
+    });
+    autoscroll();
+  });
+  unlistenToolResult = await listen<{
+    request_id: string;
+    run_id: string;
+    tool_call_id: string;
+    result: unknown;
+    error?: string;
+  }>('solomd://ai-tool-result', (e) => {
+    if (!agent.currentRunId || e.payload.request_id !== agent.currentRunId) return;
+    let resultStr: string;
+    try {
+      resultStr =
+        typeof e.payload.result === 'string'
+          ? e.payload.result
+          : JSON.stringify(e.payload.result, null, 2);
+    } catch {
+      resultStr = String(e.payload.result);
+    }
+    agent.completeToolCall({
+      toolCallId: e.payload.tool_call_id,
+      result: resultStr,
+      error: e.payload.error,
+    });
+    autoscroll();
+  });
+  unlistenRunStarted = await listen<{ request_id: string; run_id: string }>(
+    'solomd://ai-run-started',
+    (e) => {
+      if (!agent.currentRunId || e.payload.request_id !== agent.currentRunId) return;
+      agent.currentPersistRunId = e.payload.run_id;
+    },
+  );
 });
 
 onBeforeUnmount(() => {
   unlistenChunk?.();
   unlistenDone?.();
   unlistenError?.();
+  unlistenToolCall?.();
+  unlistenToolResult?.();
+  unlistenRunStarted?.();
   unlistenChunk = unlistenDone = unlistenError = null;
+  unlistenToolCall = unlistenToolResult = unlistenRunStarted = null;
 });
+
+// --- Wikilink handling --------------------------------------------------
+function renderRuns(text: string) {
+  return parseWithWikilinks(text);
+}
+
+async function openWikilink(target: string, heading?: string) {
+  // Resolve via the workspace index (Rust-backed). The store's `resolve()`
+  // does stem → title → substring fallback so partial matches still open.
+  if (!target) return;
+  const path = await workspaceIndex.resolve(target);
+  if (!path) {
+    errorMsg.value = `Could not resolve [[${target}]] in this workspace`;
+    return;
+  }
+  await files.openPath(path, { bypassNewWindow: true });
+  // Heading anchors are captured but not jumped to yet — `Editor.vue`
+  // doesn't expose a scroll-to-heading API. Reserved for follow-up.
+  void heading;
+}
+
+function chip(link: { target: string; heading?: string; alias?: string }) {
+  return chipLabel(link as any);
+}
+
+/**
+ * Compact one-line summary of an args object for the collapsed card head.
+ * Strings are rendered with quotes; longer values are abbreviated.
+ */
+function formatArgsInline(args: Record<string, unknown>): string {
+  if (!args || typeof args !== 'object') return '';
+  const parts: string[] = [];
+  for (const [k, v] of Object.entries(args)) {
+    let repr: string;
+    if (typeof v === 'string') {
+      const trimmed = v.length > 60 ? v.slice(0, 57) + '…' : v;
+      repr = JSON.stringify(trimmed);
+    } else if (typeof v === 'number' || typeof v === 'boolean' || v === null) {
+      repr = String(v);
+    } else {
+      try {
+        const s = JSON.stringify(v);
+        repr = s.length > 40 ? s.slice(0, 37) + '…' : s;
+      } catch {
+        repr = '…';
+      }
+    }
+    parts.push(`${k}: ${repr}`);
+  }
+  let line = parts.join(', ');
+  if (line.length > 96) line = line.slice(0, 93) + '…';
+  return line;
+}
 
 // Reset transient error when the panel falls out of `ready` state.
 watch(stateKey, (k) => {
@@ -307,15 +434,61 @@ watch(stateKey, (k) => {
           class="agent-panel__msg"
           :class="`agent-panel__msg--${m.role}`"
         >
-          <div class="agent-panel__msg-role">{{ m.role }}</div>
-          <div class="agent-panel__msg-body">
-            <span>{{ m.content }}</span>
-            <span
-              v-if="m.role === 'assistant' && agent.isStreaming && i === agent.messages.length - 1"
-              class="agent-panel__cursor"
-              aria-hidden="true"
-            >▌</span>
-          </div>
+          <!-- Tool-call card: collapsed by default. Click to expand args + result. -->
+          <template v-if="m.role === 'tool' && m.tool">
+            <button
+              class="agent-panel__tool-head"
+              :class="{ 'agent-panel__tool-head--err': !!m.tool.error, 'agent-panel__tool-head--pending': !m.tool.result && !m.tool.error }"
+              type="button"
+              @click="agent.toggleToolExpand(m.tool.toolCallId)"
+            >
+              <span class="agent-panel__tool-icon" aria-hidden="true">
+                <span v-if="!m.tool.result && !m.tool.error" class="agent-panel__tool-spinner" />
+                <template v-else-if="m.tool.error">⚠</template>
+                <template v-else>🔧</template>
+              </span>
+              <code class="agent-panel__tool-sig">{{ m.tool.name }}({{ formatArgsInline(m.tool.args) }})</code>
+              <span class="agent-panel__tool-caret">{{ m.tool.expanded ? '▾' : '▸' }}</span>
+            </button>
+            <div v-if="m.tool.expanded" class="agent-panel__tool-body">
+              <div class="agent-panel__tool-section">
+                <div class="agent-panel__tool-label">args</div>
+                <pre class="agent-panel__tool-pre">{{ JSON.stringify(m.tool.args, null, 2) }}</pre>
+              </div>
+              <div class="agent-panel__tool-section">
+                <div class="agent-panel__tool-label">{{ m.tool.error ? 'error' : 'result' }}</div>
+                <pre
+                  class="agent-panel__tool-pre"
+                  :class="{ 'agent-panel__tool-pre--err': !!m.tool.error }"
+                >{{ m.tool.error || m.tool.result || '(waiting…)' }}</pre>
+              </div>
+            </div>
+          </template>
+
+          <!-- User / assistant / system text. Assistant text gets wikilink chips. -->
+          <template v-else>
+            <div class="agent-panel__msg-role">{{ m.role }}</div>
+            <div class="agent-panel__msg-body">
+              <template v-if="m.role === 'assistant'">
+                <template v-for="(run, ri) in renderRuns(m.content)" :key="ri">
+                  <button
+                    v-if="run.type === 'wikilink'"
+                    class="agent-panel__wiki"
+                    type="button"
+                    :title="run.heading ? `${run.target}#${run.heading}` : run.target"
+                    @click="openWikilink(run.target, run.heading)"
+                  >{{ chip(run) }}</button>
+                  <span v-else>{{ run.value }}</span>
+                </template>
+              </template>
+              <span v-else>{{ m.content }}</span>
+              <span
+                v-if="m.role === 'assistant' && agent.isStreaming && i === agent.messages.length - 1"
+                class="agent-panel__cursor"
+                aria-hidden="true"
+              >▌</span>
+            </div>
+          </template>
         </li>
       </ul>
       <div v-else class="agent-panel__empty">
@@ -569,6 +742,133 @@ watch(stateKey, (k) => {
 @keyframes agent-panel-blink {
   to { visibility: hidden; }
 }
+/* --- Tool-call cards (v4.0) ------------------------------------------ */
+.agent-panel__msg--tool {
+  background: var(--bg-soft);
+  padding: 6px 10px;
+}
+.agent-panel__tool-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+.agent-panel__tool-head:hover {
+  background: var(--bg-elev);
+}
+.agent-panel__tool-head--err {
+  border-color: rgba(220, 38, 38, 0.4);
+  color: #dc2626;
+}
+.agent-panel__tool-head--pending {
+  border-style: dashed;
+  color: var(--text-muted);
+}
+.agent-panel__tool-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  font-size: 12px;
+}
+.agent-panel__tool-spinner {
+  width: 10px;
+  height: 10px;
+  border: 1.5px solid var(--text-muted);
+  border-top-color: var(--accent, #ff9f40);
+  border-radius: 50%;
+  animation: agent-panel-spin 0.8s linear infinite;
+}
+@keyframes agent-panel-spin {
+  to { transform: rotate(360deg); }
+}
+.agent-panel__tool-sig {
+  flex: 1;
+  font-family: "JetBrains Mono", Menlo, Consolas, monospace;
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.agent-panel__tool-caret {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+.agent-panel__tool-body {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.agent-panel__tool-section {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.agent-panel__tool-label {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+.agent-panel__tool-pre {
+  margin: 0;
+  padding: 6px 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-family: "JetBrains Mono", Menlo, Consolas, monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 240px;
+  overflow: auto;
+}
+.agent-panel__tool-pre--err {
+  color: #dc2626;
+  border-color: rgba(220, 38, 38, 0.3);
+}
+
+/* --- Wikilink chips ---------------------------------------------------- */
+.agent-panel__wiki {
+  display: inline-flex;
+  align-items: center;
+  background: rgba(99, 102, 241, 0.12);
+  border: 1px solid rgba(99, 102, 241, 0.4);
+  color: var(--accent, #6366f1);
+  border-radius: 4px;
+  padding: 0 6px;
+  margin: 0 2px;
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+  line-height: 1.5;
+  text-decoration: none;
+}
+.agent-panel__wiki:hover {
+  background: rgba(99, 102, 241, 0.22);
+}
+.agent-panel__wiki:before {
+  content: '🔗';
+  margin-right: 3px;
+  font-size: 9px;
+  opacity: 0.7;
+}
+
 .agent-panel__error {
   margin: 0 12px 10px;
   padding: 8px 10px;

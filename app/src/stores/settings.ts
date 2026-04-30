@@ -69,6 +69,12 @@ interface Settings {
   showTagsPanel: boolean;
   // v4.0 pillar 1: Inline Agent Panel — chat-with-vault sidebar.
   showAgentPanel: boolean;
+  // v4.0 pillar 1: when true, the agent can call write_note / append_to_note
+  // from chat. Default off — the agent is read-only by default.
+  agentAllowWrite: boolean;
+  // v4.0 pillar 1: max number of LLM ↔ tool round-trips per chat turn.
+  // Cap protects against a runaway tool loop. C3.2 default is 8.
+  agentToolLoopCap: number;
   // v2.0 F4: BYOK AI rewrite. `aiProvider` is a stable id from
   // ai-providers.ts PROVIDERS — widened to string to avoid breaking when
   // new providers land.
@@ -210,6 +216,8 @@ function defaults(): Settings {
     dailyNotesTemplate: '',
     showTagsPanel: true,
     showAgentPanel: false,
+    agentAllowWrite: false,
+    agentToolLoopCap: 8,
     aiEnabled: false,
     aiProvider: 'openai',
     aiModel: '',
@@ -440,6 +448,15 @@ export const useSettingsStore = defineStore('settings', {
     },
     toggleAgentPanel() {
       this.showAgentPanel = !this.showAgentPanel;
+      this.persist();
+    },
+    toggleAgentAllowWrite() {
+      this.agentAllowWrite = !this.agentAllowWrite;
+      this.persist();
+    },
+    setAgentToolLoopCap(n: number) {
+      const clean = Math.max(1, Math.min(20, Math.round(n) || 8));
+      this.agentToolLoopCap = clean;
       this.persist();
     },
     setDailyNotesFolder(p: string) {
