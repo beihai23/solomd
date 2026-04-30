@@ -14,6 +14,11 @@ import AISettings from './AISettings.vue';
 import CitationPickerSettings from './CitationPickerSettings.vue';
 import CaptureEndpointSettings from './CaptureEndpointSettings.vue';
 import IntegrationsSettings from './IntegrationsSettings.vue';
+// v4.0 Pillar 2 — Agent Recipes panel. Mounted under the existing
+// "Integrations" category so users find Recipes alongside CLI / MCP /
+// AI rewrite — i.e. the cluster of "things SoloMD talks to" rather
+// than a brand-new top-level category.
+import RecipesSettings from './RecipesSettings.vue';
 import GithubSyncSettings from './GithubSyncSettings.vue';
 import CloudFolderBanner from './CloudFolderBanner.vue';
 import ProxySettings from './ProxySettings.vue';
@@ -703,6 +708,9 @@ function onSelectPdfFont(v: string) {
 
         <!-- v2.4: Integrations (CLI + MCP). -->
         <div data-cat="integrations"><IntegrationsSettings /></div>
+
+        <!-- v4.0 Pillar 2: Agent Recipes. -->
+        <div data-cat="integrations"><RecipesSettings /></div>
 
         <section data-cat="writing">
           <label>
