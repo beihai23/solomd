@@ -47,14 +47,21 @@ impl RunKind {
 }
 
 /// Live run handle. Hold one per active run. Cheap to clone (everything
-/// non-Send is behind a `Mutex`).
+/// non-Send is behind a `Mutex`). Several fields are exposed for P2/P3
+/// readers (recipes need `kind` to decide branch-sandbox semantics; the
+/// trace-viewer needs `workspace`/`provider`/`model` for context) — they're
+/// dead at the panel layer alone but become live once those land.
 #[derive(Debug)]
 pub struct RunHandle {
     pub run_id: String,
     pub dir: PathBuf,
+    #[allow(dead_code)]
     pub workspace: PathBuf,
+    #[allow(dead_code)]
     pub kind: RunKind,
+    #[allow(dead_code)]
     pub provider: String,
+    #[allow(dead_code)]
     pub model: String,
     started_at: u64,
     seq: Mutex<u64>,
@@ -193,6 +200,10 @@ pub fn mint_run_id() -> String {
 }
 
 /// Public helper for callers that need a short tool-call id (C2 `tool_call_id`).
+/// (Anthropic + OpenAI both supply their own ids in streaming payloads, so
+/// this is held in reserve for P2/P3 / dev-mcp drivers that originate calls
+/// without a model behind them.)
+#[allow(dead_code)]
 pub fn mint_tool_call_id() -> String {
     let mut buf = [0u8; 4];
     rand::thread_rng().fill_bytes(&mut buf);
@@ -424,7 +435,9 @@ impl RunHandle {
 // ---------------------------------------------------------------------------
 
 /// Render a "Tool: X { args }" block with a (truncated) result preview for
-/// `run.md`. Result is clipped to ~2KB per C1.2 / C2.
+/// `run.md`. Result is clipped to ~2KB per C1.2 / C2. Used by recipe runs
+/// (P2) — panel chat formats the same blocks inline in `run_chat_*_loop`.
+#[allow(dead_code)]
 pub fn fmt_tool_section(tool: &str, args: &Value, result_preview: &str) -> String {
     let args_pretty = serde_json::to_string(args).unwrap_or_else(|_| "{}".to_string());
     let chars: Vec<char> = result_preview.chars().collect();

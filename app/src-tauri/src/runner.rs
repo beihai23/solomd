@@ -58,6 +58,13 @@ mod dev_bridge;
 #[path = "watcher.rs"]
 mod watcher;
 
+// v4.0 pillar 1: in-process agent tool registry + run persistence.
+#[path = "agent_run.rs"]
+mod agent_run;
+
+#[path = "agent_tools.rs"]
+mod agent_tools;
+
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use tauri::menu::{
@@ -483,6 +490,18 @@ pub fn run_with(initial_file: Option<String>) {
             crypto::crypto_decrypt_after_pull,
             watcher::watch_file,
             watcher::unwatch_file,
+            agent_tools::agent_tool_list_notes,
+            agent_tools::agent_tool_read_note,
+            agent_tools::agent_tool_search,
+            agent_tools::agent_tool_get_backlinks,
+            agent_tools::agent_tool_list_tags,
+            agent_tools::agent_tool_get_outline,
+            agent_tools::agent_tool_autogit_log,
+            agent_tools::agent_tool_autogit_diff,
+            agent_tools::agent_tool_write_note,
+            agent_tools::agent_tool_append_to_note,
+            agent_tools::agent_tool_read_agent_trace,
+            agent_tools::agent_list_runs,
         ])
         .on_menu_event(|app_handle, event| {
             // Forward every menu click to the frontend as a single event

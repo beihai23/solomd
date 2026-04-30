@@ -18,6 +18,7 @@
 //! the next iteration and emit `solomd://ai-error` with `"cancelled"`.
 
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -25,7 +26,14 @@ use std::time::Duration;
 use futures_util::StreamExt;
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use tauri::{AppHandle, Emitter};
+
+// Use `super::` paths so this module compiles under both the lib mount
+// (`pub mod ai_proxy` in lib.rs) and the bin mount (`#[path = "ai_proxy.rs"]
+// mod ai_proxy` in runner.rs). Both put our siblings one scope up.
+use super::agent_run::{RunHandle, RunKind, TraceStep};
+use super::agent_tools;
 
 // ---------------------------------------------------------------------------
 // Public request/event types
@@ -64,18 +72,31 @@ pub struct RewriteRequest {
 /// v4.0 pillar 1 — Inline Agent Panel chat message.
 ///
 /// Roles follow the OpenAI chat convention: `system` / `user` / `assistant`.
-/// Tool messages are not yet routed through this struct; tool-call rendering
-/// is handled UI-side until the multi-step agent loop lands in a later
-/// commit on `feat/v4-panel`.
+/// `tool` is added in the v4.0 tool-call loop — the message body for a
+/// `tool` role is the tool result string, paired with `tool_call_id`.
 #[derive(Debug, Clone, Deserialize)]
 pub struct ChatMessage {
     pub role: String,
     pub content: String,
+    /// Set on `tool` role messages — the id of the tool_call this is
+    /// answering. Frontend doesn't have to populate this on user messages;
+    /// the tool-call loop fills it in for results it appends.
+    #[serde(default)]
+    pub tool_call_id: Option<String>,
 }
 
 /// Multi-turn chat request. Same provider/model/base_url plumbing as
 /// `RewriteRequest` but takes a full `messages` array — the caller is
 /// responsible for assembling history + system prompt.
+///
+/// v4.0 fields per C3.2:
+/// - `tools`: which tool names to enable (None = all read-only).
+/// - `allow_write`: gates write_note / append_to_note. Default false.
+/// - `run_id`: existing run id to attach to. If absent, ai_chat mints one.
+/// - `workspace`: absolute path. Required if run_id is absent (so we know
+///   where to write the run dir). Optional if run_id is supplied (the run
+///   dir is already created and we resolve back to its workspace).
+/// - `tool_loop_cap`: max number of tool-use iterations. Default 8.
 #[derive(Debug, Clone, Deserialize)]
 pub struct ChatRequest {
     pub provider: String,
@@ -85,6 +106,16 @@ pub struct ChatRequest {
     pub messages: Vec<ChatMessage>,
     #[serde(default)]
     pub base_url: Option<String>,
+    #[serde(default)]
+    pub tools: Option<Vec<String>>,
+    #[serde(default)]
+    pub allow_write: Option<bool>,
+    #[serde(default)]
+    pub run_id: Option<String>,
+    #[serde(default)]
+    pub workspace: Option<String>,
+    #[serde(default)]
+    pub tool_loop_cap: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -103,6 +134,37 @@ struct DoneEvent {
 struct ErrorEvent {
     request_id: String,
     error: String,
+}
+
+/// v4.0 — emitted before each tool dispatch so the frontend can show a
+/// pending tool-call card. Matches C3.2 step 1.
+#[derive(Debug, Clone, Serialize)]
+struct ToolCallEvent {
+    request_id: String,
+    run_id: String,
+    tool_call_id: String,
+    tool: String,
+    args: Value,
+}
+
+/// v4.0 — emitted after the in-process tool returns. Matches C3.2 step 3.
+#[derive(Debug, Clone, Serialize)]
+struct ToolResultEvent {
+    request_id: String,
+    run_id: String,
+    tool_call_id: String,
+    result: Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<String>,
+}
+
+/// Emitted alongside `solomd://ai-done` — gives the frontend the run_id so
+/// it can stash a "view trace" pointer per assistant message. The legacy
+/// `DoneEvent` keeps shipping for backwards compat with the existing UI.
+#[derive(Debug, Clone, Serialize)]
+struct RunStartedEvent {
+    request_id: String,
+    run_id: String,
 }
 
 // ---------------------------------------------------------------------------
@@ -313,12 +375,26 @@ pub fn ai_cancel(request_id: String) -> Result<(), String> {
 // Streaming entrypoint
 // ---------------------------------------------------------------------------
 
-/// v4.0 pillar 1 — multi-turn chat streaming entrypoint.
+/// v4.0 pillar 1 — multi-turn chat streaming entrypoint with tool-call loop.
 ///
-/// Same wire as `ai_rewrite` (returns a request id; events are emitted on
-/// `solomd://ai-chunk` / `-done` / `-error`), but takes a `messages` array
-/// instead of a system+user+selection triple. Used by the Inline Agent
-/// Panel.
+/// Returns a request id; events are emitted on:
+///   - `solomd://ai-chunk` — streaming text deltas
+///   - `solomd://ai-tool-call` — about to dispatch a tool (C3.2 step 1)
+///   - `solomd://ai-tool-result` — tool returned (C3.2 step 3)
+///   - `solomd://ai-done` — final assistant turn ended cleanly
+///   - `solomd://ai-error` — any failure
+///   - `solomd://ai-run-started` — emitted right after run dir is created;
+///                                 carries the run_id for trace replay UI
+///
+/// Workspace persistence: when `run_id` is absent and `workspace` is
+/// provided, ai_chat mints a new run dir under
+/// `<workspace>/.solomd/agent-runs/<run-id>/` and persists the conversation
+/// + every tool call to `trace.jsonl` + `run.md` per C1 / C2.
+///
+/// Ollama path stays single-turn — we don't wire tools because the open
+/// models we ship don't reliably emit tool_use blocks. Degrades gracefully:
+/// if the user has tools enabled but selects Ollama, the chat just runs
+/// without tool calls.
 #[tauri::command]
 pub async fn ai_chat(app: AppHandle, request: ChatRequest) -> Result<String, String> {
     let request_id = make_request_id();
@@ -341,35 +417,128 @@ pub async fn ai_chat(app: AppHandle, request: ChatRequest) -> Result<String, Str
         }
     };
 
+    // Set up the run handle if a workspace was supplied. We can't fail the
+    // command outright if the dir creation hits a permission error — the
+    // chat should still happen, just without on-disk persistence. In that
+    // case `run_handle` stays None and trace writes silently no-op.
+    let run_handle: Option<Arc<RunHandle>> = match (&request.run_id, &request.workspace) {
+        (Some(_run_id), Some(_ws)) => {
+            // P3 will land "attach to existing run". For v4.0, panel chats
+            // always start a fresh run; this branch is a placeholder.
+            None
+        }
+        (None, Some(ws)) if !ws.is_empty() => {
+            let path = std::path::Path::new(ws);
+            match RunHandle::start(
+                path,
+                RunKind::Panel,
+                &request.provider,
+                &request.model,
+                None,
+            ) {
+                Ok(h) => {
+                    let h = Arc::new(h);
+                    let _ = app.emit(
+                        "solomd://ai-run-started",
+                        RunStartedEvent {
+                            request_id: request_id.clone(),
+                            run_id: h.run_id.clone(),
+                        },
+                    );
+                    Some(h)
+                }
+                Err(_e) => None,
+            }
+        }
+        _ => None,
+    };
+
+    // Persist the user prompt(s) into run.md / trace.jsonl up front so
+    // partial runs are inspectable.
+    if let Some(rh) = &run_handle {
+        for m in &request.messages {
+            if m.role == "system" {
+                let _ = rh.append_trace(TraceStep {
+                    kind: "prompt".to_string(),
+                    role: Some("system".to_string()),
+                    content: Some(m.content.clone()),
+                    ..Default::default()
+                });
+            }
+        }
+        if let Some(last_user) = request
+            .messages
+            .iter()
+            .rev()
+            .find(|m| m.role == "user")
+            .cloned()
+        {
+            let _ = rh.append_trace(TraceStep {
+                kind: "prompt".to_string(),
+                role: Some("user".to_string()),
+                content: Some(last_user.content.clone()),
+                ..Default::default()
+            });
+            let _ = rh.append_run_md(&format!("## User\n\n{}\n\n", last_user.content));
+        }
+    }
+
     let id_for_task = request_id.clone();
+    let app_clone = app.clone();
     tauri::async_runtime::spawn(async move {
         let result = match format.as_str() {
             "openai" => {
-                run_chat_openai(&app, &id_for_task, &request, &api_key, cancel.clone()).await
+                run_chat_openai_loop(
+                    &app_clone,
+                    &id_for_task,
+                    &request,
+                    &api_key,
+                    cancel.clone(),
+                    run_handle.clone(),
+                )
+                .await
             }
             "anthropic" => {
-                run_chat_anthropic(&app, &id_for_task, &request, &api_key, cancel.clone()).await
+                run_chat_anthropic_loop(
+                    &app_clone,
+                    &id_for_task,
+                    &request,
+                    &api_key,
+                    cancel.clone(),
+                    run_handle.clone(),
+                )
+                .await
             }
-            "ollama" => run_chat_ollama(&app, &id_for_task, &request, cancel.clone()).await,
+            "ollama" => {
+                run_chat_ollama(&app_clone, &id_for_task, &request, cancel.clone()).await
+            }
             other => Err(format!("unknown api_format: {other}")),
         };
 
-        match result {
+        match &result {
             Ok(full_text) => {
-                let _ = app.emit(
+                if let Some(rh) = &run_handle {
+                    let _ = rh.append_run_md(&format!("## Assistant\n\n{}\n\n", full_text));
+                    let _ = rh.finish("ok", 0, 0, None);
+                }
+                let _ = app_clone.emit(
                     "solomd://ai-done",
                     DoneEvent {
                         request_id: id_for_task.clone(),
-                        full_text,
+                        full_text: full_text.clone(),
                     },
                 );
             }
             Err(err) => {
-                let _ = app.emit(
+                if let Some(rh) = &run_handle {
+                    let status = if err == "cancelled" { "cancelled" } else { "error" };
+                    let _ = rh.finish(status, 0, 0, Some(err.clone()));
+                }
+                let _ = app_clone.emit(
                     "solomd://ai-error",
                     ErrorEvent {
                         request_id: id_for_task.clone(),
-                        error: err,
+                        error: err.clone(),
                     },
                 );
             }
@@ -575,6 +744,9 @@ async fn run_openai(
     Ok(full)
 }
 
+/// Legacy single-turn OpenAI chat — retained for the off chance that v3.x
+/// callers still hit it. v4.0's panel goes through `run_chat_openai_loop`.
+#[allow(dead_code)]
 async fn run_chat_openai(
     app: &AppHandle,
     request_id: &str,
@@ -774,6 +946,9 @@ async fn run_anthropic(
     Ok(full)
 }
 
+/// Legacy single-turn Anthropic chat — retained for callers still routed
+/// outside the tool-call loop. Panel goes through `run_chat_anthropic_loop`.
+#[allow(dead_code)]
 async fn run_chat_anthropic(
     app: &AppHandle,
     request_id: &str,
@@ -1053,6 +1228,819 @@ async fn run_chat_ollama(
         }
     }
     Ok(full)
+}
+
+// ---------------------------------------------------------------------------
+// v4.0 — tool-call loops (Anthropic + OpenAI)
+// ---------------------------------------------------------------------------
+
+/// Single LLM turn that may emit either text-only or tool_use blocks.
+/// Returned to the loop so it can decide whether to dispatch tools and
+/// re-iterate.
+#[derive(Debug, Default, Clone)]
+struct TurnOutcome {
+    text: String,
+    /// `tool_use` blocks parsed from the stream. Empty when the model
+    /// finished with text-only. Each entry: (tool_call_id, name, args_json).
+    tool_uses: Vec<(String, String, Value)>,
+    /// `stop_reason` (Anthropic) / `finish_reason` (OpenAI) verbatim.
+    finish_reason: String,
+}
+
+/// Build the Anthropic-flavored `tools: [...]` array from the requested
+/// tool list. Strips write-tools when `allow_write` is false.
+fn build_anthropic_tools(req: &ChatRequest) -> Value {
+    let allow_write = req.allow_write.unwrap_or(false);
+    let names: Vec<String> = match &req.tools {
+        Some(v) => v.clone(),
+        None => agent_tools::READ_TOOLS.iter().map(|s| s.to_string()).collect(),
+    };
+    let arr: Vec<Value> = names
+        .iter()
+        .filter(|n| allow_write || !agent_tools::is_write_tool(n))
+        .filter_map(|n| {
+            agent_tools::tool_descriptor(n).map(|(desc, schema)| {
+                serde_json::json!({
+                    "name": n,
+                    "description": desc,
+                    "input_schema": schema,
+                })
+            })
+        })
+        .collect();
+    Value::Array(arr)
+}
+
+/// OpenAI-flavored tool array — wraps the same schema as
+/// `{"type":"function","function":{...}}`.
+fn build_openai_tools(req: &ChatRequest) -> Value {
+    let allow_write = req.allow_write.unwrap_or(false);
+    let names: Vec<String> = match &req.tools {
+        Some(v) => v.clone(),
+        None => agent_tools::READ_TOOLS.iter().map(|s| s.to_string()).collect(),
+    };
+    let arr: Vec<Value> = names
+        .iter()
+        .filter(|n| allow_write || !agent_tools::is_write_tool(n))
+        .filter_map(|n| {
+            agent_tools::tool_descriptor(n).map(|(desc, schema)| {
+                serde_json::json!({
+                    "type": "function",
+                    "function": {
+                        "name": n,
+                        "description": desc,
+                        "parameters": schema,
+                    }
+                })
+            })
+        })
+        .collect();
+    Value::Array(arr)
+}
+
+/// Resolve the workspace path the loop should pass to `dispatch_tool`. We
+/// need it for every tool. If the request didn't carry one, tools that
+/// require workspace access fail loudly — better than silently using $CWD.
+fn workspace_from_req(req: &ChatRequest) -> Option<PathBuf> {
+    req.workspace
+        .as_ref()
+        .filter(|s| !s.is_empty())
+        .map(PathBuf::from)
+}
+
+/// Trim a result Value to a string preview suitable for the trace's
+/// truncated `result` field. Keeps the full JSON in memory only briefly.
+fn json_preview(v: &Value) -> String {
+    match serde_json::to_string(v) {
+        Ok(s) => s,
+        Err(_) => v.to_string(),
+    }
+}
+
+// ---- Anthropic tool-call loop --------------------------------------------
+
+async fn run_chat_anthropic_loop(
+    app: &AppHandle,
+    request_id: &str,
+    req: &ChatRequest,
+    api_key: &str,
+    cancel: Arc<AtomicBool>,
+    run_handle: Option<Arc<RunHandle>>,
+) -> Result<String, String> {
+    let cap = req.tool_loop_cap.unwrap_or(8).max(1).min(20);
+    let workspace = workspace_from_req(req);
+
+    // Anthropic uses a separate `system` field. Pull system messages out.
+    let system_str = req
+        .messages
+        .iter()
+        .filter(|m| m.role == "system")
+        .map(|m| m.content.clone())
+        .collect::<Vec<_>>()
+        .join("\n\n");
+    // Build initial chat history. Each item is a serde_json `Value` so we
+    // can append assistant tool_use blocks + tool_result blocks across turns
+    // without re-typing structs.
+    let mut history: Vec<Value> = req
+        .messages
+        .iter()
+        .filter(|m| m.role != "system")
+        .map(|m| {
+            // Tool messages are special — Anthropic represents them as a
+            // user message with a `tool_result` content block. The frontend
+            // doesn't usually pre-fill these (the loop generates them).
+            if m.role == "tool" {
+                serde_json::json!({
+                    "role": "user",
+                    "content": [{
+                        "type": "tool_result",
+                        "tool_use_id": m.tool_call_id.clone().unwrap_or_default(),
+                        "content": m.content.clone(),
+                    }]
+                })
+            } else {
+                serde_json::json!({"role": m.role, "content": m.content})
+            }
+        })
+        .collect();
+
+    let tools = build_anthropic_tools(req);
+    let tools_n = tools.as_array().map(|a| a.len() as u64).unwrap_or(0);
+    let mut last_text = String::new();
+
+    for iter in 0..cap {
+        if cancel.load(Ordering::SeqCst) {
+            return Err(cancelled());
+        }
+        if let Some(rh) = &run_handle {
+            let _ = rh.append_trace(TraceStep {
+                kind: "model_call".to_string(),
+                provider: Some("anthropic".to_string()),
+                model: Some(req.model.clone()),
+                messages_n: Some(history.len() as u64),
+                tools_n: Some(tools_n),
+                ..Default::default()
+            });
+        }
+        let outcome = anthropic_one_turn(
+            app,
+            request_id,
+            req,
+            api_key,
+            &system_str,
+            &history,
+            &tools,
+            cancel.clone(),
+        )
+        .await?;
+        if let Some(rh) = &run_handle {
+            let _ = rh.append_trace(TraceStep {
+                kind: "model_done".to_string(),
+                provider: Some("anthropic".to_string()),
+                model: Some(req.model.clone()),
+                text: Some(outcome.text.clone()),
+                finish_reason: Some(outcome.finish_reason.clone()),
+                ..Default::default()
+            });
+        }
+        last_text = outcome.text.clone();
+
+        // No tool_use blocks → done.
+        if outcome.tool_uses.is_empty() {
+            return Ok(last_text);
+        }
+
+        // Hit cap on the *previous* iteration check — safe since cap >= 1.
+        if iter + 1 >= cap {
+            // Treat as final turn even though the model wanted to call a tool.
+            return Ok(last_text);
+        }
+
+        // Append the assistant message verbatim (text + tool_use blocks).
+        let mut assistant_blocks: Vec<Value> = Vec::new();
+        if !outcome.text.is_empty() {
+            assistant_blocks.push(serde_json::json!({"type":"text","text": outcome.text}));
+        }
+        for (id, name, args) in &outcome.tool_uses {
+            assistant_blocks.push(serde_json::json!({
+                "type": "tool_use",
+                "id": id,
+                "name": name,
+                "input": args,
+            }));
+        }
+        history.push(serde_json::json!({
+            "role": "assistant",
+            "content": assistant_blocks,
+        }));
+
+        // Dispatch each tool, append a single user message containing all
+        // tool_result blocks (Anthropic's expected pairing).
+        let mut result_blocks: Vec<Value> = Vec::new();
+        for (id, name, args) in outcome.tool_uses.iter() {
+            // Emit tool-call event.
+            let _ = app.emit(
+                "solomd://ai-tool-call",
+                ToolCallEvent {
+                    request_id: request_id.to_string(),
+                    run_id: run_handle
+                        .as_ref()
+                        .map(|h| h.run_id.clone())
+                        .unwrap_or_default(),
+                    tool_call_id: id.clone(),
+                    tool: name.clone(),
+                    args: args.clone(),
+                },
+            );
+            if let Some(rh) = &run_handle {
+                let _ = rh.append_trace(TraceStep {
+                    kind: "tool_call".to_string(),
+                    tool: Some(name.clone()),
+                    args: Some(args.clone()),
+                    tool_call_id: Some(id.clone()),
+                    ..Default::default()
+                });
+                let _ = rh.append_run_md(&format!(
+                    "### Tool: {} {}\n\n",
+                    name,
+                    serde_json::to_string(args).unwrap_or_default()
+                ));
+            }
+
+            let (result_value, error_str) = match &workspace {
+                Some(ws) => match agent_tools::dispatch_tool(app, ws, name, args.clone()).await {
+                    Ok(v) => (v, None),
+                    Err(e) => (Value::String(e.clone()), Some(e)),
+                },
+                None => {
+                    let err = "no workspace provided".to_string();
+                    (Value::String(err.clone()), Some(err))
+                }
+            };
+            let preview = json_preview(&result_value);
+            // Emit tool-result event.
+            let _ = app.emit(
+                "solomd://ai-tool-result",
+                ToolResultEvent {
+                    request_id: request_id.to_string(),
+                    run_id: run_handle
+                        .as_ref()
+                        .map(|h| h.run_id.clone())
+                        .unwrap_or_default(),
+                    tool_call_id: id.clone(),
+                    result: result_value.clone(),
+                    error: error_str.clone(),
+                },
+            );
+            if let Some(rh) = &run_handle {
+                let _ = rh.append_trace(TraceStep {
+                    kind: "tool_result".to_string(),
+                    tool_call_id: Some(id.clone()),
+                    result: Some(preview.clone()),
+                    error: error_str.clone(),
+                    ..Default::default()
+                });
+                let body_preview: String = preview.chars().take(2048).collect();
+                let _ = rh.append_run_md(&format!("```\n{}\n```\n\n", body_preview));
+            }
+            result_blocks.push(serde_json::json!({
+                "type": "tool_result",
+                "tool_use_id": id,
+                "content": preview,
+                "is_error": error_str.is_some(),
+            }));
+        }
+        history.push(serde_json::json!({"role": "user", "content": result_blocks}));
+    }
+
+    // Loop exited via cap. last_text is the final assistant text we got.
+    Ok(last_text)
+}
+
+async fn anthropic_one_turn(
+    app: &AppHandle,
+    request_id: &str,
+    req: &ChatRequest,
+    api_key: &str,
+    system_str: &str,
+    history: &[Value],
+    tools: &Value,
+    cancel: Arc<AtomicBool>,
+) -> Result<TurnOutcome, String> {
+    let base = req
+        .base_url
+        .as_ref()
+        .map(|s| s.trim_end_matches('/').to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "https://api.anthropic.com".to_string());
+    let url = format!("{base}/v1/messages");
+
+    let mut body = serde_json::json!({
+        "model": req.model,
+        "system": system_str,
+        "messages": history,
+        "stream": true,
+        "max_tokens": 4096,
+    });
+    if tools.as_array().map(|a| !a.is_empty()).unwrap_or(false) {
+        body["tools"] = tools.clone();
+    }
+
+    let client = http_client()?;
+    let resp = client
+        .post(&url)
+        .header("x-api-key", api_key)
+        .header("anthropic-version", "2023-06-01")
+        .header("content-type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("anthropic request failed: {e}"))?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let txt = resp.text().await.unwrap_or_default();
+        return Err(format!("anthropic {status}: {txt}"));
+    }
+
+    // Block accumulators keyed by `index` from `content_block_start`.
+    // Anthropic streams: content_block_start (type=text|tool_use) →
+    //   content_block_delta (text_delta or input_json_delta) →
+    //   content_block_stop. Final message_delta gives `stop_reason`.
+    use std::collections::BTreeMap;
+    #[derive(Default)]
+    struct Block {
+        kind: String,         // "text" or "tool_use"
+        text: String,
+        tool_id: String,
+        tool_name: String,
+        partial_json: String, // accumulator for tool_use input_json_delta
+    }
+    let mut blocks: BTreeMap<u64, Block> = BTreeMap::new();
+    let mut stop_reason = String::new();
+
+    let mut buf = String::new();
+    let mut stream = resp.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        if cancel.load(Ordering::SeqCst) {
+            return Err(cancelled());
+        }
+        let bytes = chunk.map_err(|e| format!("anthropic stream error: {e}"))?;
+        buf.push_str(&String::from_utf8_lossy(&bytes));
+        while let Some(idx) = find_event_boundary(&buf) {
+            let event = buf[..idx].to_string();
+            let after = if buf[idx..].starts_with("\r\n\r\n") {
+                idx + 4
+            } else {
+                idx + 2
+            };
+            buf = buf[after..].to_string();
+
+            for line in event.lines() {
+                let line = line.trim_start();
+                let payload = match line.strip_prefix("data:") {
+                    Some(p) => p.trim(),
+                    None => continue,
+                };
+                let json: Value = match serde_json::from_str(payload) {
+                    Ok(v) => v,
+                    Err(_) => continue,
+                };
+                let kind = json.get("type").and_then(|t| t.as_str()).unwrap_or("");
+                match kind {
+                    "content_block_start" => {
+                        let i = json.get("index").and_then(|v| v.as_u64()).unwrap_or(0);
+                        let block_v = json.get("content_block").cloned().unwrap_or(Value::Null);
+                        let btype = block_v.get("type").and_then(|t| t.as_str()).unwrap_or("");
+                        let mut b = Block::default();
+                        b.kind = btype.to_string();
+                        if btype == "tool_use" {
+                            b.tool_id = block_v
+                                .get("id")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            b.tool_name = block_v
+                                .get("name")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                        }
+                        blocks.insert(i, b);
+                    }
+                    "content_block_delta" => {
+                        let i = json.get("index").and_then(|v| v.as_u64()).unwrap_or(0);
+                        let delta = json.get("delta").cloned().unwrap_or(Value::Null);
+                        let dtype = delta.get("type").and_then(|t| t.as_str()).unwrap_or("");
+                        let entry = blocks.entry(i).or_insert_with(Block::default);
+                        if dtype == "text_delta" {
+                            if let Some(t) =
+                                delta.get("text").and_then(|s| s.as_str())
+                            {
+                                if !t.is_empty() {
+                                    entry.text.push_str(t);
+                                    emit_chunk(app, request_id, t);
+                                }
+                            }
+                        } else if dtype == "input_json_delta" {
+                            if let Some(p) =
+                                delta.get("partial_json").and_then(|s| s.as_str())
+                            {
+                                entry.partial_json.push_str(p);
+                            }
+                        }
+                    }
+                    "message_delta" => {
+                        if let Some(d) = json.get("delta") {
+                            if let Some(reason) = d.get("stop_reason").and_then(|s| s.as_str()) {
+                                stop_reason = reason.to_string();
+                            }
+                        }
+                    }
+                    "message_stop" => {
+                        // Drain into TurnOutcome below.
+                        let mut outcome = TurnOutcome::default();
+                        outcome.finish_reason = stop_reason.clone();
+                        for (_, b) in blocks {
+                            match b.kind.as_str() {
+                                "text" => outcome.text.push_str(&b.text),
+                                "tool_use" => {
+                                    let args: Value = if b.partial_json.trim().is_empty() {
+                                        Value::Object(Default::default())
+                                    } else {
+                                        serde_json::from_str(&b.partial_json)
+                                            .unwrap_or(Value::String(b.partial_json.clone()))
+                                    };
+                                    outcome.tool_uses.push((b.tool_id, b.tool_name, args));
+                                }
+                                _ => {}
+                            }
+                        }
+                        return Ok(outcome);
+                    }
+                    "error" => {
+                        let msg = json
+                            .get("error")
+                            .and_then(|e| e.get("message"))
+                            .and_then(|s| s.as_str())
+                            .unwrap_or("anthropic stream error");
+                        return Err(msg.to_string());
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    // Stream ended without a `message_stop` — flush whatever we got.
+    let mut outcome = TurnOutcome::default();
+    outcome.finish_reason = stop_reason;
+    for (_, b) in blocks {
+        match b.kind.as_str() {
+            "text" => outcome.text.push_str(&b.text),
+            "tool_use" => {
+                let args: Value = if b.partial_json.trim().is_empty() {
+                    Value::Object(Default::default())
+                } else {
+                    serde_json::from_str(&b.partial_json)
+                        .unwrap_or(Value::String(b.partial_json.clone()))
+                };
+                outcome.tool_uses.push((b.tool_id, b.tool_name, args));
+            }
+            _ => {}
+        }
+    }
+    Ok(outcome)
+}
+
+// ---- OpenAI tool-call loop -----------------------------------------------
+
+async fn run_chat_openai_loop(
+    app: &AppHandle,
+    request_id: &str,
+    req: &ChatRequest,
+    api_key: &str,
+    cancel: Arc<AtomicBool>,
+    run_handle: Option<Arc<RunHandle>>,
+) -> Result<String, String> {
+    let cap = req.tool_loop_cap.unwrap_or(8).max(1).min(20);
+    let workspace = workspace_from_req(req);
+
+    // OpenAI Chat Completions wants `messages` as flat objects with optional
+    // `tool_calls` / `tool_call_id`. Build the initial array preserving any
+    // tool messages from the frontend.
+    let mut history: Vec<Value> = req
+        .messages
+        .iter()
+        .map(|m| {
+            if m.role == "tool" {
+                serde_json::json!({
+                    "role": "tool",
+                    "content": m.content.clone(),
+                    "tool_call_id": m.tool_call_id.clone().unwrap_or_default(),
+                })
+            } else {
+                serde_json::json!({"role": m.role, "content": m.content})
+            }
+        })
+        .collect();
+
+    let tools = build_openai_tools(req);
+    let tools_n = tools.as_array().map(|a| a.len() as u64).unwrap_or(0);
+    let mut last_text = String::new();
+
+    for iter in 0..cap {
+        if cancel.load(Ordering::SeqCst) {
+            return Err(cancelled());
+        }
+        if let Some(rh) = &run_handle {
+            let _ = rh.append_trace(TraceStep {
+                kind: "model_call".to_string(),
+                provider: Some("openai".to_string()),
+                model: Some(req.model.clone()),
+                messages_n: Some(history.len() as u64),
+                tools_n: Some(tools_n),
+                ..Default::default()
+            });
+        }
+        let outcome = openai_one_turn(
+            app,
+            request_id,
+            req,
+            api_key,
+            &history,
+            &tools,
+            cancel.clone(),
+        )
+        .await?;
+        if let Some(rh) = &run_handle {
+            let _ = rh.append_trace(TraceStep {
+                kind: "model_done".to_string(),
+                provider: Some("openai".to_string()),
+                model: Some(req.model.clone()),
+                text: Some(outcome.text.clone()),
+                finish_reason: Some(outcome.finish_reason.clone()),
+                ..Default::default()
+            });
+        }
+        last_text = outcome.text.clone();
+
+        if outcome.tool_uses.is_empty() {
+            return Ok(last_text);
+        }
+        if iter + 1 >= cap {
+            return Ok(last_text);
+        }
+
+        // Append assistant message with tool_calls. content may be empty.
+        let tool_calls_v: Vec<Value> = outcome
+            .tool_uses
+            .iter()
+            .map(|(id, name, args)| {
+                serde_json::json!({
+                    "id": id,
+                    "type": "function",
+                    "function": {
+                        "name": name,
+                        "arguments": serde_json::to_string(args).unwrap_or_else(|_| "{}".to_string()),
+                    }
+                })
+            })
+            .collect();
+        let mut assistant_msg = serde_json::json!({
+            "role": "assistant",
+            "tool_calls": tool_calls_v,
+        });
+        if !outcome.text.is_empty() {
+            assistant_msg["content"] = Value::String(outcome.text.clone());
+        }
+        history.push(assistant_msg);
+
+        // Dispatch each tool, append one `tool` role message per call.
+        for (id, name, args) in outcome.tool_uses.iter() {
+            let _ = app.emit(
+                "solomd://ai-tool-call",
+                ToolCallEvent {
+                    request_id: request_id.to_string(),
+                    run_id: run_handle
+                        .as_ref()
+                        .map(|h| h.run_id.clone())
+                        .unwrap_or_default(),
+                    tool_call_id: id.clone(),
+                    tool: name.clone(),
+                    args: args.clone(),
+                },
+            );
+            if let Some(rh) = &run_handle {
+                let _ = rh.append_trace(TraceStep {
+                    kind: "tool_call".to_string(),
+                    tool: Some(name.clone()),
+                    args: Some(args.clone()),
+                    tool_call_id: Some(id.clone()),
+                    ..Default::default()
+                });
+                let _ = rh.append_run_md(&format!(
+                    "### Tool: {} {}\n\n",
+                    name,
+                    serde_json::to_string(args).unwrap_or_default()
+                ));
+            }
+
+            let (result_value, error_str) = match &workspace {
+                Some(ws) => match agent_tools::dispatch_tool(app, ws, name, args.clone()).await {
+                    Ok(v) => (v, None),
+                    Err(e) => (Value::String(e.clone()), Some(e)),
+                },
+                None => {
+                    let err = "no workspace provided".to_string();
+                    (Value::String(err.clone()), Some(err))
+                }
+            };
+            let preview = json_preview(&result_value);
+            let _ = app.emit(
+                "solomd://ai-tool-result",
+                ToolResultEvent {
+                    request_id: request_id.to_string(),
+                    run_id: run_handle
+                        .as_ref()
+                        .map(|h| h.run_id.clone())
+                        .unwrap_or_default(),
+                    tool_call_id: id.clone(),
+                    result: result_value.clone(),
+                    error: error_str.clone(),
+                },
+            );
+            if let Some(rh) = &run_handle {
+                let _ = rh.append_trace(TraceStep {
+                    kind: "tool_result".to_string(),
+                    tool_call_id: Some(id.clone()),
+                    result: Some(preview.clone()),
+                    error: error_str.clone(),
+                    ..Default::default()
+                });
+                let body_preview: String = preview.chars().take(2048).collect();
+                let _ = rh.append_run_md(&format!("```\n{}\n```\n\n", body_preview));
+            }
+            history.push(serde_json::json!({
+                "role": "tool",
+                "tool_call_id": id,
+                "content": preview,
+            }));
+        }
+    }
+
+    Ok(last_text)
+}
+
+async fn openai_one_turn(
+    app: &AppHandle,
+    request_id: &str,
+    req: &ChatRequest,
+    api_key: &str,
+    history: &[Value],
+    tools: &Value,
+    cancel: Arc<AtomicBool>,
+) -> Result<TurnOutcome, String> {
+    let base = req
+        .base_url
+        .as_ref()
+        .map(|s| s.trim_end_matches('/').to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "https://api.openai.com/v1".to_string());
+    let url = format!("{base}/chat/completions");
+
+    let mut body = serde_json::json!({
+        "model": req.model,
+        "stream": true,
+        "messages": history,
+    });
+    if tools.as_array().map(|a| !a.is_empty()).unwrap_or(false) {
+        body["tools"] = tools.clone();
+    }
+
+    let client = http_client()?;
+    let resp = client
+        .post(&url)
+        .bearer_auth(api_key)
+        .header("content-type", "application/json")
+        .json(&body)
+        .send()
+        .await
+        .map_err(|e| format!("openai request failed: {e}"))?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let txt = resp.text().await.unwrap_or_default();
+        return Err(format!("openai {status}: {txt}"));
+    }
+
+    // Streamed tool_calls come back as deltas keyed by `index`; we
+    // accumulate per-index id/name + a string buffer for `arguments`.
+    use std::collections::BTreeMap;
+    #[derive(Default)]
+    struct ToolAccum {
+        id: String,
+        name: String,
+        arguments: String,
+    }
+    let mut text = String::new();
+    let mut tools_acc: BTreeMap<u64, ToolAccum> = BTreeMap::new();
+    let mut finish_reason = String::new();
+
+    let mut buf = String::new();
+    let mut stream = resp.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        if cancel.load(Ordering::SeqCst) {
+            return Err(cancelled());
+        }
+        let bytes = chunk.map_err(|e| format!("openai stream error: {e}"))?;
+        buf.push_str(&String::from_utf8_lossy(&bytes));
+        while let Some(idx) = find_event_boundary(&buf) {
+            let event = buf[..idx].to_string();
+            let after = if buf[idx..].starts_with("\r\n\r\n") {
+                idx + 4
+            } else {
+                idx + 2
+            };
+            buf = buf[after..].to_string();
+
+            for line in event.lines() {
+                let line = line.trim_start();
+                let payload = match line.strip_prefix("data:") {
+                    Some(p) => p.trim(),
+                    None => continue,
+                };
+                if payload == "[DONE]" {
+                    let mut outcome = TurnOutcome::default();
+                    outcome.text = text;
+                    outcome.finish_reason = finish_reason;
+                    for (_, t) in tools_acc {
+                        let args: Value = if t.arguments.trim().is_empty() {
+                            Value::Object(Default::default())
+                        } else {
+                            serde_json::from_str(&t.arguments)
+                                .unwrap_or(Value::String(t.arguments.clone()))
+                        };
+                        outcome.tool_uses.push((t.id, t.name, args));
+                    }
+                    return Ok(outcome);
+                }
+                let json: Value = match serde_json::from_str(payload) {
+                    Ok(v) => v,
+                    Err(_) => continue,
+                };
+                let choice = json.get("choices").and_then(|c| c.get(0));
+                if let Some(c) = choice {
+                    if let Some(reason) = c.get("finish_reason").and_then(|s| s.as_str()) {
+                        if !reason.is_empty() {
+                            finish_reason = reason.to_string();
+                        }
+                    }
+                    let delta = c.get("delta").cloned().unwrap_or(Value::Null);
+                    if let Some(content) = delta.get("content").and_then(|s| s.as_str()) {
+                        if !content.is_empty() {
+                            text.push_str(content);
+                            emit_chunk(app, request_id, content);
+                        }
+                    }
+                    if let Some(tcs) = delta.get("tool_calls").and_then(|v| v.as_array()) {
+                        for tc in tcs {
+                            let i = tc.get("index").and_then(|v| v.as_u64()).unwrap_or(0);
+                            let entry = tools_acc.entry(i).or_default();
+                            if let Some(id) = tc.get("id").and_then(|v| v.as_str()) {
+                                if !id.is_empty() {
+                                    entry.id = id.to_string();
+                                }
+                            }
+                            if let Some(f) = tc.get("function") {
+                                if let Some(n) = f.get("name").and_then(|v| v.as_str()) {
+                                    if !n.is_empty() {
+                                        entry.name = n.to_string();
+                                    }
+                                }
+                                if let Some(a) = f.get("arguments").and_then(|v| v.as_str()) {
+                                    entry.arguments.push_str(a);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let mut outcome = TurnOutcome::default();
+    outcome.text = text;
+    outcome.finish_reason = finish_reason;
+    for (_, t) in tools_acc {
+        let args: Value = if t.arguments.trim().is_empty() {
+            Value::Object(Default::default())
+        } else {
+            serde_json::from_str(&t.arguments).unwrap_or(Value::String(t.arguments.clone()))
+        };
+        outcome.tool_uses.push((t.id, t.name, args));
+    }
+    Ok(outcome)
 }
 
 // ---------------------------------------------------------------------------

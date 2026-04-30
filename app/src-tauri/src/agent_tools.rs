@@ -29,8 +29,10 @@ use serde_json::{json, Value};
 use tauri::AppHandle;
 use walkdir::WalkDir;
 
-use crate::git_history;
-use crate::search;
+// `super::` paths so this module compiles under both lib + bin mount
+// trees (see ai_proxy.rs comment for the same rationale).
+use super::git_history;
+use super::search;
 
 // ---------------------------------------------------------------------------
 // Tool list / read-vs-write classification
@@ -51,6 +53,7 @@ pub const READ_TOOLS: &[&str] = &[
 ];
 pub const WRITE_TOOLS: &[&str] = &["write_note", "append_to_note"];
 
+#[allow(dead_code)]
 pub fn all_tools() -> Vec<&'static str> {
     READ_TOOLS.iter().chain(WRITE_TOOLS.iter()).copied().collect()
 }
@@ -878,6 +881,9 @@ fn dispatch_tool_inner(workspace: &Path, tool: &str, args: Value) -> Result<Valu
 // going through the chat loop.
 // ---------------------------------------------------------------------------
 
+/// Tauri command arg shape mirror — kept for downstream (P3) replay
+/// dispatch, which constructs invocations by name.
+#[allow(dead_code)]
 #[derive(Debug, Deserialize)]
 pub struct ToolArgs {
     pub workspace: String,
