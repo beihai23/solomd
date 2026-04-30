@@ -403,6 +403,27 @@ export const zh: I18n = {
     verifying: '验证中…',
     verified: '已验证',
     verifyFailed: '验证失败',
+    // TODO(zh): bulk-translate v4.0 Pillar 5 strings after merge.
+    ollama: {
+      detected: '已检测到 · {n} 个模型',
+      detectedNoModels: '已检测到 · 尚未安装模型',
+      notDetected: '未检测到 — Ollama 未运行',
+      install: '安装 Ollama',
+      refresh: '刷新',
+      pullRecommended: '拉取推荐模型 ({model}, ~1 GB)',
+      pulling: '正在拉取 {model}…',
+      pulled: '已拉取 — 可用',
+      pullFailed: '拉取失败',
+      cancelPull: '取消',
+      modelLabel: '模型',
+      otherModel: '其他已安装:',
+      version: 'Ollama {version}',
+      preset: {
+        rewrite: '改写 (qwen2.5:7b,均衡)',
+        quick: '快速 (qwen2.5:1.5b,最小)',
+        cjk: '中文友好 (qwen2.5:14b,大模型)',
+      },
+    },
   },
   pandoc: {
     notFound: '未在 PATH 中找到 Pandoc。',

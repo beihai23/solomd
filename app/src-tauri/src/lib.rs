@@ -3,6 +3,9 @@ pub mod search;
 pub mod workspace_index;
 pub mod spellcheck;
 pub mod ai_proxy;
+// v4.0 Pillar 5: Ollama polish — detect / pull / install-page commands on
+// top of the existing chat runner in ai_proxy. Pure additive.
+pub mod ollama;
 pub mod pandoc;
 pub mod git_history;
 pub mod rag;
@@ -85,6 +88,10 @@ pub fn run() {
             ai_proxy::ai_rewrite,
             ai_proxy::ai_cancel,
             ai_proxy::ai_verify_key,
+            ollama::ollama_detect,
+            ollama::ollama_pull,
+            ollama::ollama_cancel_pull,
+            ollama::open_ollama_install_page,
             pandoc::pandoc_detect,
             pandoc::pandoc_export,
             git_history::git_workspace_status,

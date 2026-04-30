@@ -28,6 +28,22 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter};
 
 // ---------------------------------------------------------------------------
+// Provider aliases
+// ---------------------------------------------------------------------------
+
+/// Resolve a provider id to its canonical form. Today the only alias is
+/// `local` → `ollama`, introduced for v4.0 Recipes (P2): YAML files written
+/// by hand often say `provider: local`, which is more intuitive than the
+/// brand name. Both ai-providers.ts and the Recipe loader call this helper
+/// so the aliasing lives in exactly one place.
+pub fn resolve_provider(id: &str) -> &str {
+    match id {
+        "local" => "ollama",
+        other => other,
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Public request/event types
 // ---------------------------------------------------------------------------
 
@@ -296,11 +312,14 @@ pub async fn ai_rewrite(app: AppHandle, request: RewriteRequest) -> Result<Strin
     let cancel = register_cancel_flag(&request_id);
 
     // Resolve which wire format to use: explicit `api_format` from the
-    // frontend, or the legacy `provider` value as a fallback.
+    // frontend, or the legacy `provider` value as a fallback. Apply the
+    // `local` → `ollama` alias here too so Recipes (v4.0 P2) that say
+    // `provider: local` work without a separate code path.
     let format = request
         .api_format
         .clone()
-        .unwrap_or_else(|| request.provider.clone());
+        .map(|f| resolve_provider(&f).to_string())
+        .unwrap_or_else(|| resolve_provider(&request.provider).to_string());
 
     // Ollama doesn't need a key — every other format does.
     let api_key = if format == "ollama" {
@@ -683,4 +702,21 @@ fn find_event_boundary(buf: &str) -> Option<usize> {
         return Some(i);
     }
     buf.find("\n\n")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn local_aliases_to_ollama() {
+        assert_eq!(resolve_provider("local"), "ollama");
+    }
+
+    #[test]
+    fn other_providers_pass_through_unchanged() {
+        for id in ["openai", "anthropic", "ollama", "deepseek", "qwen"] {
+            assert_eq!(resolve_provider(id), id, "provider {id} should not be rewritten");
+        }
+    }
 }
