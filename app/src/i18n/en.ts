@@ -466,7 +466,8 @@ export const en = {
     diffHeading: 'Diff vs main',
     diffEmpty: '(no changes)',
     traceHeading: 'Trace',
-    transcriptHeading: 'Transcript',
+    transcriptHeading: 'Transcript (run.md)',
+    replayStartedToast: 'Replay started: {run}',
   },
   ai: {
     settingsHeading: 'AI rewrite',

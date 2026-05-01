@@ -18,6 +18,11 @@
 #                                          # solomd-mcp, and the frontend
 #                                          # (catches debug-only-cfg slips
 #                                          # before macOS signing trips)
+#   scripts/v4-self-test.sh --with-ui      # also drive `pnpm tauri dev`
+#                                          # through the dev-bridge and verify
+#                                          # all v4 UI surfaces mount.
+#                                          # Requires `pnpm tauri dev` to
+#                                          # already be running.
 
 set -uo pipefail
 
@@ -27,10 +32,12 @@ MCP="$REPO_ROOT/mcp-server"
 
 WITH_OLLAMA=0
 WITH_RELEASE=0
+WITH_UI=0
 for arg in "$@"; do
     case "$arg" in
         --with-ollama) WITH_OLLAMA=1 ;;
         --with-release) WITH_RELEASE=1 ;;
+        --with-ui) WITH_UI=1 ;;
         -h|--help)
             sed -n '2,/^$/p' "$0" | sed 's/^# *//'
             exit 0 ;;
@@ -143,6 +150,17 @@ if [[ $WITH_RELEASE -eq 1 ]]; then
 fi
 
 # ------------------------------------------------------------------
+# Optional: live UI smoke through pnpm tauri dev. Drives the dev-bridge
+# `/eval` endpoint to verify each v4 surface mounts in the running app.
+# Requires `pnpm tauri dev` to already be running — we don't start it
+# here because a long-running compile + window-open is a user action.
+# ------------------------------------------------------------------
+if [[ $WITH_UI -eq 1 ]]; then
+    run_pillar "UI · live v4-ui-smoke.mjs" \
+        node "$REPO_ROOT/scripts/v4-ui-smoke.mjs"
+fi
+
+# ------------------------------------------------------------------
 # Summary
 # ------------------------------------------------------------------
 echo
@@ -155,11 +173,22 @@ if [[ ${#FAILED[@]} -eq 0 ]]; then
     echo "  · Pillar 3 — Trace view + replay             ✓"
     echo "  · Pillar 4 — Workspace Federation            ✓"
     echo "  · Pillar 5 — Ollama first-class              ✓"
+    if [[ $WITH_RELEASE -eq 1 ]]; then
+        echo "  · Release builds (SoloMD + mcp + frontend)   ✓"
+    fi
+    if [[ $WITH_UI -eq 1 ]]; then
+        echo "  · Live UI surfaces (Tauri dev)               ✓"
+    fi
     echo
     echo "Still required before v4.0 tag:"
-    echo "  · Tauri release build verified (run ./scripts/build-mac.sh)"
-    echo "  · 2-week beta channel (rc.1 → rc.2 → tag)"
-    echo "  · Live UI smoke test against pnpm tauri dev"
+    if [[ $WITH_RELEASE -ne 1 ]]; then
+        echo "  · cargo build --release link-check (re-run with --with-release)"
+    fi
+    if [[ $WITH_UI -ne 1 ]]; then
+        echo "  · Live UI smoke against pnpm tauri dev (re-run with --with-ui)"
+    fi
+    echo "  · macOS signed dmg — scripts/build-mac.sh (needs Apple creds)"
+    echo "  · 2-week beta channel — v4.0-rc.1 → rc.2 → tag"
     exit 0
 else
     echo "${RED}✗ ${#FAILED[@]} failed:${RESET}"

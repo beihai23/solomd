@@ -464,7 +464,8 @@ export const zh: I18n = {
     diffHeading: '相对 main 的 diff',
     diffEmpty: '（无变更）',
     traceHeading: 'Trace',
-    transcriptHeading: '运行记录',
+    transcriptHeading: '运行记录 (run.md)',
+    replayStartedToast: '已从断点重放 — 新 run: {run}',
   },
   ai: {
     settingsHeading: 'AI 改写',

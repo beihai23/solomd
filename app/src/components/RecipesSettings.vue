@@ -20,6 +20,7 @@ import { useWorkspaceStore } from '../stores/workspace';
 import { useToastsStore } from '../stores/toasts';
 import { useFiles } from '../composables/useFiles';
 import { useI18n } from '../i18n';
+import TraceView from './TraceView.vue';
 
 const { t } = useI18n();
 const store = useRecipesStore();
@@ -160,7 +161,6 @@ async function rejectRun(run: RunMeta) {
 // ---------------------------------------------------------------------------
 
 const expandedHistory = ref<string | null>(null);
-const traceByRun = ref<Record<string, string>>({});
 const runMdByRun = ref<Record<string, string>>({});
 
 async function toggleHistory(run: RunMeta) {
@@ -170,13 +170,25 @@ async function toggleHistory(run: RunMeta) {
   }
   expandedHistory.value = run.run_id;
   if (!folder.value) return;
-  if (!traceByRun.value[run.run_id]) {
-    const tr = await store.readTrace(folder.value, run.run_id);
-    traceByRun.value[run.run_id] = tr ?? '';
-  }
   if (!runMdByRun.value[run.run_id]) {
     const md = await store.readRunMd(folder.value, run.run_id);
     runMdByRun.value[run.run_id] = md ?? '';
+  }
+}
+
+async function onReplayFromStep(runId: string, payload: { seq: number; runId: string }) {
+  if (!folder.value) return;
+  try {
+    const newRunId = await invoke<string>('agent_trace_replay_from', {
+      workspace: folder.value,
+      runId: payload.runId ?? runId,
+      seq: payload.seq,
+    });
+    toasts.success(t('recipes.replayStartedToast', { run: newRunId }));
+    await store.refresh(folder.value);
+    expandedHistory.value = newRunId;
+  } catch (err) {
+    toasts.error(String(err));
   }
 }
 
@@ -464,10 +476,18 @@ async function installCookbookEntry(entry: CookbookEntry) {
               </span>
             </div>
             <div v-if="expandedHistory === run.run_id" class="recipes__historyBody">
-              <h5>{{ t('recipes.transcriptHeading') }}</h5>
-              <pre class="recipes__pre">{{ runMdByRun[run.run_id] || '' }}</pre>
               <h5>{{ t('recipes.traceHeading') }}</h5>
-              <pre class="recipes__pre">{{ traceByRun[run.run_id] || '' }}</pre>
+              <TraceView
+                v-if="folder"
+                :workspace="folder"
+                :run-id="run.run_id"
+                :live="run.status === 'running'"
+                @replay="onReplayFromStep(run.run_id, $event)"
+              />
+              <details class="recipes__transcriptDetails">
+                <summary>{{ t('recipes.transcriptHeading') }}</summary>
+                <pre class="recipes__pre">{{ runMdByRun[run.run_id] || '' }}</pre>
+              </details>
             </div>
           </div>
         </div>
@@ -683,6 +703,22 @@ async function installCookbookEntry(entry: CookbookEntry) {
   margin: 8px 0 4px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+.recipes__transcriptDetails {
+  margin-top: 12px;
+}
+.recipes__transcriptDetails > summary {
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  user-select: none;
+  margin-bottom: 4px;
+}
+.recipes__transcriptDetails > summary:hover {
+  color: var(--text-muted);
 }
 .recipes__diff,
 .recipes__pre {
