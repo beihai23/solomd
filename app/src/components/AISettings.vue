@@ -349,6 +349,19 @@ interface AgentRunMeta {
 const recentRuns = ref<AgentRunMeta[]>([]);
 const runsLoading = ref(false);
 
+/**
+ * Re-arm the first-run wizard so App.vue's `agentWizardSeen` watcher
+ * pops it open again. Used by the "Run setup wizard again" button.
+ * The wizard itself calls `markAgentWizardSeen()` on close so we don't
+ * loop.
+ */
+function reopenWizard(): void {
+  settingsStore.resetAgentWizard();
+  // Ask the app to open it. App.vue listens to a window-level event so
+  // we don't have to thread a prop through the whole settings tree.
+  window.dispatchEvent(new CustomEvent('solomd:open-agent-wizard'));
+}
+
 async function refreshRuns(): Promise<void> {
   const ws = workspaceStore.currentFolder;
   if (!ws) {
@@ -781,6 +794,17 @@ function onProviderChange(ev: Event): void {
             @click="refreshRuns"
           >{{ t('agentSettings.refresh') }}</button>
         </div>
+      </div>
+
+      <!-- v4.0 first-run wizard re-launch — for users who skipped on day one -->
+      <div class="ai-settings__row">
+        <button
+          type="button"
+          class="ai-settings__btn ai-settings__btn--small"
+          @click="reopenWizard"
+        >
+          {{ t('wizard.reopenBtn') }}
+        </button>
       </div>
     </div>
   </section>

@@ -440,6 +440,13 @@ impl RunHandle {
         }
         fs::write(meta_path, serde_json::to_vec_pretty(&meta).unwrap_or_default())
             .map_err(|e| format!("meta.json finalize: {e}"))?;
+        // Roll the per-provider cost meter forward. No-op when the meter
+        // is disabled (the user opt-in lives in Settings → AI). We only
+        // record successful runs — failed runs cost real tokens too, but
+        // counting them tends to confuse users debugging a flaky agent.
+        if status == "ok" {
+            super::cost_meter::record(&self.provider, tokens_in, tokens_out, cost_usd);
+        }
         Ok(())
     }
 }
@@ -782,7 +789,18 @@ impl RunHandle {
     /// runner builds end-to-end.
     pub fn finalize(&self, meta: &RunMeta) -> Result<(), String> {
         let json = serde_json::to_string_pretty(meta).map_err(|e| format!("serialise meta: {e}"))?;
-        fs::write(self.dir.join("meta.json"), json).map_err(|e| format!("write meta: {e}"))
+        fs::write(self.dir.join("meta.json"), json).map_err(|e| format!("write meta: {e}"))?;
+        // Mirror the P1 finish path — successful recipe runs feed the
+        // per-provider cost meter (opt-in; no-ops when disabled).
+        if meta.status == "ok" {
+            super::cost_meter::record(
+                &meta.provider,
+                meta.tokens.input,
+                meta.tokens.output,
+                meta.cost_usd_estimate,
+            );
+        }
+        Ok(())
     }
 
     /// Convenience — build + append a `run_started` trace step from a

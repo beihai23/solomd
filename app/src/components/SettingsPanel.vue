@@ -13,6 +13,8 @@ import { checkForUpdate, openReleaseUrl, isMasBuild } from '../lib/check-update'
 import AISettings from './AISettings.vue';
 import CitationPickerSettings from './CitationPickerSettings.vue';
 import CaptureEndpointSettings from './CaptureEndpointSettings.vue';
+import RestApiSettings from './RestApiSettings.vue';
+import CostMeterSettings from './CostMeterSettings.vue';
 import IntegrationsSettings from './IntegrationsSettings.vue';
 // v4.0 Pillar 2 — Agent Recipes panel. Mounted under the existing
 // "Integrations" category so users find Recipes alongside CLI / MCP /
@@ -265,10 +267,12 @@ function onSelectPdfFont(v: string) {
           <label>{{ t('settings.language') }}</label>
           <select
             :value="settings.language"
-            @change="settings.setLanguage(($event.target as HTMLSelectElement).value as 'en' | 'zh')"
+            @change="settings.setLanguage(($event.target as HTMLSelectElement).value as 'en' | 'zh' | 'ja' | 'ko')"
           >
             <option value="en">English</option>
             <option value="zh">中文</option>
+            <option value="ja">日本語 (β)</option>
+            <option value="ko">한국어 (β)</option>
           </select>
         </section>
 
@@ -706,6 +710,10 @@ function onSelectPdfFont(v: string) {
           @update:baseUrl="(v: string) => settings.setAiBaseUrl(v)"
         /></div>
 
+        <!-- v4.0: BYOK cost meter — sits under AI so users see "your spend"
+             right below "your provider key". -->
+        <div data-cat="integrations"><CostMeterSettings /></div>
+
         <!-- v2.4: Integrations (CLI + MCP). -->
         <div data-cat="integrations"><IntegrationsSettings /></div>
 
@@ -881,6 +889,9 @@ function onSelectPdfFont(v: string) {
 
         <!-- v2.4 Integrations: HTTP capture endpoint. -->
         <div data-cat="integrations"><CaptureEndpointSettings /></div>
+
+        <!-- v4.0: Public REST API for non-MCP clients. -->
+        <div data-cat="integrations"><RestApiSettings /></div>
       </div>
       </div>
     </div>

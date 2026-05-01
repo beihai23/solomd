@@ -38,7 +38,7 @@ interface Settings {
   typewriterMode: boolean;
   vimMode: boolean;
   uiFontSize: number;
-  language: 'en' | 'zh';
+  language: 'en' | 'zh' | 'ja' | 'ko';
   autoCheckUpdate: boolean;
   // Preview layout
   previewFitWidth: boolean;
@@ -58,6 +58,9 @@ interface Settings {
   revealInFileTreeOnOpen: boolean;
   // First-launch welcome tour: opened automatically once. Don't reopen.
   welcomeShown: boolean;
+  // v4.0 first-run agent setup wizard. Shown once after the welcome tour to
+  // route the user into BYOK or Ollama. Re-openable from Settings → AI.
+  agentWizardSeen: boolean;
   // v2.0 F1: show the Backlinks panel (right of editor) for markdown docs.
   showBacklinks: boolean;
   // v2.0 F2: CodeMirror Hunspell spell-check (separate from browser-native `spellCheck` above).
@@ -199,12 +202,16 @@ function defaults(): Settings {
     uiFontSize: 13,
     autoCheckUpdate: true,
     language: (() => {
-      // Detect browser language on first run (zh-CN, zh-TW, etc. → 'zh')
+      // Detect browser language on first run. Maps the navigator BCP-47
+      // tag to one of the four shipped UI locales; everything else → 'en'.
       try {
         const nav = typeof navigator !== 'undefined' ? navigator.language || '' : '';
-        return /^zh/i.test(nav) ? 'zh' : 'en';
+        if (/^zh/i.test(nav)) return 'zh';
+        if (/^ja/i.test(nav)) return 'ja';
+        if (/^ko/i.test(nav)) return 'ko';
+        return 'en';
       } catch { return 'en'; }
-    })() as 'en' | 'zh',
+    })() as 'en' | 'zh' | 'ja' | 'ko',
     previewFitWidth: false,
     customCssPath: '',
     telemetryEnabled: true,
@@ -213,6 +220,7 @@ function defaults(): Settings {
     openFileInNewWindow: false,
     revealInFileTreeOnOpen: false,
     welcomeShown: false,
+    agentWizardSeen: false,
     showBacklinks: true,
     spellcheckEnabled: false,
     dailyNotesFolder: 'Daily',
@@ -439,6 +447,14 @@ export const useSettingsStore = defineStore('settings', {
       this.welcomeShown = true;
       this.persist();
     },
+    markAgentWizardSeen() {
+      this.agentWizardSeen = true;
+      this.persist();
+    },
+    resetAgentWizard() {
+      this.agentWizardSeen = false;
+      this.persist();
+    },
     toggleBacklinks() {
       this.showBacklinks = !this.showBacklinks;
       this.persist();
@@ -527,7 +543,7 @@ export const useSettingsStore = defineStore('settings', {
       this.uiFontSize = Math.max(10, Math.min(20, n));
       this.persist();
     },
-    setLanguage(lang: 'en' | 'zh') {
+    setLanguage(lang: 'en' | 'zh' | 'ja' | 'ko') {
       this.language = lang;
       this.persist();
     },

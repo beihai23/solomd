@@ -11,6 +11,14 @@ pub mod git_history;
 pub mod rag;
 // v2.4 inbound HTTP capture endpoint — production-grade, opt-in via Settings.
 pub mod capture_endpoint;
+// v4.0 — public REST API mirroring the agent_tools surface for non-MCP
+// clients (Alfred / Raycast / n8n / shell scripts). Localhost-only,
+// bearer-token auth, opt-in via Settings → Integrations. Same wire shape
+// as `capture_endpoint`.
+pub mod rest_api;
+// v4.0 — BYOK cost meter: per-provider cumulative tokens + dollar spend
+// across all runs; persisted in app-config dir; opt-in surface in Settings → AI.
+pub mod cost_meter;
 // v2.4 outbound integrations — CLI + MCP sidecar discovery, surfaced in Settings.
 pub mod integrations;
 // v4.0 P4 — MCP federation profile storage (named bundles of workspaces +
@@ -57,6 +65,10 @@ pub mod agent_trace;
 // writes behind the AutoGit branch sandbox + write-cap.
 pub mod recipes;
 pub mod recipe_runner;
+// v4.0 — bundled recipe cookbook (10+ ready-to-edit YAML templates).
+// Shipped as `include_str!` content compiled into the binary; commands
+// list / preview / install into <workspace>/.solomd/agents/.
+pub mod cookbook;
 
 // v2.3 dev WebDriver bridge — debug builds only.
 #[cfg(debug_assertions)]
@@ -144,6 +156,14 @@ pub fn run() {
             capture_endpoint::capture_regenerate_token,
             capture_endpoint::capture_set_inbox_folder,
             capture_endpoint::capture_set_workspace,
+            rest_api::rest_get_state,
+            rest_api::rest_set_enabled,
+            rest_api::rest_regenerate_token,
+            rest_api::rest_set_allow_write,
+            rest_api::rest_set_workspace,
+            cost_meter::cost_meter_get,
+            cost_meter::cost_meter_reset,
+            cost_meter::cost_meter_set_enabled,
             integrations::cli_status,
             integrations::mcp_path,
             integrations::mcp_claude_desktop_config_path,
@@ -210,6 +230,9 @@ pub fn run() {
             recipe_runner::recipes_run_diff,
             recipe_runner::recipes_accept_run,
             recipe_runner::recipes_reject_run,
+            cookbook::cookbook_list,
+            cookbook::cookbook_get,
+            cookbook::cookbook_install,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -29,6 +29,7 @@ import RagSearch from './components/RagSearch.vue';
 import CjkProofread from './components/CjkProofread.vue';
 import ReadingView from './components/ReadingView.vue';
 import AboutDialog from './components/AboutDialog.vue';
+import AgentSetupWizard from './components/AgentSetupWizard.vue';
 import UnsavedDialog from './components/UnsavedDialog.vue';
 import FileChangedDialog from './components/FileChangedDialog.vue';
 import Toast from './components/Toast.vue';
@@ -97,6 +98,7 @@ const searchOpen = ref(false);
 const ragSearchOpen = ref(false);
 const cjkProofreadOpen = ref(false);
 const aboutOpen = ref(false);
+const wizardOpen = ref(false);
 
 // Unsaved-changes dialog state
 const unsavedOpen = ref(false);
@@ -259,6 +261,10 @@ watchEffect(() => {
 watchEffect(() => {
   const folder = workspace.currentFolder;
   invoke('capture_set_workspace', { folder: folder ?? null }).catch(() => {});
+  // v4.0: same dance for the public REST API server. Both endpoints share
+  // the "I 503 when no folder is open" contract, so they read from
+  // independent state but get pushed together.
+  invoke('rest_set_workspace', { folder: folder ?? null }).catch(() => {});
 });
 
 // v2.3: keep the RAG index in sync with the toggle + active folder. When
@@ -468,6 +474,20 @@ onMounted(async () => {
   } else if (tabs.tabs.length === 0) {
     tabs.newTab();
   }
+
+  // v4.0 first-run agent setup wizard. Fires after the welcome tour on a
+  // fresh install — once. Re-openable from Settings → AI ("Run setup
+  // wizard again") for users who skipped it. We wait one tick so the
+  // welcome tour overlay (if any) shows first.
+  if (!settings.agentWizardSeen) {
+    setTimeout(() => {
+      wizardOpen.value = true;
+    }, isFreshLaunch ? 800 : 0);
+  }
+  // Settings → AI's "Run setup wizard again" button asks here.
+  window.addEventListener('solomd:open-agent-wizard', () => {
+    wizardOpen.value = true;
+  });
 
   // Initialize tile layout: validate persisted state or create default
   tiles.validate(tabs.tabs);
@@ -755,6 +775,7 @@ watchEffect(() => { void settings.aiEnabled; void settings.aiProvider; refreshAi
     />
     <CjkProofread :open="cjkProofreadOpen" @close="cjkProofreadOpen = false" />
     <AboutDialog :open="aboutOpen" @close="aboutOpen = false" />
+    <AgentSetupWizard :open="wizardOpen" @close="wizardOpen = false" />
     <UnsavedDialog
       :open="unsavedOpen"
       :mode="unsavedMode"

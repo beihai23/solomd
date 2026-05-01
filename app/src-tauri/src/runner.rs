@@ -29,6 +29,17 @@ mod git_history;
 #[path = "capture_endpoint.rs"]
 mod capture_endpoint;
 
+// v4.0 — public REST API mirroring the agent_tools surface for non-MCP
+// clients. Declared in both lib.rs and runner.rs so the binary's compile
+// root resolves `crate::rest_api` the same way the lib does.
+#[path = "rest_api.rs"]
+mod rest_api;
+// v4.0 — BYOK cost meter. Same dual-declaration as rest_api: agent_run
+// references `crate::cost_meter::record`, which must resolve in both
+// the lib (for tests) and the bin (for live recipe + chat finishes).
+#[path = "cost_meter.rs"]
+mod cost_meter;
+
 // v2.5 community theme marketplace — see app/src-tauri/src/themes.rs.
 #[path = "themes.rs"]
 mod themes;
@@ -86,6 +97,9 @@ mod mcp_profiles;
 mod recipes;
 #[path = "recipe_runner.rs"]
 mod recipe_runner;
+// v4.0 — bundled recipe cookbook (10+ ready-to-edit YAML templates).
+#[path = "cookbook.rs"]
+mod cookbook;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
@@ -481,6 +495,14 @@ pub fn run_with(initial_file: Option<String>) {
             capture_endpoint::capture_regenerate_token,
             capture_endpoint::capture_set_inbox_folder,
             capture_endpoint::capture_set_workspace,
+            rest_api::rest_get_state,
+            rest_api::rest_set_enabled,
+            rest_api::rest_regenerate_token,
+            rest_api::rest_set_allow_write,
+            rest_api::rest_set_workspace,
+            cost_meter::cost_meter_get,
+            cost_meter::cost_meter_reset,
+            cost_meter::cost_meter_set_enabled,
             themes::theme_install,
             themes::theme_uninstall,
             themes::theme_list_installed,
@@ -548,6 +570,9 @@ pub fn run_with(initial_file: Option<String>) {
             recipe_runner::recipes_run_diff,
             recipe_runner::recipes_accept_run,
             recipe_runner::recipes_reject_run,
+            cookbook::cookbook_list,
+            cookbook::cookbook_get,
+            cookbook::cookbook_install,
         ])
         .on_menu_event(|app_handle, event| {
             // Forward every menu click to the frontend as a single event

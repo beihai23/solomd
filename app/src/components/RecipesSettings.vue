@@ -14,6 +14,7 @@
  */
 
 import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue';
+import { invoke } from '@tauri-apps/api/core';
 import { useRecipesStore, type RecipeSummary, type RunMeta } from '../stores/recipes';
 import { useWorkspaceStore } from '../stores/workspace';
 import { useToastsStore } from '../stores/toasts';
@@ -278,6 +279,63 @@ function cancelYamlEdit() {
   editing.value = null;
   editingYaml.value = '';
 }
+
+// ---------------------------------------------------------------------------
+// Cookbook — bundled YAML templates the user can install with one click.
+// `cookbook_list` returns parsed metadata for each entry; `cookbook_install`
+// copies it into <workspace>/.solomd/agents/<slug>.yml (auto-suffixed on
+// collision). After install we refresh the recipe list so the row appears.
+// ---------------------------------------------------------------------------
+
+interface CookbookEntry {
+  file_stem: string;
+  name: string;
+  trigger: string;
+  allow_write: boolean;
+  provider: string;
+  schedule: string | null;
+  match_glob: string | null;
+  description: string;
+  yaml: string;
+}
+const showCookbook = ref(false);
+const cookbookEntries = ref<CookbookEntry[]>([]);
+const cookbookExpanded = ref<string | null>(null);
+const installing = ref<string | null>(null);
+
+async function openCookbook() {
+  if (cookbookEntries.value.length === 0) {
+    try {
+      cookbookEntries.value = await invoke<CookbookEntry[]>('cookbook_list');
+    } catch (e) {
+      toasts.error(`Cookbook: ${e}`);
+      return;
+    }
+  }
+  showCookbook.value = true;
+}
+
+async function installCookbookEntry(entry: CookbookEntry) {
+  if (!folder.value) {
+    toasts.error(t('recipes.openWorkspace'));
+    return;
+  }
+  installing.value = entry.file_stem;
+  try {
+    const path = await invoke<string>('cookbook_install', {
+      workspace: folder.value,
+      fileStem: entry.file_stem,
+    });
+    toasts.success(t('cookbook.installedToast', { name: entry.name }));
+    await store.refresh(folder.value);
+    showCookbook.value = false;
+    void openPath(path);
+  } catch (e) {
+    toasts.error(`Cookbook install: ${e}`);
+  } finally {
+    installing.value = null;
+  }
+}
 </script>
 
 <template>
@@ -326,9 +384,12 @@ function cancelYamlEdit() {
       <section class="recipes__section">
         <div class="recipes__sectionHeader">
           <h4>{{ t('recipes.list') }}</h4>
-          <button class="recipes__btnPrimary" @click="showWizard = true">
-            {{ t('recipes.btnNew') }}
-          </button>
+          <div class="recipes__actions">
+            <button @click="openCookbook">{{ t('cookbook.browse') }}</button>
+            <button class="recipes__btnPrimary" @click="showWizard = true">
+              {{ t('recipes.btnNew') }}
+            </button>
+          </div>
         </div>
         <div v-if="store.recipes.length === 0" class="recipes__empty">
           {{ t('recipes.listEmpty') }}
@@ -483,6 +544,60 @@ function cancelYamlEdit() {
             {{ t('recipes.yamlSave') }}
           </button>
           <button @click="cancelYamlEdit">{{ t('recipes.yamlCancel') }}</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Cookbook modal -->
+    <div
+      v-if="showCookbook"
+      class="recipes__modalBackdrop"
+      @click.self="showCookbook = false"
+    >
+      <div class="recipes__modal recipes__modal--wide">
+        <div class="recipes__modalHead">
+          <h4>{{ t('cookbook.heading') }}</h4>
+          <button @click="showCookbook = false">×</button>
+        </div>
+        <p class="recipes__hint">{{ t('cookbook.intro') }}</p>
+        <div class="recipes__list">
+          <div
+            v-for="entry in cookbookEntries"
+            :key="entry.file_stem"
+            class="recipes__cookbookItem"
+          >
+            <div class="recipes__cookbookHead">
+              <div>
+                <strong>{{ entry.name }}</strong>
+                <span class="recipes__badge">{{ triggerLabel(entry.trigger) }}</span>
+                <span v-if="entry.allow_write" class="recipes__badge">
+                  {{ t('recipes.badgeAllowWrite') }}
+                </span>
+                <span v-if="entry.provider" class="recipes__badge">
+                  {{ entry.provider }}
+                </span>
+              </div>
+              <div class="recipes__actions">
+                <button
+                  @click="cookbookExpanded = cookbookExpanded === entry.file_stem ? null : entry.file_stem"
+                >
+                  {{ cookbookExpanded === entry.file_stem ? t('cookbook.hidePreview') : t('cookbook.preview') }}
+                </button>
+                <button
+                  class="recipes__btnPrimary"
+                  :disabled="installing === entry.file_stem"
+                  @click="installCookbookEntry(entry)"
+                >
+                  {{ installing === entry.file_stem ? t('cookbook.installing') : t('cookbook.install') }}
+                </button>
+              </div>
+            </div>
+            <p class="recipes__metaSmall">{{ entry.description }}</p>
+            <pre
+              v-if="cookbookExpanded === entry.file_stem"
+              class="recipes__pre"
+            >{{ entry.yaml }}</pre>
+          </div>
         </div>
       </div>
     </div>
@@ -670,6 +785,40 @@ function cancelYamlEdit() {
 }
 .recipes__modalLarge {
   width: 720px;
+}
+.recipes__modal--wide {
+  width: 720px;
+}
+.recipes__modalHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.recipes__modalHead h4 {
+  margin: 0;
+}
+.recipes__modalHead button {
+  background: none;
+  border: none;
+  font-size: 18px;
+  cursor: pointer;
+  color: var(--text-muted);
+}
+.recipes__cookbookItem {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.recipes__cookbookHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 .recipes__modal label {
   display: flex;
