@@ -225,3 +225,8 @@ By design:
 - `mcp-server/README.md` — the MCP surface for external clients (Claude Desktop, etc.).
 - `app/src-tauri/src/recipes.rs` — schema definition (Rust types are the source of truth).
 - `app/src-tauri/cookbook/` — every bundled recipe template.
+- `scripts/v4-self-test.sh` — one-shot pass/fail across all 5 pillars.
+  Run `./scripts/v4-self-test.sh` for the fast lane (~30s),
+  `--with-release` to also link-check `cargo build --release` for the bin
+  + mcp-server + frontend, or `--with-ollama` to add a live Ollama smoke test.
+  Definition-of-Done for v4.0 requires this script to exit 0.
