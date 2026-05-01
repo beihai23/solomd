@@ -23,6 +23,10 @@
 #                                          # all v4 UI surfaces mount.
 #                                          # Requires `pnpm tauri dev` to
 #                                          # already be running.
+#   scripts/v4-self-test.sh --with-dmg     # also verify the signed macOS dmg
+#                                          # produced by scripts/build-mac.sh
+#                                          # (codesign / staple / spctl /
+#                                          # universal slices / mount check).
 
 set -uo pipefail
 
@@ -33,11 +37,13 @@ MCP="$REPO_ROOT/mcp-server"
 WITH_OLLAMA=0
 WITH_RELEASE=0
 WITH_UI=0
+WITH_DMG=0
 for arg in "$@"; do
     case "$arg" in
         --with-ollama) WITH_OLLAMA=1 ;;
         --with-release) WITH_RELEASE=1 ;;
         --with-ui) WITH_UI=1 ;;
+        --with-dmg) WITH_DMG=1 ;;
         -h|--help)
             sed -n '2,/^$/p' "$0" | sed 's/^# *//'
             exit 0 ;;
@@ -161,6 +167,15 @@ if [[ $WITH_UI -eq 1 ]]; then
 fi
 
 # ------------------------------------------------------------------
+# Optional: signed dmg verifier. Runs the full release-channel check
+# matrix on the dmg + .app produced by scripts/build-mac.sh.
+# ------------------------------------------------------------------
+if [[ $WITH_DMG -eq 1 ]]; then
+    run_pillar "Release · signed dmg verifier" \
+        bash "$REPO_ROOT/scripts/v4-verify-dmg.sh"
+fi
+
+# ------------------------------------------------------------------
 # Summary
 # ------------------------------------------------------------------
 echo
@@ -179,6 +194,9 @@ if [[ ${#FAILED[@]} -eq 0 ]]; then
     if [[ $WITH_UI -eq 1 ]]; then
         echo "  · Live UI surfaces (Tauri dev)               ✓"
     fi
+    if [[ $WITH_DMG -eq 1 ]]; then
+        echo "  · macOS signed dmg verified                  ✓"
+    fi
     echo
     echo "Still required before v4.0 tag:"
     if [[ $WITH_RELEASE -ne 1 ]]; then
@@ -187,7 +205,9 @@ if [[ ${#FAILED[@]} -eq 0 ]]; then
     if [[ $WITH_UI -ne 1 ]]; then
         echo "  · Live UI smoke against pnpm tauri dev (re-run with --with-ui)"
     fi
-    echo "  · macOS signed dmg — scripts/build-mac.sh (needs Apple creds)"
+    if [[ $WITH_DMG -ne 1 ]]; then
+        echo "  · macOS signed dmg — scripts/build-mac.sh + --with-dmg (Apple creds in .env.local)"
+    fi
     echo "  · 2-week beta channel — v4.0-rc.1 → rc.2 → tag"
     exit 0
 else
