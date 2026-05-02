@@ -426,15 +426,22 @@ fn drain_pending_opens(state: tauri::State<PendingOpen>) -> Vec<String> {
 /// Re-fit the main window into its current monitor's work area before show.
 ///
 /// Two failure modes from `tauri-plugin-window-state` we have to defend
-/// against on every launch (not just when the saved size is too big):
+/// against on every launch:
 /// 1. **Oversize restore** — a saved 2880×1740 from a 5K display, restored
 ///    on a 1440p laptop, leaves the bottom edge off-screen.
-/// 2. **Top-edge restore behind the menu bar** — saved Y between 0 and the
-///    macOS menu bar height (24pt) puts the title bar / traffic lights
-///    behind the menu bar, where they can't be clicked or dragged.
+/// 2. **Out-of-bounds position** — saved coordinates from a now-disconnected
+///    secondary monitor, or a saved Y that tucks the title bar behind the
+///    macOS menu bar.
 ///
-/// The clamp is unconditional: every launch, we re-fit size and position.
-/// 40px is reserved at the top of the primary monitor for the menu bar.
+/// Behavior:
+/// - If size or position is still valid for the current monitor, the user's
+///   chosen layout is preserved (we don't fight intentional positioning).
+/// - If anything was out of bounds, the window is clamped to a sensible
+///   size and **recentered on the current monitor**. Centering > pinning to
+///   an edge: a left-edge-pinned window after a display change reads as
+///   "broken layout," whereas centered reads as "fresh start, sane state."
+///
+/// 40px is reserved at the top of the work area for the macOS menu bar.
 fn clamp_window_to_monitor(win: &tauri::WebviewWindow) {
     const MENU_BAR_RESERVE: i32 = 40;
     const MIN_W: i32 = 480;
@@ -455,20 +462,28 @@ fn clamp_window_to_monitor(win: &tauri::WebviewWindow) {
     let max_h = mon_h - MENU_BAR_RESERVE;
     let new_w = cur_w.clamp(MIN_W, max_w);
     let new_h = cur_h.clamp(MIN_H, max_h);
-    if new_w != cur_w || new_h != cur_h {
-        let _ = win.set_size(tauri::LogicalSize::new(new_w as u32, new_h as u32));
-    }
+    let size_clamped = new_w != cur_w || new_h != cur_h;
 
     let Ok(outer_pos) = win.outer_position() else { return; };
     let cur_x = (outer_pos.x as f64 / scale).round() as i32;
     let cur_y = (outer_pos.y as f64 / scale).round() as i32;
-    let min_y = mon_y + MENU_BAR_RESERVE;
-    let min_x = mon_x;
-    let max_x = (mon_x + mon_w - new_w).max(min_x);
-    let max_y = (mon_y + mon_h - new_h).max(min_y);
-    let new_x = cur_x.clamp(min_x, max_x);
-    let new_y = cur_y.clamp(min_y, max_y);
-    if new_x != cur_x || new_y != cur_y {
+
+    // Position is "off-monitor" if any edge of the window falls outside the
+    // current monitor's work area (top edge above the menu bar reserve, or
+    // any other edge past the monitor bounds for the post-clamp size).
+    let position_invalid = cur_x < mon_x
+        || cur_x + new_w > mon_x + mon_w
+        || cur_y < mon_y + MENU_BAR_RESERVE
+        || cur_y + new_h > mon_y + mon_h;
+
+    if size_clamped {
+        let _ = win.set_size(tauri::LogicalSize::new(new_w as u32, new_h as u32));
+    }
+
+    if size_clamped || position_invalid {
+        let new_x = mon_x + (mon_w - new_w) / 2;
+        let centered_y = mon_y + (mon_h - new_h) / 2;
+        let new_y = centered_y.max(mon_y + MENU_BAR_RESERVE);
         let _ = win.set_position(tauri::LogicalPosition::new(new_x, new_y));
     }
 }
