@@ -72,6 +72,13 @@ interface Settings {
   showTagsPanel: boolean;
   // v4.0 pillar 1: Inline Agent Panel — chat-with-vault sidebar.
   showAgentPanel: boolean;
+  // v4.0 release migration marker: set on first launch after upgrading
+  // to v4.0. If absent or false, `load()` force-enables `showAgentPanel`
+  // once so users coming from v3.6.x or any v4-beta build (where the
+  // default was false) actually see the marquee feature instead of an
+  // unchanged sidebar. After the migration the user is free to toggle
+  // it off via the command palette and the choice sticks.
+  v4AgentPanelMigrated: boolean;
   // v4.0 pillar 1: when true, the agent can call write_note / append_to_note
   // from chat. Default off — the agent is read-only by default.
   agentAllowWrite: boolean;
@@ -227,7 +234,12 @@ function defaults(): Settings {
     dailyNotesFormat: 'YYYY-MM-DD.md',
     dailyNotesTemplate: '',
     showTagsPanel: true,
-    showAgentPanel: false,
+    showAgentPanel: true,
+    // True for fresh installs (defaults are already v4.0). Existing
+    // localStorage blobs from v3.6.x / v4-beta won't have this key, so
+    // `load()`'s migration kicks in and force-enables the Agent Panel
+    // once before setting the marker on disk.
+    v4AgentPanelMigrated: true,
     agentAllowWrite: false,
     agentToolLoopCap: 8,
     sideSidebarWidth: 260,
@@ -303,6 +315,15 @@ function load(): Settings {
       // sub-key (older settings blob) doesn't yield `undefined` and a
       // tampered numeric stays in range.
       merged.pdfDefaults = mergePdfDefaults(parsed.pdfDefaults);
+      // One-time v4.0 upgrade: any saved settings blob written before
+      // v4.0 release (or by a v4 beta where the panel defaulted off)
+      // will not have the `v4AgentPanelMigrated` marker. Force-enable
+      // the Agent Panel once and set the marker; subsequent toggles by
+      // the user persist normally.
+      if (!parsed.v4AgentPanelMigrated) {
+        merged.showAgentPanel = true;
+        merged.v4AgentPanelMigrated = true;
+      }
       return merged;
     }
   } catch {}
