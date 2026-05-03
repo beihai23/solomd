@@ -38,7 +38,7 @@ interface Settings {
   typewriterMode: boolean;
   vimMode: boolean;
   uiFontSize: number;
-  language: 'en' | 'zh';
+  language: 'en' | 'zh' | 'ja' | 'ko';
   autoCheckUpdate: boolean;
   // Preview layout
   previewFitWidth: boolean;
@@ -58,6 +58,9 @@ interface Settings {
   revealInFileTreeOnOpen: boolean;
   // First-launch welcome tour: opened automatically once. Don't reopen.
   welcomeShown: boolean;
+  // v4.0 first-run agent setup wizard. Shown once after the welcome tour to
+  // route the user into BYOK or Ollama. Re-openable from Settings → AI.
+  agentWizardSeen: boolean;
   // v2.0 F1: show the Backlinks panel (right of editor) for markdown docs.
   showBacklinks: boolean;
   // v2.0 F2: CodeMirror Hunspell spell-check (separate from browser-native `spellCheck` above).
@@ -67,6 +70,25 @@ interface Settings {
   dailyNotesFormat: string;
   dailyNotesTemplate: string;
   showTagsPanel: boolean;
+  // v4.0 pillar 1: Inline Agent Panel — chat-with-vault sidebar.
+  showAgentPanel: boolean;
+  // v4.0 release migration marker: set on first launch after upgrading
+  // to v4.0. If absent or false, `load()` force-enables `showAgentPanel`
+  // once so users coming from v3.6.x or any v4-beta build (where the
+  // default was false) actually see the marquee feature instead of an
+  // unchanged sidebar. After the migration the user is free to toggle
+  // it off via the command palette and the choice sticks.
+  v4AgentPanelMigrated: boolean;
+  // v4.0 pillar 1: when true, the agent can call write_note / append_to_note
+  // from chat. Default off — the agent is read-only by default.
+  agentAllowWrite: boolean;
+  // v4.0 pillar 1: max number of LLM ↔ tool round-trips per chat turn.
+  // Cap protects against a runaway tool loop. C3.2 default is 8.
+  agentToolLoopCap: number;
+  // Width (in px) of the right/left side sidebar that hosts Outline /
+  // Backlinks / Tags / History / Agent Panel. The agent panel needs more
+  // room than read-only browsing; user-resizable via the drag handle.
+  sideSidebarWidth: number;
   // v2.0 F4: BYOK AI rewrite. `aiProvider` is a stable id from
   // ai-providers.ts PROVIDERS — widened to string to avoid breaking when
   // new providers land.
@@ -187,12 +209,16 @@ function defaults(): Settings {
     uiFontSize: 13,
     autoCheckUpdate: true,
     language: (() => {
-      // Detect browser language on first run (zh-CN, zh-TW, etc. → 'zh')
+      // Detect browser language on first run. Maps the navigator BCP-47
+      // tag to one of the four shipped UI locales; everything else → 'en'.
       try {
         const nav = typeof navigator !== 'undefined' ? navigator.language || '' : '';
-        return /^zh/i.test(nav) ? 'zh' : 'en';
+        if (/^zh/i.test(nav)) return 'zh';
+        if (/^ja/i.test(nav)) return 'ja';
+        if (/^ko/i.test(nav)) return 'ko';
+        return 'en';
       } catch { return 'en'; }
-    })() as 'en' | 'zh',
+    })() as 'en' | 'zh' | 'ja' | 'ko',
     previewFitWidth: false,
     customCssPath: '',
     telemetryEnabled: true,
@@ -201,12 +227,22 @@ function defaults(): Settings {
     openFileInNewWindow: false,
     revealInFileTreeOnOpen: false,
     welcomeShown: false,
+    agentWizardSeen: false,
     showBacklinks: true,
     spellcheckEnabled: false,
     dailyNotesFolder: 'Daily',
     dailyNotesFormat: 'YYYY-MM-DD.md',
     dailyNotesTemplate: '',
     showTagsPanel: true,
+    showAgentPanel: true,
+    // True for fresh installs (defaults are already v4.0). Existing
+    // localStorage blobs from v3.6.x / v4-beta won't have this key, so
+    // `load()`'s migration kicks in and force-enables the Agent Panel
+    // once before setting the marker on disk.
+    v4AgentPanelMigrated: true,
+    agentAllowWrite: false,
+    agentToolLoopCap: 8,
+    sideSidebarWidth: 260,
     aiEnabled: false,
     aiProvider: 'openai',
     aiModel: '',
@@ -279,6 +315,15 @@ function load(): Settings {
       // sub-key (older settings blob) doesn't yield `undefined` and a
       // tampered numeric stays in range.
       merged.pdfDefaults = mergePdfDefaults(parsed.pdfDefaults);
+      // One-time v4.0 upgrade: any saved settings blob written before
+      // v4.0 release (or by a v4 beta where the panel defaulted off)
+      // will not have the `v4AgentPanelMigrated` marker. Force-enable
+      // the Agent Panel once and set the marker; subsequent toggles by
+      // the user persist normally.
+      if (!parsed.v4AgentPanelMigrated) {
+        merged.showAgentPanel = true;
+        merged.v4AgentPanelMigrated = true;
+      }
       return merged;
     }
   } catch {}
@@ -423,6 +468,14 @@ export const useSettingsStore = defineStore('settings', {
       this.welcomeShown = true;
       this.persist();
     },
+    markAgentWizardSeen() {
+      this.agentWizardSeen = true;
+      this.persist();
+    },
+    resetAgentWizard() {
+      this.agentWizardSeen = false;
+      this.persist();
+    },
     toggleBacklinks() {
       this.showBacklinks = !this.showBacklinks;
       this.persist();
@@ -433,6 +486,26 @@ export const useSettingsStore = defineStore('settings', {
     },
     toggleTagsPanel() {
       this.showTagsPanel = !this.showTagsPanel;
+      this.persist();
+    },
+    toggleAgentPanel() {
+      this.showAgentPanel = !this.showAgentPanel;
+      this.persist();
+    },
+    toggleAgentAllowWrite() {
+      this.agentAllowWrite = !this.agentAllowWrite;
+      this.persist();
+    },
+    setAgentToolLoopCap(n: number) {
+      const clean = Math.max(1, Math.min(20, Math.round(n) || 8));
+      this.agentToolLoopCap = clean;
+      this.persist();
+    },
+    setSideSidebarWidth(w: number) {
+      // Reasonable bounds — narrower than 220 hides text, wider than 800
+      // eats too much editor space.
+      const clean = Math.max(220, Math.min(800, Math.round(w) || 260));
+      this.sideSidebarWidth = clean;
       this.persist();
     },
     setDailyNotesFolder(p: string) {
@@ -491,7 +564,7 @@ export const useSettingsStore = defineStore('settings', {
       this.uiFontSize = Math.max(10, Math.min(20, n));
       this.persist();
     },
-    setLanguage(lang: 'en' | 'zh') {
+    setLanguage(lang: 'en' | 'zh' | 'ja' | 'ko') {
       this.language = lang;
       this.persist();
     },

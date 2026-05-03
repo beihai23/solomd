@@ -13,6 +13,7 @@ import Outline from './components/Outline.vue';
 import BacklinksPanel from './components/BacklinksPanel.vue';
 import TagsPanel from './components/TagsPanel.vue';
 import HistoryPanel from './components/HistoryPanel.vue';
+import AgentPanel from './components/AgentPanel.vue';
 import { useAutoCommit } from './composables/useAutoCommit';
 import { useGithubSync } from './composables/useGithubSync';
 import { useSessionRestore } from './composables/useSessionRestore';
@@ -28,6 +29,7 @@ import RagSearch from './components/RagSearch.vue';
 import CjkProofread from './components/CjkProofread.vue';
 import ReadingView from './components/ReadingView.vue';
 import AboutDialog from './components/AboutDialog.vue';
+import AgentSetupWizard from './components/AgentSetupWizard.vue';
 import UnsavedDialog from './components/UnsavedDialog.vue';
 import FileChangedDialog from './components/FileChangedDialog.vue';
 import Toast from './components/Toast.vue';
@@ -96,6 +98,7 @@ const searchOpen = ref(false);
 const ragSearchOpen = ref(false);
 const cjkProofreadOpen = ref(false);
 const aboutOpen = ref(false);
+const wizardOpen = ref(false);
 
 // Unsaved-changes dialog state
 const unsavedOpen = ref(false);
@@ -258,6 +261,10 @@ watchEffect(() => {
 watchEffect(() => {
   const folder = workspace.currentFolder;
   invoke('capture_set_workspace', { folder: folder ?? null }).catch(() => {});
+  // v4.0: same dance for the public REST API server. Both endpoints share
+  // the "I 503 when no folder is open" contract, so they read from
+  // independent state but get pushed together.
+  invoke('rest_set_workspace', { folder: folder ?? null }).catch(() => {});
 });
 
 // v2.3: keep the RAG index in sync with the toggle + active folder. When
@@ -468,6 +475,20 @@ onMounted(async () => {
     tabs.newTab();
   }
 
+  // v4.0 first-run agent setup wizard. Fires after the welcome tour on a
+  // fresh install — once. Re-openable from Settings → AI ("Run setup
+  // wizard again") for users who skipped it. We wait one tick so the
+  // welcome tour overlay (if any) shows first.
+  if (!settings.agentWizardSeen) {
+    setTimeout(() => {
+      wizardOpen.value = true;
+    }, isFreshLaunch ? 800 : 0);
+  }
+  // Settings → AI's "Run setup wizard again" button asks here. Registered
+  // as a named handler (see `onOpenAgentWizard` below) so onBeforeUnmount
+  // can detach it — otherwise every HMR remount stacks another listener.
+  window.addEventListener('solomd:open-agent-wizard', onOpenAgentWizard);
+
   // Initialize tile layout: validate persisted state or create default
   tiles.validate(tabs.tabs);
   if (!tiles.focusedLeaf?.activeTabId && tabs.tabs.length > 0) {
@@ -565,6 +586,9 @@ function onOpenSettingsEvent(e: Event) {
   const section = (e as CustomEvent).detail?.section ?? null;
   openSettingsAt(section);
 }
+function onOpenAgentWizard() {
+  wizardOpen.value = true;
+}
 
 window.addEventListener('solomd:wiki-open', onWikiOpen as EventListener);
 window.addEventListener('solomd:ai-rewrite-accept', onAIRewriteAccept as EventListener);
@@ -584,6 +608,7 @@ onBeforeUnmount(() => {
   window.removeEventListener(BASES_OPEN_EVENT, onOpenBases as EventListener);
   window.removeEventListener(BASES_CLOSE_EVENT, onCloseBases as EventListener);
   window.removeEventListener('solomd:open-settings', onOpenSettingsEvent as EventListener);
+  window.removeEventListener('solomd:open-agent-wizard', onOpenAgentWizard);
   if (unlistenOpened) {
     unlistenOpened();
     unlistenOpened = null;
@@ -616,13 +641,54 @@ const showHistoryPane = computed(
     tabs.activeTab?.language === 'markdown' &&
     !!workspace.currentFolder,
 );
+// v4.0 pillar 1: Agent Panel — workspace-level visibility (not per-tab).
+// Toggled via command palette `view.toggleAgentPanel`; persists in settings.
+const showAgentPane = computed(() => settings.showAgentPanel);
 const showRightSidebar = computed(
   () =>
     showOutlinePane.value ||
     showBacklinksPane.value ||
     showTagsPane.value ||
-    showHistoryPane.value,
+    showHistoryPane.value ||
+    showAgentPane.value,
 );
+
+// Side sidebar width — user-resizable via drag handle. Defaults to 260
+// for the read-only panes (outline/backlinks/tags/history), but auto-
+// bumps to 440 when the agent panel is on (chat needs real estate).
+// User resizes above the auto-bump are honored.
+const sideSidebarStyle = computed(() => {
+  const w =
+    showAgentPane.value && settings.sideSidebarWidth <= 260
+      ? 440
+      : settings.sideSidebarWidth;
+  return { width: `${w}px`, flexBasis: `${w}px` };
+});
+
+function onSidebarResize(side: 'left' | 'right', ev: MouseEvent) {
+  ev.preventDefault();
+  const startX = ev.clientX;
+  const startW = parseInt(
+    (sideSidebarStyle.value.width as string).replace('px', ''),
+    10,
+  );
+  const onMove = (m: MouseEvent) => {
+    const dx = m.clientX - startX;
+    // Right sidebar: drag left = wider. Left sidebar: drag right = wider.
+    const delta = side === 'right' ? -dx : dx;
+    settings.setSideSidebarWidth(startW + delta);
+  };
+  const onUp = () => {
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+  };
+  document.body.style.cursor = 'ew-resize';
+  document.body.style.userSelect = 'none';
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
+}
 const basesOpen = ref(false);
 const aiHasKey = ref(false);
 async function refreshAiHasKey() {
@@ -660,11 +726,14 @@ watchEffect(() => { void settings.aiEnabled; void settings.aiProvider; refreshAi
         <aside
           v-if="showRightSidebar && settings.outlineSide === 'left'"
           class="side-sidebar side-sidebar--left"
+          :style="sideSidebarStyle"
         >
+          <div class="side-sidebar__resize side-sidebar__resize--right" @mousedown="onSidebarResize('left', $event)" />
           <Outline v-if="showOutlinePane" :cursor-line="cursorLine" @goto="onOutlineGoto" />
           <BacklinksPanel v-if="showBacklinksPane" />
           <TagsPanel v-if="showTagsPane" />
           <HistoryPanel v-if="showHistoryPane" />
+          <AgentPanel v-if="showAgentPane" @open-settings="(section?: string) => openSettingsAt(section ?? 'integrations')" />
         </aside>
         <div class="content">
           <BasesView v-if="basesOpen" />
@@ -673,11 +742,14 @@ watchEffect(() => { void settings.aiEnabled; void settings.aiProvider; refreshAi
         <aside
           v-if="showRightSidebar && settings.outlineSide !== 'left'"
           class="side-sidebar side-sidebar--right"
+          :style="sideSidebarStyle"
         >
+          <div class="side-sidebar__resize side-sidebar__resize--left" @mousedown="onSidebarResize('right', $event)" />
           <Outline v-if="showOutlinePane" :cursor-line="cursorLine" @goto="onOutlineGoto" />
           <BacklinksPanel v-if="showBacklinksPane" />
           <TagsPanel v-if="showTagsPane" />
           <HistoryPanel v-if="showHistoryPane" />
+          <AgentPanel v-if="showAgentPane" @open-settings="(section?: string) => openSettingsAt(section ?? 'integrations')" />
         </aside>
       </div>
       <StatusBar :line="cursorLine" :col="cursorCol" />
@@ -707,6 +779,7 @@ watchEffect(() => { void settings.aiEnabled; void settings.aiProvider; refreshAi
     />
     <CjkProofread :open="cjkProofreadOpen" @close="cjkProofreadOpen = false" />
     <AboutDialog :open="aboutOpen" @close="aboutOpen = false" />
+    <AgentSetupWizard :open="wizardOpen" @close="wizardOpen = false" />
     <UnsavedDialog
       :open="unsavedOpen"
       :mode="unsavedMode"
@@ -744,6 +817,7 @@ watchEffect(() => { void settings.aiEnabled; void settings.aiProvider; refreshAi
   overflow: hidden;
 }
 .side-sidebar {
+  position: relative;
   display: flex;
   flex-direction: column;
   width: 260px;
@@ -757,11 +831,45 @@ watchEffect(() => { void settings.aiEnabled; void settings.aiProvider; refreshAi
 .side-sidebar--right {
   border-left: 1px solid var(--border);
 }
-.side-sidebar > :deep(*) {
+/* Drag handle for live-resize. Sits on the inner edge of the sidebar
+   (right edge of left sidebar, left edge of right sidebar) as a 5px
+   hit zone. v4.0 — agent panel chat needs more width than read-only
+   panes. */
+.side-sidebar__resize {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 5px;
+  cursor: ew-resize;
+  z-index: 10;
+  background: transparent;
+}
+.side-sidebar__resize--right {
+  right: -2px;
+}
+.side-sidebar__resize--left {
+  left: -2px;
+}
+.side-sidebar__resize:hover {
+  background: var(--accent, #6366f1);
+  opacity: 0.5;
+}
+.side-sidebar > :deep(*:not(.side-sidebar__resize)) {
   flex: 1 1 0;
   min-height: 0;
   width: 100%;
-  /* Reset Outline's own width since it now lives in a sized container. */
+  /* Reset Outline's own width since it now lives in a sized container.
+     `:not(.side-sidebar__resize)` excludes the 5px drag handle — without
+     it the handle inherits width:100% and floods the whole sidebar with
+     the hover-tinted accent color, intercepting every click via its
+     z-index:10. */
+}
+/* Agent Panel needs vertical room — chat scrollback, tool-call cards,
+   compose box. Give it 4× the share Outline/Backlinks/Tags/History get
+   when they coexist (so Agent ≈ 50% of sidebar height with all 5 on). */
+.side-sidebar > :deep(.agent-panel) {
+  flex: 4 1 0;
+  min-height: 240px;
 }
 .side-sidebar > :deep(.outline) {
   width: 100% !important;

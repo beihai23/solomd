@@ -19,6 +19,7 @@ import { useToastsStore } from '../stores/toasts';
 import { useWorkspaceStore } from '../stores/workspace';
 import { useSettingsStore } from '../stores/settings';
 import { useI18n } from '../i18n';
+import McpProfilesSettings from './McpProfilesSettings.vue';
 
 const { t } = useI18n();
 const toasts = useToastsStore();
@@ -287,6 +288,10 @@ const mcpToolKeys = [
           {{ t('integrations.mcpWriteNote') }}
         </p>
       </details>
+
+      <!-- v4.0 P4 federation: named bundles of workspaces, each with a -->
+      <!-- one-click "Copy Claude Desktop config" button.                -->
+      <McpProfilesSettings />
     </div>
   </section>
 </template>

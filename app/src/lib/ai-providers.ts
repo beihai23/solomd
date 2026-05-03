@@ -40,6 +40,19 @@ export type ProviderId =
 /** Wire format the Rust proxy uses to talk to the provider. */
 export type ApiFormat = 'openai' | 'anthropic' | 'ollama';
 
+/** A "preset" model surfaced as a quick-pick chip in AI Settings — one
+ *  step up from the freeform `modelHint` string. v4.0 Pillar 5 introduces
+ *  this for Ollama only (3 qwen2.5 variants); other providers keep the
+ *  legacy `modelHint` text and may grow presets later. */
+export interface ProviderPreset {
+  /** Stable id used as the radio button key. */
+  id: string;
+  /** Model id passed to the provider (e.g. `qwen2.5:1.5b`). */
+  model: string;
+  /** i18n key under `ai.*`, e.g. `ai.ollama.preset.quick`. */
+  labelKey: string;
+}
+
 export interface ProviderConfig {
   id: ProviderId;
   label: string;
@@ -55,6 +68,10 @@ export interface ProviderConfig {
   modelHint?: string;
   /** Where to get an API key (button-link in settings). */
   signupUrl?: string;
+  /** Optional curated quick-pick list. v4.0 Pillar 5 ships these for
+   *  Ollama only; other providers' presets array (if added later) renders
+   *  the same way in AISettings.vue. */
+  presets?: ProviderPreset[];
 }
 
 export const PROVIDERS: ProviderConfig[] = [
@@ -194,14 +211,41 @@ export const PROVIDERS: ProviderConfig[] = [
     id: 'ollama',
     label: 'Ollama (本地 / local)',
     apiFormat: 'ollama',
-    defaultModel: 'llama3.2',
+    // Default to the small/quick preset so a fresh install can hit "Pull
+    // recommended" and have something usable in <2 minutes on a typical
+    // laptop. Power users picking the 7b/14b presets just click the chip.
+    defaultModel: 'qwen2.5:1.5b',
     defaultBaseUrl: 'http://localhost:11434',
-    modelHint: 'llama3.2 · qwen2.5 · deepseek-r1 · gemma3 · mistral · phi3',
+    modelHint: 'qwen2.5 · llama3.2 · deepseek-r1 · gemma3 · mistral · phi3',
+    presets: [
+      { id: 'rewrite', model: 'qwen2.5:7b', labelKey: 'ai.ollama.preset.rewrite' },
+      { id: 'quick', model: 'qwen2.5:1.5b', labelKey: 'ai.ollama.preset.quick' },
+      { id: 'cjk', model: 'qwen2.5:14b', labelKey: 'ai.ollama.preset.cjk' },
+    ],
   },
 ];
 
+/** The model the "Pull recommended" CTA pulls when Ollama is detected but
+ *  has no models installed. ~1 GB on disk, ~2 minutes on a 100 Mb/s link. */
+export const OLLAMA_RECOMMENDED_MODEL = 'qwen2.5:1.5b';
+
+/**
+ * Resolve a provider id to its canonical form. Mirrors the Rust
+ * `ai_proxy::resolve_provider` helper so the alias rules stay in sync.
+ *
+ * Today the only alias is `local` → `ollama`, introduced for v4.0 Recipes
+ * (P2): YAML files written by hand often say `provider: local` rather than
+ * the brand name. Both `providerById` callers and the Recipe loader funnel
+ * through this so the aliasing lives in exactly one place per language.
+ */
+export function resolveProvider(id: string): string {
+  if (id === 'local') return 'ollama';
+  return id;
+}
+
 export function providerById(id: string): ProviderConfig | undefined {
-  return PROVIDERS.find((p) => p.id === id);
+  const canonical = resolveProvider(id);
+  return PROVIDERS.find((p) => p.id === canonical);
 }
 
 export interface AIAction {

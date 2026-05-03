@@ -26,7 +26,7 @@
 
 | 功能 | |
 |---|---|
-| **AI 改写，BYOK** | 14 个服务 —— OpenAI · Claude · Gemini · DeepSeek · 通义千问 · 智谱 GLM · Kimi · 豆包 · 硅基流动 · OpenRouter · Mistral · Groq · xAI · Ollama。Key 存在系统钥匙串里，直连厂商，不经我们手。 |
+| **AI 改写，BYOK** | 14 个服务 —— OpenAI · Claude · Gemini · DeepSeek · 通义千问 · 智谱 GLM · Kimi · 豆包 · 硅基流动 · OpenRouter · Mistral · Groq · xAI · Ollama。Key 存在系统钥匙串里，直连厂商，不经我们手。Ollama 自动探测 + 一键拉取推荐模型（`qwen2.5:1.5b`，约 1 GB），qwen2.5 预设三档可选。 |
 | **GitHub 同步** | 每次保存推到自己的 GitHub 私库，定时拉取。可选端到端加密（Argon2id + XChaCha20-Poly1305）。GitLab / Gitea / 任意 HTTPS git 地址也支持。 |
 | **每篇笔记 AutoGit** | 每次 `⌘S` 在工作区里的本地 `.git` 写一次提交。libgit2 内嵌，不需要装系统 git。永不自动 push。 |
 | **内置 MCP server** | `solomd-mcp` 跟随安装包发出，13 个工具（8 通用 + 5 SoloMD-only）。stdio 协议，不开网络端口。默认只读，`--allow-write` 显式开启写入。 |

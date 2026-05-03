@@ -29,6 +29,17 @@ mod git_history;
 #[path = "capture_endpoint.rs"]
 mod capture_endpoint;
 
+// v4.0 — public REST API mirroring the agent_tools surface for non-MCP
+// clients. Declared in both lib.rs and runner.rs so the binary's compile
+// root resolves `crate::rest_api` the same way the lib does.
+#[path = "rest_api.rs"]
+mod rest_api;
+// v4.0 — BYOK cost meter. Same dual-declaration as rest_api: agent_run
+// references `crate::cost_meter::record`, which must resolve in both
+// the lib (for tests) and the bin (for live recipe + chat finishes).
+#[path = "cost_meter.rs"]
+mod cost_meter;
+
 // v2.5 community theme marketplace — see app/src-tauri/src/themes.rs.
 #[path = "themes.rs"]
 mod themes;
@@ -57,6 +68,38 @@ mod dev_bridge;
 
 #[path = "watcher.rs"]
 mod watcher;
+
+// v4.0 Pillar 1 — agent tool registry + run-dir persistence.
+#[path = "agent_run.rs"]
+mod agent_run;
+#[path = "agent_tools.rs"]
+mod agent_tools;
+// v4.0 — provider pricing table for cost estimates.
+#[path = "pricing.rs"]
+mod pricing;
+// v4.0 Pillar 3 — canonical trace emitter + reader + Tauri wrappers.
+#[path = "trace.rs"]
+mod trace;
+#[path = "agent_trace.rs"]
+mod agent_trace;
+// v4.0 Pillar 5 — Ollama polish (detect / pull / install-page).
+#[path = "ollama.rs"]
+mod ollama;
+// v4.0 Pillar 4 — MCP federation profile storage.
+#[path = "mcp_profiles.rs"]
+mod mcp_profiles;
+// v4.0 Pillar 2 — Agent Recipes. Declared here in addition to lib.rs so
+// the desktop binary (driven from `main.rs` → `runner.rs`) picks them
+// up. `commands.rs` and `git_history.rs` reference
+// `crate::recipe_runner::*`, which must resolve in both compilation
+// roots (the lib AND the bin).
+#[path = "recipes.rs"]
+mod recipes;
+#[path = "recipe_runner.rs"]
+mod recipe_runner;
+// v4.0 — bundled recipe cookbook (10+ ready-to-edit YAML templates).
+#[path = "cookbook.rs"]
+mod cookbook;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
@@ -380,6 +423,91 @@ fn drain_pending_opens(state: tauri::State<PendingOpen>) -> Vec<String> {
     std::mem::take(&mut *guard)
 }
 
+/// One-shot guard so the size/position fit-up only runs once per launch.
+/// After the plugin's restore (or the Ready-event fallback) triggers it,
+/// further user moves/resizes are left alone.
+static MAIN_FIT_DONE: AtomicBool = AtomicBool::new(false);
+
+/// Apply the size + position clamp + show + focus exactly once. Subsequent
+/// calls are cheap no-ops via the `MAIN_FIT_DONE` flag.
+fn fit_main_window_once(win: &tauri::WebviewWindow) {
+    if MAIN_FIT_DONE
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        return;
+    }
+    clamp_window_to_monitor(win);
+    let _ = win.show();
+    let _ = win.unminimize();
+    let _ = win.set_focus();
+}
+
+/// Re-fit the main window into its current monitor's work area before show.
+///
+/// Two failure modes from `tauri-plugin-window-state` we have to defend
+/// against on every launch:
+/// 1. **Oversize restore** — a saved 2880×1740 from a 5K display, restored
+///    on a 1440p laptop, leaves the bottom edge off-screen.
+/// 2. **Out-of-bounds position** — saved coordinates from a now-disconnected
+///    secondary monitor, or a saved Y that tucks the title bar behind the
+///    macOS menu bar.
+///
+/// Behavior:
+/// - If size or position is still valid for the current monitor, the user's
+///   chosen layout is preserved (we don't fight intentional positioning).
+/// - If anything was out of bounds, the window is clamped to a sensible
+///   size and **recentered on the current monitor**. Centering > pinning to
+///   an edge: a left-edge-pinned window after a display change reads as
+///   "broken layout," whereas centered reads as "fresh start, sane state."
+///
+/// 40px is reserved at the top of the work area for the macOS menu bar.
+fn clamp_window_to_monitor(win: &tauri::WebviewWindow) {
+    const MENU_BAR_RESERVE: i32 = 40;
+    const MIN_W: i32 = 480;
+    const MIN_H: i32 = 360;
+
+    let Ok(Some(monitor)) = win.current_monitor() else { return; };
+    let scale = monitor.scale_factor();
+    let mon_w = (monitor.size().width as f64 / scale).round() as i32;
+    let mon_h = (monitor.size().height as f64 / scale).round() as i32;
+    let mon_x = (monitor.position().x as f64 / scale).round() as i32;
+    let mon_y = (monitor.position().y as f64 / scale).round() as i32;
+
+    let Ok(outer) = win.outer_size() else { return; };
+    let cur_w = (outer.width as f64 / scale).round() as i32;
+    let cur_h = (outer.height as f64 / scale).round() as i32;
+
+    let max_w = mon_w;
+    let max_h = mon_h - MENU_BAR_RESERVE;
+    let new_w = cur_w.clamp(MIN_W, max_w);
+    let new_h = cur_h.clamp(MIN_H, max_h);
+    let size_clamped = new_w != cur_w || new_h != cur_h;
+
+    let Ok(outer_pos) = win.outer_position() else { return; };
+    let cur_x = (outer_pos.x as f64 / scale).round() as i32;
+    let cur_y = (outer_pos.y as f64 / scale).round() as i32;
+
+    // Position is "off-monitor" if any edge of the window falls outside the
+    // current monitor's work area (top edge above the menu bar reserve, or
+    // any other edge past the monitor bounds for the post-clamp size).
+    let position_invalid = cur_x < mon_x
+        || cur_x + new_w > mon_x + mon_w
+        || cur_y < mon_y + MENU_BAR_RESERVE
+        || cur_y + new_h > mon_y + mon_h;
+
+    if size_clamped {
+        let _ = win.set_size(tauri::LogicalSize::new(new_w as u32, new_h as u32));
+    }
+
+    if size_clamped || position_invalid {
+        let new_x = mon_x + (mon_w - new_w) / 2;
+        let centered_y = mon_y + (mon_h - new_h) / 2;
+        let new_y = centered_y.max(mon_y + MENU_BAR_RESERVE);
+        let _ = win.set_position(tauri::LogicalPosition::new(new_x, new_y));
+    }
+}
+
 pub fn run_with(initial_file: Option<String>) {
     let pending: Vec<String> = initial_file.into_iter().collect();
 
@@ -400,6 +528,7 @@ pub fn run_with(initial_file: Option<String>) {
     let app = builder
         .manage(PendingOpen(Mutex::new(pending)))
         .manage(watcher::WatcherState::new())
+        .manage(recipe_runner::RecipesState::new())
         .invoke_handler(tauri::generate_handler![
             commands::read_file,
             commands::read_binary_file,
@@ -434,6 +563,7 @@ pub fn run_with(initial_file: Option<String>) {
             ai_proxy::ai_has_key,
             ai_proxy::ai_clear_key,
             ai_proxy::ai_rewrite,
+            ai_proxy::ai_chat,
             ai_proxy::ai_cancel,
             ai_proxy::ai_verify_key,
             pandoc::pandoc_detect,
@@ -450,6 +580,14 @@ pub fn run_with(initial_file: Option<String>) {
             capture_endpoint::capture_regenerate_token,
             capture_endpoint::capture_set_inbox_folder,
             capture_endpoint::capture_set_workspace,
+            rest_api::rest_get_state,
+            rest_api::rest_set_enabled,
+            rest_api::rest_regenerate_token,
+            rest_api::rest_set_allow_write,
+            rest_api::rest_set_workspace,
+            cost_meter::cost_meter_get,
+            cost_meter::cost_meter_reset,
+            cost_meter::cost_meter_set_enabled,
             themes::theme_install,
             themes::theme_uninstall,
             themes::theme_list_installed,
@@ -482,6 +620,44 @@ pub fn run_with(initial_file: Option<String>) {
             crypto::crypto_decrypt_after_pull,
             watcher::watch_file,
             watcher::unwatch_file,
+            agent_tools::agent_tool_list_notes,
+            agent_tools::agent_tool_read_note,
+            agent_tools::agent_tool_search,
+            agent_tools::agent_tool_get_backlinks,
+            agent_tools::agent_tool_list_tags,
+            agent_tools::agent_tool_get_outline,
+            agent_tools::agent_tool_autogit_log,
+            agent_tools::agent_tool_autogit_diff,
+            agent_tools::agent_tool_write_note,
+            agent_tools::agent_tool_append_to_note,
+            agent_tools::agent_tool_read_agent_trace,
+            agent_tools::agent_list_runs,
+            agent_trace::agent_trace_read,
+            agent_trace::agent_trace_list,
+            agent_trace::agent_trace_replay_from,
+            ollama::ollama_detect,
+            ollama::ollama_pull,
+            ollama::ollama_cancel_pull,
+            ollama::open_ollama_install_page,
+            mcp_profiles::mcp_profiles_list,
+            mcp_profiles::mcp_profiles_save,
+            mcp_profiles::mcp_profiles_delete,
+            mcp_profiles::mcp_profiles_export_config,
+            recipe_runner::recipes_list,
+            recipe_runner::recipes_get,
+            recipe_runner::recipes_save,
+            recipe_runner::recipes_delete,
+            recipe_runner::recipes_run_now,
+            recipe_runner::recipes_pending_runs,
+            recipe_runner::recipes_history,
+            recipe_runner::recipes_read_trace,
+            recipe_runner::recipes_read_run_md,
+            recipe_runner::recipes_run_diff,
+            recipe_runner::recipes_accept_run,
+            recipe_runner::recipes_reject_run,
+            cookbook::cookbook_list,
+            cookbook::cookbook_get,
+            cookbook::cookbook_install,
         ])
         .on_menu_event(|app_handle, event| {
             // Forward every menu click to the frontend as a single event
@@ -496,14 +672,23 @@ pub fn run_with(initial_file: Option<String>) {
             let menu = build_app_menu(app.handle(), "en")?;
             app.set_menu(menu)?;
 
-            // Windows-specific: when launched via file association, the newly
-            // created window sometimes lands behind the Explorer window that
-            // triggered it (focus-stealing prevention). Explicitly show + focus
-            // the main window to bring it forward.
+            // The window-state plugin's restore_state is dispatched via
+            // `run_on_main_thread`, so it doesn't fire until AFTER setup
+            // returns AND after the run loop has started processing. Hook
+            // the main window's first Resized OR Moved event — that's the
+            // restore — and clamp at that moment. A second hook in the
+            // run-loop event match (`RunEvent::Ready` + 400ms timer) acts
+            // as a fallback when there's no saved state to restore.
             if let Some(win) = app.get_webview_window("main") {
-                let _ = win.show();
-                let _ = win.unminimize();
-                let _ = win.set_focus();
+                let win_clone = win.clone();
+                win.on_window_event(move |event| {
+                    if matches!(
+                        event,
+                        tauri::WindowEvent::Resized(_) | tauri::WindowEvent::Moved(_)
+                    ) {
+                        fit_main_window_once(&win_clone);
+                    }
+                });
             }
 
             // NOTE: do NOT drain PendingOpen here. The frontend calls
@@ -518,6 +703,12 @@ pub fn run_with(initial_file: Option<String>) {
             {
                 dev_bridge::spawn(app.handle().clone());
             }
+
+            // v4.0 Pillar 2 — start the cron-trigger loop. Sleeps until
+            // a `schedule` recipe is due; harmless when no recipes are
+            // loaded yet (the loop polls workspace state every minute
+            // and recipes are loaded eagerly by `recipes_list`).
+            recipe_runner::spawn_cron_loop(app.handle().clone());
             Ok(())
         })
         .build(tauri::generate_context!())
@@ -525,6 +716,43 @@ pub fn run_with(initial_file: Option<String>) {
 
     app.run(|app_handle, event| {
         match &event {
+            // ---- Post-restore window setup ----
+            // `RunEvent::Ready` fires after the run loop has started, which
+            // means after `tauri-plugin-window-state` has had a chance to
+            // process its `run_on_main_thread`-queued restore_state call.
+            // Two things we do here that we can't reliably do in `setup`:
+            //
+            // 1. Clamp the restored window to the current monitor (size +
+            //    position). The plugin happily restores a saved 2556×1320
+            //    @ x=1207 from a previous multi-monitor session onto a
+            //    single 2560-wide monitor, leaving the right edge 1.2k px
+            //    off-screen. Always recenter when the saved layout is
+            //    invalid for the current monitor; preserve when valid.
+            //
+            // 2. macOS-only: re-issue show + set_focus so SoloMD becomes
+            //    frontmost. `set_focus` from `setup` fires before NSApp
+            //    has finished `applicationDidFinishLaunching` and gets
+            //    silently dropped, leaving SoloMD launched behind the
+            //    parent app (Finder / terminal) — the macOS menu bar
+            //    keeps showing the previous app's menus until the user
+            //    drags SoloMD's window.
+            RunEvent::Ready => {
+                // Fallback path: when there's no saved window state for the
+                // plugin to restore (fresh install, deleted state file), no
+                // Resized/Moved event ever fires from the restore — the
+                // setup-time `on_window_event` hook would never trigger and
+                // the window would never get shown / focused. Schedule a
+                // delayed fit on a background thread; the AtomicBool guard
+                // makes it a no-op if the on_window_event hook beat us.
+                let app_handle_clone = app_handle.clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_millis(400));
+                    if let Some(win) = app_handle_clone.get_webview_window("main") {
+                        fit_main_window_once(&win);
+                    }
+                });
+            }
+
             // ---- Window close: intercept and ask frontend ----
             // Only the main window gets the unsaved-tabs check. Auxiliary
             // windows (slideshow, "open file in new window" spawns labelled
