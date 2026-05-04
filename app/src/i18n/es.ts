@@ -69,6 +69,7 @@ export const es: I18n = {
     spellCheckTooltip: 'Corrector ortográfico',
     cjkProofreadTooltip: 'Revisión CJK (⌘⇧J) — marcar erratas tipográficas chinas',
     fileTreeTooltip: 'Alternar árbol de archivos (Ctrl+B)',
+    rightSidebarTooltip: 'Alternar barra lateral derecha (Ctrl+Alt+B) — Esquema / Backlinks / Tags / Historial / Panel Agent',
     outlineTooltip: 'Alternar esquema (Ctrl+Mayús+O)',
     searchTooltip: 'Buscar en la carpeta (Ctrl+Mayús+F)',
     paletteTooltip: 'Paleta de comandos (Ctrl+Mayús+K)',

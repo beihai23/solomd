@@ -69,6 +69,7 @@ export const de: I18n = {
     spellCheckTooltip: 'Rechtschreibprüfung',
     cjkProofreadTooltip: 'CJK-Korrektur (⌘⇧J) — chinesische Tippfehler markieren',
     fileTreeTooltip: 'Dateibaum umschalten (Strg+B)',
+    rightSidebarTooltip: 'Rechte Seitenleiste umschalten (Strg+Alt+B) — Gliederung / Backlinks / Tags / Verlauf / Agent-Panel',
     outlineTooltip: 'Gliederung umschalten (Strg+Umschalt+O)',
     searchTooltip: 'Im Ordner suchen (Strg+Umschalt+F)',
     paletteTooltip: 'Befehlspalette (Strg+Umschalt+K)',

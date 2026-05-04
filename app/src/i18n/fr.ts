@@ -69,6 +69,7 @@ export const fr: I18n = {
     spellCheckTooltip: 'Vérification orthographique',
     cjkProofreadTooltip: 'Relecture CJK (⌘⇧J) — détecter les fautes typographiques chinoises',
     fileTreeTooltip: 'Basculer l\'arborescence (Ctrl+B)',
+    rightSidebarTooltip: 'Basculer la barre latérale droite (Ctrl+Alt+B) — Plan / Backlinks / Tags / Historique / Panneau Agent',
     outlineTooltip: 'Basculer le plan (Ctrl+Maj+O)',
     searchTooltip: 'Rechercher dans le dossier (Ctrl+Maj+F)',
     paletteTooltip: 'Palette de commandes (Ctrl+Maj+K)',

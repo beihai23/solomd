@@ -71,6 +71,7 @@ export const pt: I18n = {
     spellCheckTooltip: 'Verificação ortográfica',
     cjkProofreadTooltip: 'Revisão CJK (⌘⇧J) — sinalizar erros tipográficos chineses',
     fileTreeTooltip: 'Alternar árvore de arquivos (Ctrl+B)',
+    rightSidebarTooltip: 'Alternar barra lateral direita (Ctrl+Alt+B) — Sumário / Backlinks / Tags / Histórico / Painel Agent',
     outlineTooltip: 'Alternar sumário (Ctrl+Shift+O)',
     searchTooltip: 'Buscar na pasta (Ctrl+Shift+F)',
     paletteTooltip: 'Paleta de comandos (Ctrl+Shift+K)',

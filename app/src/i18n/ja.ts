@@ -69,6 +69,7 @@ export const ja: I18n = {
     spellCheckTooltip: 'スペルチェック',
     cjkProofreadTooltip: 'CJK 校正 (⌘⇧J) — 中国語タイポを検出',
     fileTreeTooltip: 'ファイルツリー切替 (Ctrl+B)',
+    rightSidebarTooltip: '右サイドバー切替 (Ctrl+Alt+B) — アウトライン / バックリンク / タグ / 履歴 / Agent パネル',
     outlineTooltip: 'アウトライン切替 (Ctrl+Shift+O)',
     searchTooltip: 'フォルダ内検索 (Ctrl+Shift+F)',
     paletteTooltip: 'コマンドパレット (Ctrl+Shift+K)',

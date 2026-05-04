@@ -69,6 +69,7 @@ export const ko: I18n = {
     spellCheckTooltip: '맞춤법 검사',
     cjkProofreadTooltip: 'CJK 교정(⌘⇧J) — 중국어 타이포 감지',
     fileTreeTooltip: '파일 트리 토글(Ctrl+B)',
+    rightSidebarTooltip: '오른쪽 사이드바 토글(Ctrl+Alt+B) — 개요 / 백링크 / 태그 / 기록 / Agent 패널',
     outlineTooltip: '개요 토글(Ctrl+Shift+O)',
     searchTooltip: '폴더에서 검색(Ctrl+Shift+F)',
     paletteTooltip: '명령 팔레트(Ctrl+Shift+K)',

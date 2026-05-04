@@ -69,6 +69,7 @@ export const it: I18n = {
     spellCheckTooltip: 'Controllo ortografico',
     cjkProofreadTooltip: 'Revisione CJK (⌘⇧J) — segnala errori tipografici cinesi',
     fileTreeTooltip: 'Attiva/disattiva albero file (Ctrl+B)',
+    rightSidebarTooltip: 'Attiva/disattiva barra laterale destra (Ctrl+Alt+B) — Sommario / Backlinks / Tag / Cronologia / Pannello Agent',
     outlineTooltip: 'Attiva/disattiva sommario (Ctrl+Maiusc+O)',
     searchTooltip: 'Cerca nella cartella (Ctrl+Maiusc+F)',
     paletteTooltip: 'Tavolozza comandi (Ctrl+Maiusc+K)',
