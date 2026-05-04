@@ -11,7 +11,17 @@ const langPrefix = lang === 'en' ? '' : `/${lang}`;
 const whatsNewHref = `${langPrefix}/whats-new/`;
 // /agents/ sub-page exists only in en + zh; ja/ko link to en.
 const agentsHref = lang === 'zh' ? '/zh/agents/' : '/agents/';
-const ONE_LINE_LABEL = { en: 'Or one-line install', zh: '或一键安装命令', ja: 'またはワンラインインストール', ko: '또는 한 줄 설치' }[lang];
+const ONE_LINE_LABEL = {
+  en: 'Or one-line install',
+  zh: '或一键安装命令',
+  ja: 'またはワンラインインストール',
+  ko: '또는 한 줄 설치',
+  de: 'Oder Ein-Zeilen-Installation',
+  fr: 'Ou installation en une ligne',
+  es: 'O instalación en una línea',
+  pt: 'Ou instalação em uma linha',
+  it: 'O installazione in una riga',
+}[lang];
 
 // Default (SSR / no-JS / unknown OS) → mac dmg link
 const defaultDownload = `${baseUrl}/SoloMD_${VERSION}_universal.dmg`;

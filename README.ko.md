@@ -7,7 +7,7 @@
 [![Downloads](https://img.shields.io/github/downloads/zhitongblog/solomd/total)](https://github.com/zhitongblog/solomd/releases)
 [![Website](https://img.shields.io/badge/website-solomd.app-ff9f40.svg)](https://solomd.app)
 
-🌐 **[English README →](README.md) · [中文 README →](README.zh.md) · [日本語 README →](README.ja.md)**
+🌐 **[English](README.md) · [中文](README.zh.md) · [日本語](README.ja.md) · [Deutsch](README.de.md) · [Français](README.fr.md) · [Español](README.es.md) · [Português](README.pt.md) · [Italiano](README.it.md)**
 
 [**v4.0 다운로드**](https://github.com/zhitongblog/solomd/releases/latest) · [**런치 글**](https://solomd.app/ko/blog/) · [**웹사이트**](https://solomd.app/ko/) · [**보안**](https://solomd.app/ko/security/)
 

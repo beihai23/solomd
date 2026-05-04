@@ -267,12 +267,17 @@ function onSelectPdfFont(v: string) {
           <label>{{ t('settings.language') }}</label>
           <select
             :value="settings.language"
-            @change="settings.setLanguage(($event.target as HTMLSelectElement).value as 'en' | 'zh' | 'ja' | 'ko')"
+            @change="settings.setLanguage(($event.target as HTMLSelectElement).value as 'en' | 'zh' | 'ja' | 'ko' | 'de' | 'fr' | 'es' | 'pt' | 'it')"
           >
             <option value="en">English</option>
             <option value="zh">中文</option>
-            <option value="ja">日本語 (β)</option>
-            <option value="ko">한국어 (β)</option>
+            <option value="ja">日本語</option>
+            <option value="ko">한국어</option>
+            <option value="de">Deutsch</option>
+            <option value="fr">Français</option>
+            <option value="es">Español</option>
+            <option value="pt">Português</option>
+            <option value="it">Italiano</option>
           </select>
         </section>
 

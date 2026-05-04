@@ -38,7 +38,7 @@ interface Settings {
   typewriterMode: boolean;
   vimMode: boolean;
   uiFontSize: number;
-  language: 'en' | 'zh' | 'ja' | 'ko';
+  language: 'en' | 'zh' | 'ja' | 'ko' | 'de' | 'fr' | 'es' | 'pt' | 'it';
   autoCheckUpdate: boolean;
   // Preview layout
   previewFitWidth: boolean;
@@ -218,7 +218,7 @@ function defaults(): Settings {
         if (/^ko/i.test(nav)) return 'ko';
         return 'en';
       } catch { return 'en'; }
-    })() as 'en' | 'zh' | 'ja' | 'ko',
+    })() as 'en' | 'zh' | 'ja' | 'ko' | 'de' | 'fr' | 'es' | 'pt' | 'it',
     previewFitWidth: false,
     customCssPath: '',
     telemetryEnabled: true,
@@ -564,7 +564,7 @@ export const useSettingsStore = defineStore('settings', {
       this.uiFontSize = Math.max(10, Math.min(20, n));
       this.persist();
     },
-    setLanguage(lang: 'en' | 'zh' | 'ja' | 'ko') {
+    setLanguage(lang: 'en' | 'zh' | 'ja' | 'ko' | 'de' | 'fr' | 'es' | 'pt' | 'it') {
       this.language = lang;
       this.persist();
     },

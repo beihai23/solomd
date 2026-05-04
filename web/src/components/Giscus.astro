@@ -52,8 +52,18 @@ const GISCUS_CATEGORY = category;
 const GISCUS_CATEGORY_ID = ''; // <-- TODO: paste from giscus.app after running their wizard
 
 const isConfigured = GISCUS_REPO_ID !== '' && GISCUS_CATEGORY_ID !== '';
-const giscusLang = ({ en: 'en', zh: 'zh-CN', ja: 'ja', ko: 'ko' } as const)[lang];
-const openLabel = { en: 'Open on GitHub Discussions →', zh: '前往 GitHub Discussions →', ja: 'GitHub Discussions を開く →', ko: 'GitHub Discussions 열기 →' }[lang];
+const giscusLang = ({ en: 'en', zh: 'zh-CN', ja: 'ja', ko: 'ko', de: 'de', fr: 'fr', es: 'es', pt: 'pt', it: 'it' } as const)[lang];
+const openLabel = {
+  en: 'Open on GitHub Discussions →',
+  zh: '前往 GitHub Discussions →',
+  ja: 'GitHub Discussions を開く →',
+  ko: 'GitHub Discussions 열기 →',
+  de: 'Auf GitHub Discussions öffnen →',
+  fr: 'Ouvrir sur GitHub Discussions →',
+  es: 'Abrir en GitHub Discussions →',
+  pt: 'Abrir no GitHub Discussions →',
+  it: 'Apri su GitHub Discussions →',
+}[lang];
 const discussionsUrl = `https://github.com/${GISCUS_REPO}/discussions`;
 ---
 

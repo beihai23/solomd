@@ -9,8 +9,13 @@ import { en } from './en';
 import { zh } from './zh';
 import { ja } from './ja';
 import { ko } from './ko';
+import { de } from './de';
+import { fr } from './fr';
+import { es } from './es';
+import { pt } from './pt';
+import { it } from './it';
 
-const dicts = { en, zh, ja, ko } as const;
+const dicts = { en, zh, ja, ko, de, fr, es, pt, it } as const;
 type Lang = keyof typeof dicts;
 
 export function useI18n() {

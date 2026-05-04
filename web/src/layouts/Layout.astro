@@ -14,8 +14,8 @@ const {
   lang = 'en',
 } = Astro.props;
 
-const HTML_LANG = { en: 'en', zh: 'zh-CN', ja: 'ja', ko: 'ko' } as const;
-const OG_LOCALE = { en: 'en_US', zh: 'zh_CN', ja: 'ja_JP', ko: 'ko_KR' } as const;
+const HTML_LANG = { en: 'en', zh: 'zh-CN', ja: 'ja', ko: 'ko', de: 'de', fr: 'fr', es: 'es', pt: 'pt', it: 'it' } as const;
+const OG_LOCALE = { en: 'en_US', zh: 'zh_CN', ja: 'ja_JP', ko: 'ko_KR', de: 'de_DE', fr: 'fr_FR', es: 'es_ES', pt: 'pt_BR', it: 'it_IT' } as const;
 const htmlLang = HTML_LANG[lang];
 const path = lang === 'en' ? '/' : `/${lang}/`;
 const ogLocale = OG_LOCALE[lang];
@@ -34,6 +34,11 @@ const ogLocale = OG_LOCALE[lang];
     <link rel="alternate" hreflang="zh-CN" href="https://solomd.app/zh/" />
     <link rel="alternate" hreflang="ja" href="https://solomd.app/ja/" />
     <link rel="alternate" hreflang="ko" href="https://solomd.app/ko/" />
+    <link rel="alternate" hreflang="de" href="https://solomd.app/de/" />
+    <link rel="alternate" hreflang="fr" href="https://solomd.app/fr/" />
+    <link rel="alternate" hreflang="es" href="https://solomd.app/es/" />
+    <link rel="alternate" hreflang="pt" href="https://solomd.app/pt/" />
+    <link rel="alternate" hreflang="it" href="https://solomd.app/it/" />
     <link rel="alternate" hreflang="x-default" href="https://solomd.app/" />
     <link rel="canonical" href={`https://solomd.app${path}`} />
 
@@ -81,6 +86,11 @@ const ogLocale = OG_LOCALE[lang];
         ...(lang === 'zh' ? [{ "@type": "ListItem", "position": 2, "name": "中文", "item": "https://solomd.app/zh/" }] : []),
         ...(lang === 'ja' ? [{ "@type": "ListItem", "position": 2, "name": "日本語", "item": "https://solomd.app/ja/" }] : []),
         ...(lang === 'ko' ? [{ "@type": "ListItem", "position": 2, "name": "한국어", "item": "https://solomd.app/ko/" }] : []),
+        ...(lang === 'de' ? [{ "@type": "ListItem", "position": 2, "name": "Deutsch", "item": "https://solomd.app/de/" }] : []),
+        ...(lang === 'fr' ? [{ "@type": "ListItem", "position": 2, "name": "Français", "item": "https://solomd.app/fr/" }] : []),
+        ...(lang === 'es' ? [{ "@type": "ListItem", "position": 2, "name": "Español", "item": "https://solomd.app/es/" }] : []),
+        ...(lang === 'pt' ? [{ "@type": "ListItem", "position": 2, "name": "Português", "item": "https://solomd.app/pt/" }] : []),
+        ...(lang === 'it' ? [{ "@type": "ListItem", "position": 2, "name": "Italiano", "item": "https://solomd.app/it/" }] : []),
       ]
     })} />
 
@@ -131,7 +141,7 @@ const ogLocale = OG_LOCALE[lang];
         "Custom CSS theme",
         "Cross-platform native menus",
       ],
-      "inLanguage": ["en", "zh-CN", "ja", "ko"],
+      "inLanguage": ["en", "zh-CN", "ja", "ko", "de", "fr", "es", "pt", "it"],
     })} />
 
     <!-- Google AdSense -->

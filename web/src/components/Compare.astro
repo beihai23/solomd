@@ -6,7 +6,17 @@ const tr = getT(lang);
 
 // /compare/ sub-pages exist only in en + zh; ja/ko link to en.
 const compareIndex = lang === 'zh' ? '/zh/compare/' : '/compare/';
-const moreLabel = { en: 'See each editor side-by-side →', zh: '看每款逐项对比 →', ja: 'エディタごとに横並び比較 →', ko: '에디터별로 나란히 비교 →' }[lang];
+const moreLabel = {
+  en: 'See each editor side-by-side →',
+  zh: '看每款逐项对比 →',
+  ja: 'エディタごとに横並び比較 →',
+  ko: '에디터별로 나란히 비교 →',
+  de: 'Jeden Editor nebeneinander sehen →',
+  fr: 'Voir chaque éditeur côte à côte →',
+  es: 'Ver cada editor lado a lado →',
+  pt: 'Ver cada editor lado a lado →',
+  it: 'Vedi ogni editor a confronto →',
+}[lang];
 
 const winsAll = {
   en: [
@@ -28,6 +38,31 @@ const winsAll = {
     { icon: '🔍', title: '로컬 시맨틱 검색', desc: 'Obsidian / Typora / MarkText 모두 core에 없음. SoloMD ⌘⇧F: 기기 내 embedder, 모델 다운로드 없음, 네트워크 호출 없음.' },
     { icon: '📜', title: 'AutoGit 버전 기록', desc: '⌘S마다 로컬 .git 스냅샷 — 사이드바 기록 패널에서 원클릭 복원. 동급 에디터는 git 수동 연결 필요.' },
     { icon: '🔌', title: 'MCP 서버 내장', desc: '1.5 MB 바이너리, 8개 읽기 전용 도구. vault를 Claude Desktop / Cursor / Codex CLI에 연결.' },
+  ],
+  de: [
+    { icon: '🔍', title: 'Lokale semantische Suche', desc: 'Obsidian, Typora und MarkText überspringen das alle im Kern. SoloMD ⌘⇧F: On-Device-Embedder, kein Modell-Download, kein Netzwerkaufruf.' },
+    { icon: '📜', title: 'AutoGit Versionsverlauf', desc: 'Jedes ⌘S wird ein lokaler .git-Snapshot — Sidebar-Verlaufspanel stellt mit einem Klick wieder her. Konkurrenten lassen Sie git manuell verdrahten.' },
+    { icon: '🔌', title: 'MCP-Server gebündelt', desc: '1,5 MB Binary, 8 Nur-Lese-Tools. Stecken Sie Ihren Vault in Claude Desktop, Cursor oder Codex CLI.' },
+  ],
+  fr: [
+    { icon: '🔍', title: 'Recherche sémantique locale', desc: 'Obsidian, Typora et MarkText l\'omettent tous du core. SoloMD ⌘⇧F : embedder sur l\'appareil, pas de téléchargement de modèle, pas d\'appel réseau.' },
+    { icon: '📜', title: 'Historique de versions AutoGit', desc: 'Chaque ⌘S devient un snapshot .git local — panneau d\'historique sidebar restaure en un clic. Les concurrents vous laissent câbler git manuellement.' },
+    { icon: '🔌', title: 'Serveur MCP empaqueté', desc: '1,5 Mo de binaire, 8 outils en lecture seule. Branchez votre vault dans Claude Desktop, Cursor ou Codex CLI.' },
+  ],
+  es: [
+    { icon: '🔍', title: 'Búsqueda semántica local', desc: 'Obsidian, Typora y MarkText todos lo omiten en el core. SoloMD ⌘⇧F: embedder en dispositivo, sin descarga de modelo, sin llamada de red.' },
+    { icon: '📜', title: 'Historial de versiones AutoGit', desc: 'Cada ⌘S se vuelve un snapshot .git local — panel de historial en sidebar restaura en un clic. Los competidores te dejan cablear git manualmente.' },
+    { icon: '🔌', title: 'Servidor MCP empaquetado', desc: '1,5 MB de binario, 8 herramientas de solo lectura. Conecta tu vault a Claude Desktop, Cursor o Codex CLI.' },
+  ],
+  pt: [
+    { icon: '🔍', title: 'Busca semântica local', desc: 'Obsidian, Typora e MarkText todos omitem do core. SoloMD ⌘⇧F: embedder no dispositivo, sem download de modelo, sem chamada de rede.' },
+    { icon: '📜', title: 'Histórico de versões AutoGit', desc: 'Cada ⌘S vira um snapshot .git local — painel de histórico em sidebar restaura em um clique. Concorrentes te deixam ligar git manualmente.' },
+    { icon: '🔌', title: 'Servidor MCP empacotado', desc: '1,5 MB de binário, 8 ferramentas somente leitura. Plugue seu vault em Claude Desktop, Cursor ou Codex CLI.' },
+  ],
+  it: [
+    { icon: '🔍', title: 'Ricerca semantica locale', desc: 'Obsidian, Typora e MarkText la saltano tutti nel core. SoloMD ⌘⇧F: embedder on-device, nessun download di modello, nessuna chiamata di rete.' },
+    { icon: '📜', title: 'Cronologia versioni AutoGit', desc: 'Ogni ⌘S diventa uno snapshot .git locale — pannello cronologia in sidebar ripristina con un clic. I concorrenti ti lasciano cablare git manualmente.' },
+    { icon: '🔌', title: 'Server MCP empacchettato', desc: '1,5 MB di binario, 8 strumenti sola lettura. Collega il tuo vault a Claude Desktop, Cursor o Codex CLI.' },
   ],
 };
 const wins = winsAll[lang];
