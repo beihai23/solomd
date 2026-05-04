@@ -19,12 +19,23 @@ const defaultDownload = `${baseUrl}/SoloMD_${VERSION}_universal.dmg`;
 // ---- Fetch stats at BUILD time (Cloudflare Pages runs this fresh) ----
 // This guarantees the numbers render even if the client-side API call
 // gets rate-limited. Client-side JS can still update to a newer value.
+//
+// Auth header (when GITHUB_TOKEN env is present) bumps the rate limit
+// from 60/hr (anon, per IP) to 5000/hr (authed). Without it, multiple
+// builds in the same hour can exhaust the limit and cause empty
+// downloads to be SSR'd into the static HTML — bug seen 2026-05-04.
 let initialStars = 0;
 let initialDownloads = 0;
+const GH_TOKEN = (typeof process !== 'undefined' && process.env && process.env.GITHUB_TOKEN) || '';
+const GH_HEADERS: Record<string, string> = {
+  'User-Agent': 'SoloMD-build-stats',
+  Accept: 'application/vnd.github+json',
+};
+if (GH_TOKEN) GH_HEADERS.Authorization = `Bearer ${GH_TOKEN}`;
 try {
   const [repoRes, relRes] = await Promise.all([
-    fetch(`https://api.github.com/repos/${REPO}`),
-    fetch(`https://api.github.com/repos/${REPO}/releases?per_page=100`),
+    fetch(`https://api.github.com/repos/${REPO}`, { headers: GH_HEADERS }),
+    fetch(`https://api.github.com/repos/${REPO}/releases?per_page=100`, { headers: GH_HEADERS }),
   ]);
   if (repoRes.ok) {
     const r = await repoRes.json();
