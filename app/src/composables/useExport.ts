@@ -189,6 +189,29 @@ function stripMarkdown(src: string): string {
     .trim();
 }
 
+/**
+ * Read the selected Markdown source from the focused CodeMirror editor.
+ * Returns null if there's no focused editor or no non-empty selection.
+ *
+ * Mirrors the pattern from Toolbar.vue's onAIRewrite — DOM-based access
+ * because useExport is a generic composable not coupled to the editor
+ * instance. CodeMirror renders MD source as plain text in line spans, so
+ * `Selection.toString()` returns the raw source faithfully.
+ */
+function getEditorSelectionMd(): string | null {
+  if (typeof document === 'undefined') return null;
+  const cm = document.querySelector('.cm-editor.cm-focused');
+  if (!cm) return null;
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return null;
+  // Confirm the selection is INSIDE the focused editor (otherwise a
+  // stale browser selection elsewhere in the DOM could leak through).
+  const range = sel.getRangeAt(0);
+  if (!cm.contains(range.commonAncestorContainer)) return null;
+  const text = sel.toString();
+  return text.trim() ? text : null;
+}
+
 export function useExport() {
   const tabs = useTabsStore();
   const toasts = useToastsStore();
@@ -210,6 +233,20 @@ export function useExport() {
       baseName: name.replace(/\.[^.]+$/, ''),
       filePath: tab.filePath,
     };
+  }
+
+  /**
+   * Source for "Copy as X" — the editor selection if present, else the
+   * whole active document. Returns the source plus a flag callers use to
+   * customize the success toast.
+   */
+  function copySource(): { source: string; isSelection: boolean } | null {
+    const ctx = activeOr();
+    if (!ctx) return null;
+    const sel = getEditorSelectionMd();
+    return sel !== null
+      ? { source: sel, isSelection: true }
+      : { source: ctx.content, isSelection: false };
   }
 
   async function exportHtml() {
@@ -352,17 +389,18 @@ export function useExport() {
   }
 
   async function copyAsHtml() {
-    const ctx = activeOr();
-    if (!ctx) return;
-    const html = renderMarkdown(ctx.content);
+    const src = copySource();
+    if (!src) return;
+    const html = renderMarkdown(src.source);
+    const okMsg = src.isSelection ? 'Copied selection as HTML' : 'Copied as HTML';
     try {
       await writeHtml(html);
-      toasts.success('Copied as HTML');
+      toasts.success(okMsg);
     } catch (e) {
       // Fallback: write plain HTML string as text
       try {
         await writeText(html);
-        toasts.success('Copied HTML source');
+        toasts.success(src.isSelection ? 'Copied selection HTML source' : 'Copied HTML source');
       } catch (e2) {
         toasts.error(`Copy failed: ${e2}`);
       }
@@ -370,23 +408,25 @@ export function useExport() {
   }
 
   async function copyAsPlainText() {
-    const ctx = activeOr();
-    if (!ctx) return;
-    const text = stripMarkdown(ctx.content);
+    const src = copySource();
+    if (!src) return;
+    const text = stripMarkdown(src.source);
+    const okMsg = src.isSelection ? 'Copied selection as plain text' : 'Copied as plain text';
     try {
       await writeText(text);
-      toasts.success('Copied as plain text');
+      toasts.success(okMsg);
     } catch (e) {
       toasts.error(`Copy failed: ${e}`);
     }
   }
 
   async function copyAsMarkdown() {
-    const ctx = activeOr();
-    if (!ctx) return;
+    const src = copySource();
+    if (!src) return;
+    const okMsg = src.isSelection ? 'Copied selection as Markdown' : 'Copied as Markdown';
     try {
-      await writeText(ctx.content);
-      toasts.success('Copied as Markdown');
+      await writeText(src.source);
+      toasts.success(okMsg);
     } catch (e) {
       toasts.error(`Copy failed: ${e}`);
     }
@@ -422,9 +462,12 @@ export function useExport() {
   async function copyAsImage() {
     const ctx = activeOr();
     if (!ctx) return;
-    const tid = toasts.info('Capturing image…', 0);
+    const sel = getEditorSelectionMd();
+    const source = sel ?? ctx.content;
+    const isSelection = sel !== null;
+    const tid = toasts.info(isSelection ? 'Capturing selection…' : 'Capturing image…', 0);
     try {
-      const blob = await markdownToImageBlob(ctx.content, ctx.baseName, ctx.filePath, {
+      const blob = await markdownToImageBlob(source, ctx.baseName, ctx.filePath, {
         branding: settings.imageExportBranding,
       });
       const bytes = new Uint8Array(await blob.arrayBuffer());
@@ -433,7 +476,7 @@ export function useExport() {
       const img = await Image.fromBytes(bytes);
       await writeImage(img);
       toasts.dismiss(tid);
-      toasts.success('Copied as image');
+      toasts.success(isSelection ? 'Copied selection as image' : 'Copied as image');
     } catch (e) {
       console.error(e);
       toasts.dismiss(tid);
@@ -444,7 +487,7 @@ export function useExport() {
           filters: [{ name: 'PNG Image', extensions: ['png'] }],
         });
         if (path) {
-          const blob2 = await markdownToImageBlob(ctx.content, ctx.baseName, ctx.filePath, {
+          const blob2 = await markdownToImageBlob(source, ctx.baseName, ctx.filePath, {
             branding: settings.imageExportBranding,
           });
           const buffer = new Uint8Array(await blob2.arrayBuffer());
