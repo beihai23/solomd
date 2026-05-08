@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, onBeforeUnmount, ref, watch, watchEffect, computed, provide } from 'vue';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import Toolbar from './components/Toolbar.vue';
@@ -214,6 +215,22 @@ watch(
   (newActiveId) => {
     if (newActiveId) tiles.syncFromTabs(newActiveId);
   },
+);
+
+// Window title — keep "<filename> — SoloMD" so the OS taskbar /
+// dock / Cmd-Tab can distinguish multiple SoloMD windows. Falls back
+// to "SoloMD" when no document is active. Issue #53.
+watch(
+  () => tabs.activeTab?.fileName,
+  (name) => {
+    const title = name ? `${name} — SoloMD` : 'SoloMD';
+    try {
+      void getCurrentWindow().setTitle(title);
+    } catch {
+      // Non-Tauri context (Vitest, SSR) — silently no-op.
+    }
+  },
+  { immediate: true },
 );
 
 // v2.4: on iOS / iPad, default to reading mode whenever a markdown tab
