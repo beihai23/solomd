@@ -190,24 +190,31 @@ function stripMarkdown(src: string): string {
 }
 
 /**
- * Read the selected Markdown source from the focused CodeMirror editor.
- * Returns null if there's no focused editor or no non-empty selection.
+ * Read the selected Markdown source from a CodeMirror editor.
  *
- * Mirrors the pattern from Toolbar.vue's onAIRewrite — DOM-based access
- * because useExport is a generic composable not coupled to the editor
- * instance. CodeMirror renders MD source as plain text in line spans, so
- * `Selection.toString()` returns the raw source faithfully.
+ * Used by all four Copy-as-* paths. We do NOT require `.cm-editor.cm-focused`:
+ * the toolbar's direct Copy button uses `@click`, which fires AFTER the
+ * editor loses focus on mousedown — by the time we run, the focused-class is
+ * already gone and the selection would silently fall through to whole-doc.
+ *
+ * Instead: read the current window selection, then walk up to confirm it
+ * lives inside *some* `.cm-editor`. That stays correct whether the trigger
+ * was a keyboard shortcut (focus preserved), a dropdown menu item using
+ * `@mousedown.prevent` (focus preserved), or a plain `@click` button (focus
+ * lost — but the selection range survives).
  */
 function getEditorSelectionMd(): string | null {
   if (typeof document === 'undefined') return null;
-  const cm = document.querySelector('.cm-editor.cm-focused');
-  if (!cm) return null;
   const sel = window.getSelection();
   if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return null;
-  // Confirm the selection is INSIDE the focused editor (otherwise a
-  // stale browser selection elsewhere in the DOM could leak through).
   const range = sel.getRangeAt(0);
-  if (!cm.contains(range.commonAncestorContainer)) return null;
+  // Walk up from the selection's common ancestor to find a `.cm-editor`.
+  // Use Element.closest where available; fall back to manual walk for text
+  // nodes (which don't have closest()).
+  let node: Node | null = range.commonAncestorContainer;
+  while (node && node.nodeType === Node.TEXT_NODE) node = node.parentNode;
+  const inEditor = (node as Element | null)?.closest?.('.cm-editor');
+  if (!inEditor) return null;
   const text = sel.toString();
   return text.trim() ? text : null;
 }
