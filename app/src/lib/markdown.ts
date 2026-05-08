@@ -24,8 +24,14 @@ const katexPlugin: any = (katex as any).default ?? katex;
 // concurrent-safe across interleaved renders.
 let lastFrontMatterRaw: string | null = null;
 
+// `html: true` lets users embed inline HTML like
+// `<img src=… style="zoom:50%;">`, `<details>`, `<sub>`, or table HTML for
+// edge cases markdown can't express. CSP in tauri.conf.json is `null` for
+// the local webview, but this app only ever renders the user's own files
+// — no untrusted input — so the security tradeoff is the same as Typora /
+// Obsidian (both ship with HTML on by default). See issue #54.
 export const md = new MarkdownIt({
-  html: false,
+  html: true,
   linkify: true,
   typographer: true,
   breaks: false,
