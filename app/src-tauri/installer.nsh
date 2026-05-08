@@ -10,16 +10,16 @@
 
 !macro NSIS_HOOK_POSTINSTALL
   ; Primary: override Tauri-registered DefaultIcon for "Markdown Document"
-  WriteRegStr SHCTX "Software\Classes\Markdown Document\DefaultIcon" "" "$INSTDIR\icons\file_icon.ico,0"
-  WriteRegStr SHCTX "Software\Classes\Plain Text\DefaultIcon" "" "$INSTDIR\icons\file_icon.ico,0"
+  WriteRegStr SHCTX "Software\Classes\Markdown Document\DefaultIcon" "" '"$INSTDIR\icons\file_icon.ico",0'
+  WriteRegStr SHCTX "Software\Classes\Plain Text\DefaultIcon" "" '"$INSTDIR\icons\file_icon.ico",0'
 
   ; Fallback: ensure the SoloMD.md / SoloMD.txt ProgIDs (if UserChoice or
   ; older installs point to them) also have the right icon + open command.
   WriteRegStr SHCTX "Software\Classes\SoloMD.md" "" "Markdown Document"
-  WriteRegStr SHCTX "Software\Classes\SoloMD.md\DefaultIcon" "" "$INSTDIR\icons\file_icon.ico,0"
+  WriteRegStr SHCTX "Software\Classes\SoloMD.md\DefaultIcon" "" '"$INSTDIR\icons\file_icon.ico",0'
   WriteRegStr SHCTX "Software\Classes\SoloMD.md\shell\open\command" "" '"$INSTDIR\SoloMD.exe" "%1"'
   WriteRegStr SHCTX "Software\Classes\SoloMD.txt" "" "Plain Text"
-  WriteRegStr SHCTX "Software\Classes\SoloMD.txt\DefaultIcon" "" "$INSTDIR\icons\file_icon.ico,0"
+  WriteRegStr SHCTX "Software\Classes\SoloMD.txt\DefaultIcon" "" '"$INSTDIR\icons\file_icon.ico",0'
   WriteRegStr SHCTX "Software\Classes\SoloMD.txt\shell\open\command" "" '"$INSTDIR\SoloMD.exe" "%1"'
 
   ; Force Explorer to refresh icon cache (SHCNE_ASSOCCHANGED).

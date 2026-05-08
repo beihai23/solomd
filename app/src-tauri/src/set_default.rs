@@ -101,17 +101,17 @@ mod macos {
 #[cfg(target_os = "windows")]
 mod windows {
     use std::env;
+    use std::path::{Path, PathBuf};
     use winreg::enums::*;
     use winreg::RegKey;
 
     pub fn set_default() -> Result<String, String> {
-        let exe_path = env::current_exe()
-            .map_err(|e| format!("Can't locate current executable: {e}"))?
-            .to_string_lossy()
-            .to_string();
+        let exe_path_buf =
+            env::current_exe().map_err(|e| format!("Can't locate current executable: {e}"))?;
+        let exe_path = exe_path_buf.to_string_lossy().to_string();
 
         let command_value = format!("\"{}\" \"%1\"", exe_path);
-        let icon_value = format!("{},0", exe_path);
+        let icon_value = default_file_icon_value(&exe_path_buf);
 
         let hkcu = RegKey::predef(HKEY_CURRENT_USER);
 
@@ -141,27 +141,23 @@ mod windows {
             .set_value("", &command_value.as_str())
             .map_err(|e| format!("Can't set shell command: {e}"))?;
 
-        // 2. Create our own ProgId (SoloMD.md) with icon and open command
-        let progid_root = r"Software\Classes\SoloMD.md";
-        let (progid_key, _) = hkcu
-            .create_subkey(progid_root)
-            .map_err(|e| format!("Can't create ProgId: {e}"))?;
-        progid_key.set_value("", &"Markdown Document").ok();
-        progid_key
-            .set_value("FriendlyTypeName", &"Markdown Document")
-            .ok();
-
-        let (icon_key, _) = hkcu
-            .create_subkey(format!("{}\\DefaultIcon", progid_root))
-            .map_err(|e| format!("Can't create DefaultIcon: {e}"))?;
-        icon_key.set_value("", &icon_value.as_str()).ok();
-
-        let (progid_cmd_key, _) = hkcu
-            .create_subkey(format!("{}\\shell\\open\\command", progid_root))
-            .map_err(|e| format!("Can't create ProgId open command: {e}"))?;
-        progid_cmd_key
-            .set_value("", &command_value.as_str())
-            .ok();
+        // 2. Create our own ProgIDs with a dedicated document icon and open
+        //    command. Do not point DefaultIcon at SoloMD.exe: Windows will then
+        //    render files with the app icon instead of the document icon.
+        register_progid(
+            &hkcu,
+            r"Software\Classes\SoloMD.md",
+            "Markdown Document",
+            &icon_value,
+            &command_value,
+        )?;
+        register_progid(
+            &hkcu,
+            r"Software\Classes\SoloMD.txt",
+            "Plain Text",
+            &icon_value,
+            &command_value,
+        )?;
 
         // 3. For each extension, attach the ProgId as an OpenWith candidate
         //    AND set it as the default.
@@ -173,7 +169,9 @@ mod windows {
                 // Set default ProgId
                 ext_key.set_value("", &"SoloMD.md").ok();
                 // Add to OpenWithProgids
-                if let Ok((owp, _)) = hkcu.create_subkey(format!("{}\\OpenWithProgids", ext_key_path)) {
+                if let Ok((owp, _)) =
+                    hkcu.create_subkey(format!("{}\\OpenWithProgids", ext_key_path))
+                {
                     owp.set_value("SoloMD.md", &"").ok();
                 }
                 ok_count += 1;
@@ -199,6 +197,50 @@ mod windows {
             "Registered as default for {} Markdown extension(s). You may need to sign out / in for the taskbar icon to refresh.",
             ok_count
         ))
+    }
+
+    fn register_progid(
+        hkcu: &RegKey,
+        progid_root: &str,
+        type_name: &str,
+        icon_value: &str,
+        command_value: &str,
+    ) -> Result<(), String> {
+        let (progid_key, _) = hkcu
+            .create_subkey(progid_root)
+            .map_err(|e| format!("Can't create ProgId: {e}"))?;
+        progid_key.set_value("", &type_name).ok();
+        progid_key.set_value("FriendlyTypeName", &type_name).ok();
+
+        let (icon_key, _) = hkcu
+            .create_subkey(format!("{}\\DefaultIcon", progid_root))
+            .map_err(|e| format!("Can't create DefaultIcon: {e}"))?;
+        icon_key.set_value("", &icon_value).ok();
+
+        let (progid_cmd_key, _) = hkcu
+            .create_subkey(format!("{}\\shell\\open\\command", progid_root))
+            .map_err(|e| format!("Can't create ProgId open command: {e}"))?;
+        progid_cmd_key.set_value("", &command_value).ok();
+
+        Ok(())
+    }
+
+    fn default_file_icon_value(exe_path: &Path) -> String {
+        let icon_path = bundled_file_icon_path(exe_path);
+        let path = if icon_path.is_file() {
+            icon_path
+        } else {
+            exe_path.to_path_buf()
+        };
+        format!("\"{}\",0", path.to_string_lossy())
+    }
+
+    fn bundled_file_icon_path(exe_path: &Path) -> PathBuf {
+        exe_path
+            .parent()
+            .unwrap_or_else(|| Path::new(""))
+            .join("icons")
+            .join("file_icon.ico")
     }
 
     // SHCNE_ASSOCCHANGED = 0x08000000, SHCNF_IDLIST = 0
@@ -230,11 +272,7 @@ mod linux {
         let desktop_file = "SoloMD.desktop";
 
         // Markdown MIME types (some distros use one, some another)
-        let mimes = [
-            "text/markdown",
-            "text/x-markdown",
-            "application/x-markdown",
-        ];
+        let mimes = ["text/markdown", "text/x-markdown", "application/x-markdown"];
 
         let mut ok_count = 0;
         let mut last_error = String::new();
