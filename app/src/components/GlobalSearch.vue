@@ -1,33 +1,60 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue';
+/**
+ * Global workspace search — persistent right-sidebar pane (v4.0.2).
+ *
+ * Earlier versions opened as a modal dialog over the editor. The persistent
+ * panel layout — contributed by @beihai23 in PR #50 — keeps results visible
+ * while the user clicks through matches, which fits the search-browse-compare
+ * workflow common in knowledge-base editing.
+ *
+ * Mounts when the parent renders the 'search' pane in the rs-pane-host stack;
+ * unmounts on close. ⌘⇧F toggles the parent's `searchOpen` ref.
+ */
+import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useGlobalSearch, type SearchHit } from '../composables/useGlobalSearch';
 import { useFiles } from '../composables/useFiles';
+import { useTabsStore } from '../stores/tabs';
+import { useTilesStore } from '../stores/tiles';
 import { useWorkspaceStore } from '../stores/workspace';
+import { useI18n } from '../i18n';
 
-const props = defineProps<{ open: boolean }>();
+const props = defineProps<{ prefill?: string }>();
 const emit = defineEmits<{ (e: 'close'): void }>();
 
 const search = useGlobalSearch();
 const files = useFiles();
+const tabs = useTabsStore();
+const tiles = useTilesStore();
 const workspace = useWorkspaceStore();
+const { t } = useI18n();
 
 const query = ref('');
 const hits = ref<SearchHit[]>([]);
 const loading = ref(false);
 const selectedIdx = ref(0);
 const inputRef = ref<HTMLInputElement | null>(null);
+const activeFilePath = computed(() => tabs.activeTab?.filePath ?? '');
 
 let debounceTimer: number | null = null;
 
+onMounted(async () => {
+  if (props.prefill) {
+    query.value = props.prefill;
+  }
+  await nextTick();
+  inputRef.value?.focus();
+  if (query.value) doSearch();
+});
+
 watch(
-  () => props.open,
+  () => props.prefill,
   async (v) => {
-    if (v) {
+    if (v && v !== query.value) {
+      query.value = v;
       await nextTick();
       inputRef.value?.focus();
-      if (query.value) doSearch();
     }
-  }
+  },
 );
 
 watch(query, () => {
@@ -70,10 +97,18 @@ function shortPath(p: string) {
 }
 
 async function openHit(hit: SearchHit) {
-  emit('close');
-  await files.openPath(hit.file);
-  // Note: jumping to the specific line would require an editorRef call from
-  // the parent. We just open the file for now; integrators can wire goto-line.
+  try {
+    await files.openPath(hit.file);
+    nextTick(() => {
+      window.dispatchEvent(
+        new CustomEvent('solomd:outline-goto', {
+          detail: { line: hit.line, paneId: tiles.focusedPaneId },
+        }),
+      );
+    });
+  } catch (e) {
+    console.error('GlobalSearch: openPath failed', e);
+  }
 }
 
 function highlight(snippet: string): string {
@@ -84,8 +119,10 @@ function highlight(snippet: string): string {
 }
 
 function escapeHtml(s: string) {
-  return s.replace(/[&<>"']/g, (c) =>
-    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] ?? c)
+  return s.replace(
+    /[&<>"']/g,
+    (c) =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c] ?? c),
   );
 }
 function escapeRe(s: string) {
@@ -93,8 +130,6 @@ function escapeRe(s: string) {
 }
 
 function onKey(e: KeyboardEvent) {
-  // CJK/IME guard — see CommandPalette.vue for rationale.
-  if (e.isComposing || e.keyCode === 229) return;
   if (e.key === 'Escape') {
     e.preventDefault();
     emit('close');
@@ -113,153 +148,174 @@ function onKey(e: KeyboardEvent) {
 </script>
 
 <template>
-  <div v-if="open" class="gs__backdrop" @click.self="emit('close')">
-    <div class="gs" role="dialog" aria-label="Global search">
-      <div class="gs__header">
-        <input
-          ref="inputRef"
-          v-model="query"
-          @keydown="onKey"
-          class="gs__input"
-          placeholder="Search across files in folder…"
-          spellcheck="false"
-        />
-        <span v-if="loading" class="gs__loading">…</span>
-      </div>
-      <div v-if="!workspace.currentFolder" class="gs__empty">
-        Open a folder first (Ctrl+B → Folder)
-      </div>
-      <div v-else-if="!query.trim()" class="gs__empty">
-        Type to search across all .md / .txt files in {{ workspace.currentFolder }}
-      </div>
-      <div v-else-if="!hits.length && !loading" class="gs__empty">
-        No matches
-      </div>
-      <div v-else class="gs__results">
-        <div v-for="[file, fileHits] in grouped" :key="file" class="gs__group">
-          <div class="gs__file">{{ shortPath(file) }}</div>
-          <div
-            v-for="hit in fileHits"
-            :key="hit.line"
-            class="gs__hit"
-            :class="{ 'gs__hit--active': hits.indexOf(hit) === selectedIdx }"
-            @click="openHit(hit)"
-            @mouseenter="selectedIdx = hits.indexOf(hit)"
-          >
-            <span class="gs__lineno">L{{ hit.line }}</span>
-            <span class="gs__snippet" v-html="highlight(hit.snippet)"></span>
-          </div>
+  <div class="sp">
+    <header class="sp__head">
+      <span class="sp__title">{{ t('search.heading') }}</span>
+      <button
+        class="rs-pane-close"
+        type="button"
+        :title="t('rightSidebar.hidePane')"
+        @click="emit('close')"
+      >×</button>
+    </header>
+    <div class="sp__input-wrap">
+      <input
+        ref="inputRef"
+        v-model="query"
+        class="sp__input"
+        :placeholder="t('search.placeholder')"
+        spellcheck="false"
+        @keydown="onKey"
+      />
+      <span v-if="loading" class="sp__loading">…</span>
+    </div>
+    <div v-if="!workspace.currentFolder" class="sp__empty">
+      {{ t('search.openFolder') }}
+    </div>
+    <div v-else-if="!query.trim()" class="sp__empty">
+      {{ t('search.typeToSearch') }}
+    </div>
+    <div v-else-if="!hits.length && !loading" class="sp__empty">
+      {{ t('search.noMatches') }}
+    </div>
+    <div v-else class="sp__results">
+      <div v-for="[file, fileHits] in grouped" :key="file" class="sp__group">
+        <div
+          class="sp__file"
+          :class="{ 'sp__file--active': file === activeFilePath }"
+        >{{ shortPath(file) }}</div>
+        <div
+          v-for="hit in fileHits"
+          :key="hit.line"
+          class="sp__hit"
+          :class="{ 'sp__hit--active': hits.indexOf(hit) === selectedIdx }"
+          @click="openHit(hit)"
+          @mouseenter="selectedIdx = hits.indexOf(hit)"
+        >
+          <span class="sp__lineno">L{{ hit.line }}</span>
+          <span class="sp__snippet" v-html="highlight(hit.snippet)"></span>
         </div>
       </div>
-      <div class="gs__footer">
-        <span>{{ hits.length }} hits</span>
-        <span>↑↓ navigate · ↵ open · Esc close</span>
-      </div>
+    </div>
+    <div class="sp__footer">
+      <span>{{ t('search.hitCount', { n: hits.length }) }}</span>
+      <span>{{ t('search.keyHint') }}</span>
     </div>
   </div>
 </template>
 
 <style scoped>
-.gs__backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.4);
-  display: flex;
-  justify-content: center;
-  align-items: flex-start;
-  padding-top: 10vh;
-  z-index: 1000;
-}
-.gs {
-  width: min(720px, 94vw);
-  max-height: 70vh;
-  background: var(--bg-elev);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.4);
+.sp {
   display: flex;
   flex-direction: column;
+  height: 100%;
+  background: var(--bg);
   overflow: hidden;
 }
-.gs__header {
+.sp__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-soft);
+}
+.sp__title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.sp__input-wrap {
   display: flex;
   align-items: center;
   border-bottom: 1px solid var(--border);
-  padding: 0 16px;
+  padding: 0 12px;
 }
-.gs__input {
+.sp__input {
   flex: 1;
   background: transparent;
   border: none;
   outline: none;
-  padding: 14px 0;
-  font: 14px var(--font-ui);
+  padding: 10px 0;
+  font: 13px var(--font-ui);
   color: var(--text);
 }
-.gs__loading {
+.sp__loading {
   color: var(--accent);
-  font-size: 16px;
+  font-size: 14px;
 }
-.gs__empty {
-  padding: 32px;
+.sp__empty {
+  padding: 24px 16px;
   color: var(--text-faint);
   text-align: center;
-  font-size: 13px;
+  font-size: 12px;
+  line-height: 1.6;
 }
-.gs__results {
+.sp__results {
   flex: 1;
   overflow-y: auto;
-  padding: 8px 0;
+  padding: 4px 0;
 }
-.gs__group {
-  margin-bottom: 8px;
+.sp__group {
+  margin-bottom: 4px;
 }
-.gs__file {
-  padding: 6px 16px;
+.sp__file {
+  padding: 6px 12px;
   font-size: 11px;
   font-weight: 600;
   color: var(--accent);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
-.gs__hit {
+.sp__file--active {
+  position: relative;
+}
+.sp__file--active::after {
+  content: ' ●';
+  font-size: 8px;
+  vertical-align: middle;
+}
+.sp__hit {
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 6px 16px 6px 24px;
+  gap: 10px;
+  padding: 5px 12px 5px 20px;
   font-size: 12px;
   cursor: pointer;
   font-family: var(--font-mono);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  transition: background 0.1s;
 }
-.gs__hit:hover,
-.gs__hit--active {
-  background: var(--bg-active);
+.sp__hit:hover,
+.sp__hit--active {
+  background: var(--bg-hover, rgba(255, 159, 64, 0.12));
 }
-.gs__lineno {
+.sp__lineno {
   color: var(--text-faint);
   flex-shrink: 0;
   font-size: 10px;
-  width: 36px;
+  width: 32px;
 }
-.gs__snippet {
+.sp__snippet {
   color: var(--text);
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.gs__snippet :deep(mark) {
-  background: var(--accent);
-  color: var(--accent-fg);
+.sp__snippet :deep(mark) {
+  background: var(--accent, #ff9f40);
+  color: #fff;
   padding: 0 2px;
   border-radius: 2px;
 }
-.gs__footer {
+.sp__footer {
   display: flex;
   justify-content: space-between;
-  padding: 8px 16px;
-  font-size: 11px;
+  padding: 6px 12px;
+  font-size: 10px;
   color: var(--text-faint);
   border-top: 1px solid var(--border);
 }

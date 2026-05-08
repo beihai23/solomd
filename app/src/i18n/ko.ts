@@ -1073,4 +1073,13 @@ export const ko: I18n = {
     hidePane: '이 창 숨기기',
     dragToResize: '드래그로 크기 조정 · 더블클릭으로 초기화',
   },
+  search: {
+    heading: '검색',
+    placeholder: '폴더 내 파일 검색…',
+    openFolder: '먼저 폴더를 여세요 (Ctrl+B → 폴더)',
+    typeToSearch: '모든 .md / .txt 파일을 검색하려면 입력하세요',
+    noMatches: '일치 항목 없음',
+    hitCount: '{n}개 결과',
+    keyHint: '↑↓ 이동 · ↵ 열기 · Esc 닫기',
+  },
 };

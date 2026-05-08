@@ -1073,4 +1073,13 @@ export const fr: I18n = {
     hidePane: 'Masquer ce volet',
     dragToResize: 'Glisser pour redimensionner · double-clic pour réinitialiser',
   },
+  search: {
+    heading: 'Recherche',
+    placeholder: 'Rechercher dans les fichiers du dossier…',
+    openFolder: 'Ouvre d\'abord un dossier (Ctrl+B → Dossier)',
+    typeToSearch: 'Tape pour rechercher dans tous les .md / .txt',
+    noMatches: 'Aucun résultat',
+    hitCount: '{n} résultats',
+    keyHint: '↑↓ naviguer · ↵ ouvrir · Esc fermer',
+  },
 };

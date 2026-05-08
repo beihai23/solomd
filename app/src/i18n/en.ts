@@ -1088,6 +1088,15 @@ export const en = {
     hidePane: 'Hide this pane',
     dragToResize: 'Drag to resize · double-click to reset',
   },
+  search: {
+    heading: 'Search',
+    placeholder: 'Search across files in folder…',
+    openFolder: 'Open a folder first (Ctrl+B → Folder)',
+    typeToSearch: 'Type to search across all .md / .txt files',
+    noMatches: 'No matches',
+    hitCount: '{n} hits',
+    keyHint: '↑↓ navigate · ↵ open · Esc close',
+  },
 };
 
 export type I18n = typeof en;

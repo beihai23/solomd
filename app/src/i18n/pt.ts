@@ -1075,4 +1075,13 @@ export const pt: I18n = {
     hidePane: 'Ocultar este painel',
     dragToResize: 'Arraste para redimensionar · clique duplo para redefinir',
   },
+  search: {
+    heading: 'Buscar',
+    placeholder: 'Buscar em arquivos da pasta…',
+    openFolder: 'Abra uma pasta primeiro (Ctrl+B → Pasta)',
+    typeToSearch: 'Digite para buscar em todos os .md / .txt',
+    noMatches: 'Sem correspondências',
+    hitCount: '{n} resultados',
+    keyHint: '↑↓ navegar · ↵ abrir · Esc fechar',
+  },
 };

@@ -1073,4 +1073,13 @@ export const ja: I18n = {
     hidePane: 'このパネルを隠す',
     dragToResize: 'ドラッグでサイズ変更 · ダブルクリックでリセット',
   },
+  search: {
+    heading: '検索',
+    placeholder: 'フォルダ内のファイルを検索…',
+    openFolder: '先にフォルダを開いてください（Ctrl+B → フォルダ）',
+    typeToSearch: 'すべての .md / .txt を検索するには入力してください',
+    noMatches: '一致なし',
+    hitCount: '{n} 件',
+    keyHint: '↑↓ 移動 · ↵ 開く · Esc 閉じる',
+  },
 };

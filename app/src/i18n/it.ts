@@ -1073,4 +1073,13 @@ export const it: I18n = {
     hidePane: 'Nascondi questo pannello',
     dragToResize: 'Trascina per ridimensionare · doppio clic per reimpostare',
   },
+  search: {
+    heading: 'Cerca',
+    placeholder: 'Cerca nei file della cartella…',
+    openFolder: 'Apri prima una cartella (Ctrl+B → Cartella)',
+    typeToSearch: 'Digita per cercare in tutti i .md / .txt',
+    noMatches: 'Nessun risultato',
+    hitCount: '{n} risultati',
+    keyHint: '↑↓ naviga · ↵ apri · Esc chiudi',
+  },
 };

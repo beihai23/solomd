@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, onBeforeUnmount, ref, watch, watchEffect, computed, provide } from 'vue';
+import { onMounted, onBeforeUnmount, ref, watch, watchEffect, computed, provide, nextTick } from 'vue';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
@@ -97,6 +97,10 @@ function openSettingsAt(section: string | null = null) {
 }
 const helpOpen = ref(false);
 const searchOpen = ref(false);
+// v4.0.2 — search is now a sidebar pane (PR #50 by @beihai23). Tag clicks
+// from TagsPanel prefill `#tag` into the search box; the watcher in
+// GlobalSearch refocuses on every prefill change.
+const searchPrefill = ref<string | undefined>(undefined);
 const ragSearchOpen = ref(false);
 const cjkProofreadOpen = ref(false);
 const aboutOpen = ref(false);
@@ -154,7 +158,7 @@ useShortcuts({
   openPalette: () => (paletteOpen.value = true),
   openSettings: () => (settingsOpen.value = true),
   openHelp: () => (helpOpen.value = true),
-  openGlobalSearch: () => (searchOpen.value = true),
+  openGlobalSearch: () => (searchOpen.value = !searchOpen.value),
   openRagSearch: () => (ragSearchOpen.value = true),
   openQuickSwitcher: () => (quickSwitcherOpen.value = true),
   openCjkProofread: () => (cjkProofreadOpen.value = true),
@@ -363,10 +367,26 @@ function onOpenHelpEvent() {
   helpOpen.value = true;
 }
 function onOpenSearchEvent() {
-  searchOpen.value = true;
+  searchOpen.value = !searchOpen.value;
 }
 function onOpenCjkProofreadEvent() {
   cjkProofreadOpen.value = true;
+}
+
+// TagsPanel emits `filter-tag` when the user clicks a tag — open the search
+// pane and prefill `#tag`. If the same tag is clicked while search is
+// already open, clear/reset the prefill ref to retrigger the watcher.
+function onFilterTag(tag: string) {
+  const newPrefill = `#${tag}`;
+  if (searchOpen.value && searchPrefill.value === newPrefill) {
+    searchPrefill.value = undefined;
+    nextTick(() => {
+      searchPrefill.value = newPrefill;
+    });
+  } else {
+    searchPrefill.value = newPrefill;
+  }
+  searchOpen.value = true;
 }
 
 let unlistenOpened: UnlistenFn | null = null;
@@ -420,7 +440,7 @@ function dispatchMenuAction(id: string) {
       settingsOpen.value = true;
       break;
     case 'search.global':
-      searchOpen.value = true;
+      searchOpen.value = !searchOpen.value;
       break;
     case 'help.markdown':
       helpOpen.value = true;
@@ -662,12 +682,17 @@ const showHistoryPane = computed(
 // v4.0 pillar 1: Agent Panel — workspace-level visibility (not per-tab).
 // Toggled via command palette `view.toggleAgentPanel`; persists in settings.
 const showAgentPane = computed(() => settings.showAgentPanel);
+// v4.0.2 — search is a session-only pane (PR #50). ⌘⇧F toggles searchOpen;
+// no setting persisted because users don't want search living in their
+// sidebar across launches.
+const showSearchPane = computed(() => searchOpen.value);
 const showRightSidebar = computed(() => {
   // Master "hide" toggle wins over individual panes — preserves which panes
   // the user had on while still letting them dismiss the whole strip with
   // a single action (toolbar close button / ⌥⌘B / command palette).
   if (settings.rightSidebarHidden) return false;
   return (
+    showSearchPane.value ||
     showOutlinePane.value ||
     showBacklinksPane.value ||
     showTagsPane.value ||
@@ -678,14 +703,28 @@ const showRightSidebar = computed(() => {
 
 // v4.0.2 — ordered list of currently-visible right-sidebar panes. Drives
 // the v-for that interleaves <RsSplitter> between adjacent panes (#6 / #52).
+// Search slots in at the top because users typically want results visible
+// while scanning the rest of the sidebar context.
 const visibleRsPanes = computed(() => {
-  const panes: { id: 'outline' | 'backlinks' | 'tags' | 'history' | 'agent' }[] = [];
+  const panes: { id: 'search' | 'outline' | 'backlinks' | 'tags' | 'history' | 'agent' }[] = [];
+  if (showSearchPane.value) panes.push({ id: 'search' });
   if (showOutlinePane.value) panes.push({ id: 'outline' });
   if (showBacklinksPane.value) panes.push({ id: 'backlinks' });
   if (showTagsPane.value) panes.push({ id: 'tags' });
   if (showHistoryPane.value) panes.push({ id: 'history' });
   if (showAgentPane.value) panes.push({ id: 'agent' });
   return panes;
+});
+
+// Sidebar visibility / pane composition changes the editor's available
+// width. CodeMirror's ResizeObserver may lag for a frame, so dispatch
+// solomd:relayout on the next paint and let Editor.vue requestMeasure().
+watch(visibleRsPanes, () => {
+  nextTick(() => {
+    requestAnimationFrame(() => {
+      window.dispatchEvent(new CustomEvent('solomd:relayout'));
+    });
+  });
 });
 
 // Per-pane height map → inline flex-basis. Panes without a stored height
@@ -764,7 +803,7 @@ watchEffect(() => { void settings.aiEnabled; void settings.aiProvider; refreshAi
         @open-palette="paletteOpen = true"
         @open-settings="openSettingsAt()"
         @open-help="helpOpen = true"
-        @open-search="searchOpen = true"
+        @open-search="searchOpen = !searchOpen"
       />
       <TelemetryBanner />
       <div class="workspace">
@@ -778,9 +817,18 @@ watchEffect(() => { void settings.aiEnabled; void settings.aiProvider; refreshAi
           <template v-for="(p, idx) in visibleRsPanes" :key="p.id">
             <RsSplitter v-if="idx > 0" :above="visibleRsPanes[idx-1].id" :below="p.id" />
             <div :data-rs-pane="p.id" :class="['rs-pane-host', `rs-pane-host--${p.id}`]" :style="paneStyle(p.id)">
+              <GlobalSearch
+                v-if="p.id === 'search'"
+                :prefill="searchPrefill"
+                @close="searchOpen = false"
+              />
               <Outline v-if="p.id === 'outline'" :cursor-line="cursorLine" @goto="onOutlineGoto" />
               <BacklinksPanel v-if="p.id === 'backlinks'" @close="settings.toggleBacklinks()" />
-              <TagsPanel v-if="p.id === 'tags'" @close="settings.toggleTagsPanel()" />
+              <TagsPanel
+                v-if="p.id === 'tags'"
+                @close="settings.toggleTagsPanel()"
+                @filter-tag="onFilterTag"
+              />
               <HistoryPanel v-if="p.id === 'history'" @close="settings.toggleHistoryPanel()" />
               <AgentPanel
                 v-if="p.id === 'agent'"
@@ -803,9 +851,18 @@ watchEffect(() => { void settings.aiEnabled; void settings.aiProvider; refreshAi
           <template v-for="(p, idx) in visibleRsPanes" :key="p.id">
             <RsSplitter v-if="idx > 0" :above="visibleRsPanes[idx-1].id" :below="p.id" />
             <div :data-rs-pane="p.id" :class="['rs-pane-host', `rs-pane-host--${p.id}`]" :style="paneStyle(p.id)">
+              <GlobalSearch
+                v-if="p.id === 'search'"
+                :prefill="searchPrefill"
+                @close="searchOpen = false"
+              />
               <Outline v-if="p.id === 'outline'" :cursor-line="cursorLine" @goto="onOutlineGoto" />
               <BacklinksPanel v-if="p.id === 'backlinks'" @close="settings.toggleBacklinks()" />
-              <TagsPanel v-if="p.id === 'tags'" @close="settings.toggleTagsPanel()" />
+              <TagsPanel
+                v-if="p.id === 'tags'"
+                @close="settings.toggleTagsPanel()"
+                @filter-tag="onFilterTag"
+              />
               <HistoryPanel v-if="p.id === 'history'" @close="settings.toggleHistoryPanel()" />
               <AgentPanel
                 v-if="p.id === 'agent'"
@@ -835,7 +892,6 @@ watchEffect(() => { void settings.aiEnabled; void settings.aiProvider; refreshAi
       @close="settingsOpen = false; settingsInitialSection = null; refreshAiHasKey()"
     />
     <MarkdownHelp :open="helpOpen" @close="helpOpen = false" />
-    <GlobalSearch :open="searchOpen" @close="searchOpen = false" />
     <RagSearch
       :open="ragSearchOpen"
       @close="ragSearchOpen = false"
