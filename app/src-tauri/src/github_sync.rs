@@ -817,11 +817,33 @@ pub fn github_push_inner(folder: String, token: String) -> Result<(), String> {
         commit_shadow_if_dirty(&repo_dir, "encrypted: workspace state at push")?;
     }
     let repo = Repository::open(&repo_dir).map_err(|e| e.to_string())?;
+
+    // One-time master → main rewrite. The init path (link_workspace)
+    // already does this for fresh inits, but a vault initialized on a
+    // different machine (or pre-v3.0 SoloMD) can land here still on
+    // `master`, which causes the same vault to push to *two* branches
+    // depending on which device pushed it (issue #55 comment).
+    //
+    // Only safe to rename when:
+    //   - HEAD points at refs/heads/master (we are on master, not detached)
+    //   - There is no existing local `main` branch (otherwise the
+    //     rename would collide; user has explicitly created both)
+    //
+    // After rename, HEAD follows the renamed branch automatically.
+    if let Ok(head_ref) = repo.find_reference("HEAD") {
+        if head_ref.symbolic_target() == Some("refs/heads/master")
+            && repo.find_branch("main", git2::BranchType::Local).is_err()
+        {
+            if let Ok(mut master) = repo.find_branch("master", git2::BranchType::Local) {
+                let _ = master.rename("main", false);
+            }
+        }
+    }
+
     let mut origin = repo.find_remote("origin").map_err(|e| e.to_string())?;
 
     // Push the current HEAD branch's local ref to the same ref name on
-    // the remote. We don't bother with refspec parsing — most users
-    // are on `main` and only ever push `main`.
+    // the remote.
     let head = repo.head().map_err(|e| e.to_string())?;
     let branch_name = head
         .shorthand()
