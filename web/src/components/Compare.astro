@@ -16,6 +16,11 @@ const moreLabel = {
   es: 'Ver cada editor lado a lado →',
   pt: 'Ver cada editor lado a lado →',
   it: 'Vedi ogni editor a confronto →',
+  pl: 'Zobacz każdy edytor obok siebie →',
+  nl: 'Zie elke editor naast elkaar →',
+  tr: 'Her editörü yan yana görün →',
+  sv: 'Se varje editor sida vid sida →',
+  uk: 'Подивитися кожен редактор поруч →',
 }[lang];
 
 const winsAll = {
@@ -63,6 +68,31 @@ const winsAll = {
     { icon: '🔍', title: 'Ricerca semantica locale', desc: 'Obsidian, Typora e MarkText la saltano tutti nel core. SoloMD ⌘⇧F: embedder on-device, nessun download di modello, nessuna chiamata di rete.' },
     { icon: '📜', title: 'Cronologia versioni AutoGit', desc: 'Ogni ⌘S diventa uno snapshot .git locale — pannello cronologia in sidebar ripristina con un clic. I concorrenti ti lasciano cablare git manualmente.' },
     { icon: '🔌', title: 'Server MCP empacchettato', desc: '1,5 MB di binario, 8 strumenti sola lettura. Collega il tuo vault a Claude Desktop, Cursor o Codex CLI.' },
+  ],
+  pl: [
+    { icon: '🔍', title: 'Lokalne wyszukiwanie semantyczne', desc: 'Obsidian, Typora i MarkText wszystkie pomijają to w core. SoloMD ⌘⇧F: embedder na urządzeniu, brak pobierania modelu, brak wywołań sieciowych.' },
+    { icon: '📜', title: 'Historia wersji AutoGit', desc: 'Każde ⌘S staje się lokalnym snapshotem .git — panel historii w pasku bocznym przywraca jednym kliknięciem. Konkurenci zostawiają cię z ręcznym podłączeniem git.' },
+    { icon: '🔌', title: 'Wbudowany serwer MCP', desc: 'Binarka 1,5 MB, 8 narzędzi tylko do odczytu. Podłącz swój vault do Claude Desktop, Cursor lub Codex CLI.' },
+  ],
+  nl: [
+    { icon: '🔍', title: 'Lokale semantische zoekfunctie', desc: 'Obsidian, Typora en MarkText slaan dit allemaal over in de core. SoloMD ⌘⇧F: embedder op het apparaat, geen modeldownload, geen netwerkoproep.' },
+    { icon: '📜', title: 'AutoGit versiegeschiedenis', desc: 'Elke ⌘S wordt een lokale .git-snapshot — sidebargeschiedenispaneel herstelt met één klik. Concurrenten laten je git handmatig bedraden.' },
+    { icon: '🔌', title: 'MCP-server gebundeld', desc: 'Binary van 1,5 MB, 8 alleen-lezen-tools. Sluit je vault aan op Claude Desktop, Cursor of Codex CLI.' },
+  ],
+  tr: [
+    { icon: '🔍', title: 'Yerel semantik arama', desc: 'Obsidian, Typora ve MarkText hepsi çekirdekte atlıyor. SoloMD ⌘⇧F: cihaz üstünde embedder, model indirme yok, ağ çağrısı yok.' },
+    { icon: '📜', title: 'AutoGit sürüm geçmişi', desc: 'Her ⌘S yerel bir .git anlık görüntüsü olur — sidebar geçmiş paneli tek tıkla geri yükler. Rakipler git\'i elle bağlamanı bekler.' },
+    { icon: '🔌', title: 'Paketlenmiş MCP sunucusu', desc: '1,5 MB ikili, 8 salt-okunur araç. Vault\'unuzu Claude Desktop, Cursor veya Codex CLI\'ya bağlayın.' },
+  ],
+  sv: [
+    { icon: '🔍', title: 'Lokal semantisk sökning', desc: 'Obsidian, Typora och MarkText hoppar alla över detta i kärnan. SoloMD ⌘⇧F: embedder på enheten, ingen modellnedladdning, inget nätverksanrop.' },
+    { icon: '📜', title: 'AutoGit versionshistorik', desc: 'Varje ⌘S blir en lokal .git-snapshot — sidopanel-historik återställer med ett klick. Konkurrenter lämnar dig att koppla git manuellt.' },
+    { icon: '🔌', title: 'MCP-server medföljer', desc: '1,5 MB binär, 8 läs-endast-verktyg. Anslut din vault till Claude Desktop, Cursor eller Codex CLI.' },
+  ],
+  uk: [
+    { icon: '🔍', title: 'Локальний семантичний пошук', desc: 'Obsidian, Typora та MarkText — усі пропускають це у core. SoloMD ⌘⇧F: embedder на пристрої, без завантаження моделі, без мережевих викликів.' },
+    { icon: '📜', title: 'Історія версій AutoGit', desc: 'Кожне ⌘S стає локальним .git-снапшотом — панель історії у бічній панелі відновлює одним кліком. Конкуренти залишають вам підключати git вручну.' },
+    { icon: '🔌', title: 'Сервер MCP у комплекті', desc: 'Бінарник 1,5 МБ, 8 інструментів лише для читання. Підключіть свій vault до Claude Desktop, Cursor або Codex CLI.' },
   ],
 };
 const wins = winsAll[lang];
