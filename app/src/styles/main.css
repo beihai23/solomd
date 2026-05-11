@@ -331,6 +331,24 @@ button:disabled {
     width: 20px;
     height: 20px;
   }
+
+  /* Toolbar: horizontal scroll on touch so all 30+ buttons remain
+     reachable even at iPad-portrait widths. Desktop intentionally
+     does NOT set this (see Toolbar.vue's .toolbar comment) because
+     overflow-x cascades to overflow-y, truncating .dropdown__menu
+     items that anchor downward (Insert / Export / Copy / etc.).
+     On touch we accept that compromise — dropdowns mostly anchor
+     down anyway and a slightly-clipped popover beats unreachable
+     buttons. Hide the scrollbar (overscan via swipe is the affordance). */
+  .toolbar {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none; /* Firefox */
+  }
+  .toolbar::-webkit-scrollbar {
+    display: none; /* WebKit (iOS Safari + Tauri's WKWebView) */
+  }
 }
 
 /* Markdown extension styles (front-matter, task list, mark, footnotes) */
