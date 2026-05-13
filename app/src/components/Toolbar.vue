@@ -13,6 +13,8 @@ import { useToastsStore } from '../stores/toasts';
 import { cleanAIArtifacts } from '../lib/clean-ai';
 import { useI18n } from '../i18n';
 import { openPath } from '@tauri-apps/plugin-opener';
+import { isIOS } from '../lib/platform';
+import { IS_APP_STORE_BUILD } from '../lib/app-build';
 
 const { t } = useI18n();
 
@@ -110,6 +112,46 @@ async function onOpenExternal() {
     toasts.warning(t('toast.openExternalNoFile'));
     return;
   }
+  // iOS: tauri-plugin-opener calls UIApplication.shared.open(URL:) which
+  // doesn't handle `file://` URLs — and the JS plugin's scope check
+  // (`$HOME/**`) rejects paths from deep-linked Files-app sources before
+  // we even get to the native call. Route through the Web Share API
+  // instead — iOS 15+ WKWebView surfaces the standard iOS share sheet
+  // (AirDrop / Messages / Mail / Files / iCloud) for File payloads.
+  if (isIOS()) {
+    const tab = tabs.activeTab;
+    const fileName = path.split(/[\\/]/).pop() ?? 'note.md';
+    const content = tab?.content ?? '';
+    try {
+      if (navigator.share && typeof File === 'function') {
+        const mime = fileName.endsWith('.md') || fileName.endsWith('.markdown')
+          ? 'text/markdown'
+          : 'text/plain';
+        const file = new File([content], fileName, { type: mime });
+        const data: ShareData = { title: fileName, files: [file] };
+        // Must call `canShare` as a method on `navigator` — destructuring
+        // the reference drops `this`, and WebKit throws:
+        //   "Can only call Navigator.canShare on instances of Navigator".
+        const nav = navigator as Navigator & { canShare?: (d: ShareData) => boolean };
+        if (!nav.canShare || nav.canShare(data)) {
+          await navigator.share(data);
+          return;
+        }
+      }
+      if (navigator.share) {
+        await navigator.share({ title: fileName, text: content });
+        return;
+      }
+    } catch (e) {
+      // AbortError = user cancelled the share sheet; not an error.
+      const name = (e as { name?: string }).name;
+      if (name === 'AbortError') return;
+      toasts.warning(`Share failed: ${e}`);
+      return;
+    }
+    toasts.info('Sharing not supported on this iOS version');
+    return;
+  }
   try {
     await openPath(path);
   } catch (e) {
@@ -123,6 +165,34 @@ const newOpen = ref(false);
 const copyOpen = ref(false);
 const insertOpen = ref(false);
 const pomoOpen = ref(false);
+
+const newBtnRef = ref<HTMLElement | null>(null);
+const recentBtnRef = ref<HTMLElement | null>(null);
+const exportBtnRef = ref<HTMLElement | null>(null);
+const insertBtnRef = ref<HTMLElement | null>(null);
+const copyBtnRef = ref<HTMLElement | null>(null);
+
+const menuPos = ref<{ top: number; left?: number; right?: number } | null>(null);
+const floatStyle = computed<Record<string, string | number> | undefined>(() => {
+  if (!menuPos.value) return undefined;
+  const s: Record<string, string | number> = {
+    position: 'fixed',
+    top: `${menuPos.value.top}px`,
+    zIndex: 1000,
+  };
+  if (menuPos.value.left !== undefined) s.left = `${menuPos.value.left}px`;
+  if (menuPos.value.right !== undefined) s.right = `${menuPos.value.right}px`;
+  return s;
+});
+function positionMenuFromButton(btn: HTMLElement | null, align: 'left' | 'right' = 'left') {
+  if (!btn) { menuPos.value = null; return; }
+  const rect = btn.getBoundingClientRect();
+  if (align === 'right') {
+    menuPos.value = { top: rect.bottom + 4, right: Math.max(8, window.innerWidth - rect.right) };
+  } else {
+    menuPos.value = { top: rect.bottom + 4, left: Math.min(rect.left, window.innerWidth - 16) };
+  }
+}
 
 function togglePomo() {
   // Mirror the same exclusive-open behaviour as the other dropdowns.
@@ -164,25 +234,35 @@ function toggleDropdown(name: 'new' | 'recent' | 'export' | 'copy' | 'insert') {
     (name === 'insert' && insertOpen.value);
   closeAllDropdowns();
   if (!isOpen) {
-    if (name === 'new') newOpen.value = true;
-    else if (name === 'recent') recentOpen.value = true;
-    else if (name === 'export') exportOpen.value = true;
-    else if (name === 'copy') copyOpen.value = true;
-    else if (name === 'insert') insertOpen.value = true;
+    if (name === 'new') { positionMenuFromButton(newBtnRef.value); newOpen.value = true; }
+    else if (name === 'recent') { positionMenuFromButton(recentBtnRef.value); recentOpen.value = true; }
+    else if (name === 'export') { positionMenuFromButton(exportBtnRef.value); exportOpen.value = true; }
+    else if (name === 'copy') { positionMenuFromButton(copyBtnRef.value, 'right'); copyOpen.value = true; }
+    else if (name === 'insert') { positionMenuFromButton(insertBtnRef.value); insertOpen.value = true; }
   }
 }
 function onDocClick(e: MouseEvent) {
-  // If the click is inside any .dropdown, leave it to the dropdown's own
-  // handlers (toggle on button, mousedown on item).
+  // Menus are teleported to <body>, so `.closest('.dropdown')` from a menu
+  // item won't reach the original `.dropdown` wrapper — also check for the
+  // menu's own marker class.
   const target = e.target as HTMLElement | null;
-  if (target && target.closest('.dropdown')) return;
+  if (target && (target.closest('.dropdown') || target.closest('.dropdown__menu'))) return;
+  closeAllDropdowns();
+}
+function onViewportChange() {
+  // Teleported menus position from the button's getBoundingClientRect at
+  // open time; on resize / scroll those coords go stale.
   closeAllDropdowns();
 }
 onMounted(() => {
   document.addEventListener('click', onDocClick, true);
+  window.addEventListener('resize', onViewportChange);
+  window.addEventListener('scroll', onViewportChange, true);
 });
 onBeforeUnmount(() => {
   document.removeEventListener('click', onDocClick, true);
+  window.removeEventListener('resize', onViewportChange);
+  window.removeEventListener('scroll', onViewportChange, true);
 });
 </script>
 
@@ -195,6 +275,7 @@ onBeforeUnmount(() => {
     <div class="toolbar__group">
       <div class="dropdown">
         <button
+          ref="newBtnRef"
           class="icon-btn"
           @click="toggleDropdown('new')"
           :title="t('toolbar.newFile')"
@@ -202,24 +283,27 @@ onBeforeUnmount(() => {
           <Icon name="new" />
           <Icon name="chevron-down" :size="10" />
         </button>
-        <div v-if="newOpen" class="dropdown__menu dropdown__menu--narrow">
-          <button class="dropdown__item dropdown__item--single" @mousedown.prevent="files.newFile(); newOpen = false">
-            <Icon name="new" />
-            <span class="dropdown__name">{{ t('toolbar.newMarkdown') }}</span>
-            <span class="dropdown__shortcut">Ctrl+N</span>
-          </button>
-          <button class="dropdown__item dropdown__item--single" @mousedown.prevent="files.newTextFile(); newOpen = false">
-            <Icon name="new-text" />
-            <span class="dropdown__name">{{ t('toolbar.newPlainText') }}</span>
-            <span class="dropdown__shortcut">Ctrl+Alt+N</span>
-          </button>
-        </div>
+        <Teleport to="body">
+          <div v-if="newOpen" class="dropdown__menu dropdown__menu--narrow" :style="floatStyle">
+            <button class="dropdown__item dropdown__item--single" @mousedown.prevent="files.newFile(); newOpen = false">
+              <Icon name="new" />
+              <span class="dropdown__name">{{ t('toolbar.newMarkdown') }}</span>
+              <span class="dropdown__shortcut">Ctrl+N</span>
+            </button>
+            <button class="dropdown__item dropdown__item--single" @mousedown.prevent="files.newTextFile(); newOpen = false">
+              <Icon name="new-text" />
+              <span class="dropdown__name">{{ t('toolbar.newPlainText') }}</span>
+              <span class="dropdown__shortcut">Ctrl+Alt+N</span>
+            </button>
+          </div>
+        </Teleport>
       </div>
       <button class="icon-btn" @click="files.openFile" :title="t('toolbar.openFileTooltip')">
         <Icon name="open" />
       </button>
       <div class="dropdown">
         <button
+          ref="recentBtnRef"
           class="icon-btn"
           @click="toggleDropdown('recent')"
           :title="t('toolbar.recent')"
@@ -227,25 +311,27 @@ onBeforeUnmount(() => {
           <Icon name="recent" />
           <Icon name="chevron-down" :size="10" />
         </button>
-        <div v-if="recentOpen" class="dropdown__menu">
-          <div v-if="!workspace.recentFiles.length" class="dropdown__empty">{{ t('toolbar.noRecent') }}</div>
-          <button
-            v-for="p in workspace.recentFiles"
-            :key="p"
-            class="dropdown__item"
-            @mousedown.prevent="files.openPath(p); recentOpen = false"
-            :title="p"
-          >
-            <span class="dropdown__name">{{ shortPath(p) }}</span>
-            <span class="dropdown__path">{{ p }}</span>
-          </button>
-          <div v-if="workspace.recentFiles.length" class="dropdown__sep"></div>
-          <button
-            v-if="workspace.recentFiles.length"
-            class="dropdown__item dropdown__item--muted"
-            @mousedown.prevent="workspace.clearRecent(); recentOpen = false"
-          >{{ t('toolbar.clearRecent') }}</button>
-        </div>
+        <Teleport to="body">
+          <div v-if="recentOpen" class="dropdown__menu" :style="floatStyle">
+            <div v-if="!workspace.recentFiles.length" class="dropdown__empty">{{ t('toolbar.noRecent') }}</div>
+            <button
+              v-for="p in workspace.recentFiles"
+              :key="p"
+              class="dropdown__item"
+              @mousedown.prevent="files.openPath(p); recentOpen = false"
+              :title="p"
+            >
+              <span class="dropdown__name">{{ shortPath(p) }}</span>
+              <span class="dropdown__path">{{ p }}</span>
+            </button>
+            <div v-if="workspace.recentFiles.length" class="dropdown__sep"></div>
+            <button
+              v-if="workspace.recentFiles.length"
+              class="dropdown__item dropdown__item--muted"
+              @mousedown.prevent="workspace.clearRecent(); recentOpen = false"
+            >{{ t('toolbar.clearRecent') }}</button>
+          </div>
+        </Teleport>
       </div>
       <button class="icon-btn" @click="files.openFolder" v-bind:title="t('toolbar.openFolder')">
         <Icon name="folder" />
@@ -261,6 +347,7 @@ onBeforeUnmount(() => {
       </button>
       <div class="dropdown">
         <button
+          ref="exportBtnRef"
           class="icon-btn"
           @click="toggleDropdown('export')"
           :title="t('toolbar.exportTooltip')"
@@ -268,33 +355,35 @@ onBeforeUnmount(() => {
           <Icon name="export" />
           <Icon name="chevron-down" :size="10" />
         </button>
-        <div v-if="exportOpen" class="dropdown__menu">
-          <button class="dropdown__item dropdown__item--single" @mousedown.prevent="exporter.exportHtml(); exportOpen = false">
-            <span class="dropdown__name">{{ t('toolbar.exportHtml') }}</span>
-          </button>
-          <button class="dropdown__item dropdown__item--single" @mousedown.prevent="exporter.exportDocx(); exportOpen = false">
-            <span class="dropdown__name">{{ t('toolbar.exportDocx') }}</span>
-          </button>
-          <button class="dropdown__item dropdown__item--single" @mousedown.prevent="exporter.exportPdf(); exportOpen = false">
-            <span class="dropdown__name">{{ t('toolbar.exportPdf') }}</span>
-          </button>
-          <button class="dropdown__item dropdown__item--single" @mousedown.prevent="exporter.exportPdfPrint(); exportOpen = false">
-            <span class="dropdown__name">{{ t('toolbar.exportPdfPrint') }}</span>
-          </button>
-          <button class="dropdown__item dropdown__item--single" @mousedown.prevent="exporter.exportImage(); exportOpen = false">
-            <span class="dropdown__name">{{ t('toolbar.exportImage') }}</span>
-          </button>
-          <div class="dropdown__sep"></div>
-          <button class="dropdown__item dropdown__item--single" @mousedown.prevent="exporter.copyAsHtml(); exportOpen = false">
-            <span class="dropdown__name">{{ t('toolbar.copyHtml') }}</span>
-          </button>
-          <button class="dropdown__item dropdown__item--single" @mousedown.prevent="exporter.copyAsPlainText(); exportOpen = false">
-            <span class="dropdown__name">{{ t('toolbar.copyPlain') }}</span>
-          </button>
-          <button class="dropdown__item dropdown__item--single" @mousedown.prevent="exporter.copyAsMarkdown(); exportOpen = false">
-            <span class="dropdown__name">{{ t('toolbar.copyMarkdown') }}</span>
-          </button>
-        </div>
+        <Teleport to="body">
+          <div v-if="exportOpen" class="dropdown__menu" :style="floatStyle">
+            <button class="dropdown__item dropdown__item--single" @mousedown.prevent="exporter.exportHtml(); exportOpen = false">
+              <span class="dropdown__name">{{ t('toolbar.exportHtml') }}</span>
+            </button>
+            <button class="dropdown__item dropdown__item--single" @mousedown.prevent="exporter.exportDocx(); exportOpen = false">
+              <span class="dropdown__name">{{ t('toolbar.exportDocx') }}</span>
+            </button>
+            <button class="dropdown__item dropdown__item--single" @mousedown.prevent="exporter.exportPdf(); exportOpen = false">
+              <span class="dropdown__name">{{ t('toolbar.exportPdf') }}</span>
+            </button>
+            <button class="dropdown__item dropdown__item--single" @mousedown.prevent="exporter.exportPdfPrint(); exportOpen = false">
+              <span class="dropdown__name">{{ t('toolbar.exportPdfPrint') }}</span>
+            </button>
+            <button class="dropdown__item dropdown__item--single" @mousedown.prevent="exporter.exportImage(); exportOpen = false">
+              <span class="dropdown__name">{{ t('toolbar.exportImage') }}</span>
+            </button>
+            <div class="dropdown__sep"></div>
+            <button class="dropdown__item dropdown__item--single" @mousedown.prevent="exporter.copyAsHtml(); exportOpen = false">
+              <span class="dropdown__name">{{ t('toolbar.copyHtml') }}</span>
+            </button>
+            <button class="dropdown__item dropdown__item--single" @mousedown.prevent="exporter.copyAsPlainText(); exportOpen = false">
+              <span class="dropdown__name">{{ t('toolbar.copyPlain') }}</span>
+            </button>
+            <button class="dropdown__item dropdown__item--single" @mousedown.prevent="exporter.copyAsMarkdown(); exportOpen = false">
+              <span class="dropdown__name">{{ t('toolbar.copyMarkdown') }}</span>
+            </button>
+          </div>
+        </Teleport>
       </div>
     </div>
 
@@ -322,6 +411,7 @@ onBeforeUnmount(() => {
     <div class="toolbar__group" v-if="isMarkdown">
       <div class="dropdown">
         <button
+          ref="insertBtnRef"
           class="icon-btn"
           @click="toggleDropdown('insert')"
           :title="t('toolbar.insertTooltip')"
@@ -329,38 +419,40 @@ onBeforeUnmount(() => {
           <Icon name="insert" />
           <Icon name="chevron-down" :size="10" />
         </button>
-        <div v-if="insertOpen" class="dropdown__menu">
-          <button class="dropdown__item dropdown__item--single" @mousedown.prevent="dispatchInsert('\n```\n$|$\n```\n')">
-            <span class="dropdown__name">{{ t('toolbar.insertCodeBlock') }}</span>
-          </button>
-          <button class="dropdown__item dropdown__item--single" @mousedown.prevent="dispatchInsert('`$|$`')">
-            <span class="dropdown__name">{{ t('toolbar.insertInlineCode') }}</span>
-          </button>
-          <div class="dropdown__sep"></div>
-          <button class="dropdown__item dropdown__item--single" @mousedown.prevent="dispatchInsert('\n$$\n$|$\n$$\n')">
-            <span class="dropdown__name">{{ t('toolbar.insertMathBlock') }}</span>
-          </button>
-          <button class="dropdown__item dropdown__item--single" @mousedown.prevent="dispatchInsert('$$|$$')">
-            <span class="dropdown__name">{{ t('toolbar.insertMathInline') }}</span>
-          </button>
-          <div class="dropdown__sep"></div>
-          <button class="dropdown__item dropdown__item--single" @mousedown.prevent="dispatchInsert('\n| $|$ | Header |\n| --- | --- |\n| cell | cell |\n')">
-            <span class="dropdown__name">{{ t('toolbar.insertTable') }}</span>
-          </button>
-          <button class="dropdown__item dropdown__item--single" @mousedown.prevent="dispatchInsert('\n```mermaid\ngraph TD\n  A[$|$] --> B[End]\n```\n')">
-            <span class="dropdown__name">{{ t('toolbar.insertMermaid') }}</span>
-          </button>
-          <div class="dropdown__sep"></div>
-          <button class="dropdown__item dropdown__item--single" @mousedown.prevent="dispatchInsert('[$|$](url)')">
-            <span class="dropdown__name">{{ t('toolbar.insertLink') }}</span>
-          </button>
-          <button class="dropdown__item dropdown__item--single" @mousedown.prevent="dispatchInsert('> $|$')">
-            <span class="dropdown__name">{{ t('toolbar.insertQuote') }}</span>
-          </button>
-          <button class="dropdown__item dropdown__item--single" @mousedown.prevent="dispatchInsert('\n---\n')">
-            <span class="dropdown__name">{{ t('toolbar.insertDivider') }}</span>
-          </button>
-        </div>
+        <Teleport to="body">
+          <div v-if="insertOpen" class="dropdown__menu" :style="floatStyle">
+            <button class="dropdown__item dropdown__item--single" @mousedown.prevent="dispatchInsert('\n```\n$|$\n```\n')">
+              <span class="dropdown__name">{{ t('toolbar.insertCodeBlock') }}</span>
+            </button>
+            <button class="dropdown__item dropdown__item--single" @mousedown.prevent="dispatchInsert('`$|$`')">
+              <span class="dropdown__name">{{ t('toolbar.insertInlineCode') }}</span>
+            </button>
+            <div class="dropdown__sep"></div>
+            <button class="dropdown__item dropdown__item--single" @mousedown.prevent="dispatchInsert('\n$$\n$|$\n$$\n')">
+              <span class="dropdown__name">{{ t('toolbar.insertMathBlock') }}</span>
+            </button>
+            <button class="dropdown__item dropdown__item--single" @mousedown.prevent="dispatchInsert('$$|$$')">
+              <span class="dropdown__name">{{ t('toolbar.insertMathInline') }}</span>
+            </button>
+            <div class="dropdown__sep"></div>
+            <button class="dropdown__item dropdown__item--single" @mousedown.prevent="dispatchInsert('\n| $|$ | Header |\n| --- | --- |\n| cell | cell |\n')">
+              <span class="dropdown__name">{{ t('toolbar.insertTable') }}</span>
+            </button>
+            <button class="dropdown__item dropdown__item--single" @mousedown.prevent="dispatchInsert('\n```mermaid\ngraph TD\n  A[$|$] --> B[End]\n```\n')">
+              <span class="dropdown__name">{{ t('toolbar.insertMermaid') }}</span>
+            </button>
+            <div class="dropdown__sep"></div>
+            <button class="dropdown__item dropdown__item--single" @mousedown.prevent="dispatchInsert('[$|$](url)')">
+              <span class="dropdown__name">{{ t('toolbar.insertLink') }}</span>
+            </button>
+            <button class="dropdown__item dropdown__item--single" @mousedown.prevent="dispatchInsert('> $|$')">
+              <span class="dropdown__name">{{ t('toolbar.insertQuote') }}</span>
+            </button>
+            <button class="dropdown__item dropdown__item--single" @mousedown.prevent="dispatchInsert('\n---\n')">
+              <span class="dropdown__name">{{ t('toolbar.insertDivider') }}</span>
+            </button>
+          </div>
+        </Teleport>
       </div>
     </div>
 
@@ -374,6 +466,7 @@ onBeforeUnmount(() => {
         <span class="clean-ai-label">AI</span>
       </button>
       <button
+        v-if="!IS_APP_STORE_BUILD"
         class="icon-btn ai-rewrite-btn"
         @mousedown.prevent
         @click="onAIRewrite"
@@ -396,27 +489,30 @@ onBeforeUnmount(() => {
         </button>
         <div class="dropdown">
           <button
+            ref="copyBtnRef"
             class="copy-split__arrow"
             @click="toggleDropdown('copy')"
             :title="t('toolbar.copyFormats')"
           >
             <Icon name="chevron-down" :size="10" />
           </button>
-          <div v-if="copyOpen" class="dropdown__menu dropdown__menu--narrow copy-dropdown">
-            <button class="dropdown__item dropdown__item--single" @mousedown.prevent="exporter.copyAsHtml(); copyOpen = false">
-              <span class="dropdown__name">{{ '📋 ' + t('toolbar.copyHtml') }}</span>
-              <span class="dropdown__shortcut">⇧⌘C</span>
-            </button>
-            <button class="dropdown__item dropdown__item--single" @mousedown.prevent="exporter.copyAsMarkdown(); copyOpen = false">
-              <span class="dropdown__name">{{ '📝 ' + t('toolbar.copyMarkdown') }}</span>
-            </button>
-            <button class="dropdown__item dropdown__item--single" @mousedown.prevent="exporter.copyAsPlainText(); copyOpen = false">
-              <span class="dropdown__name">{{ '📄 ' + t('toolbar.copyPlain') }}</span>
-            </button>
-            <button class="dropdown__item dropdown__item--single" @mousedown.prevent="exporter.copyAsImage(); copyOpen = false">
-              <span class="dropdown__name">{{ '🖼 ' + t('toolbar.copyImage') }}</span>
-            </button>
-          </div>
+          <Teleport to="body">
+            <div v-if="copyOpen" class="dropdown__menu dropdown__menu--narrow copy-dropdown" :style="floatStyle">
+              <button class="dropdown__item dropdown__item--single" @mousedown.prevent="exporter.copyAsHtml(); copyOpen = false">
+                <span class="dropdown__name">{{ '📋 ' + t('toolbar.copyHtml') }}</span>
+                <span class="dropdown__shortcut">⇧⌘C</span>
+              </button>
+              <button class="dropdown__item dropdown__item--single" @mousedown.prevent="exporter.copyAsMarkdown(); copyOpen = false">
+                <span class="dropdown__name">{{ '📝 ' + t('toolbar.copyMarkdown') }}</span>
+              </button>
+              <button class="dropdown__item dropdown__item--single" @mousedown.prevent="exporter.copyAsPlainText(); copyOpen = false">
+                <span class="dropdown__name">{{ '📄 ' + t('toolbar.copyPlain') }}</span>
+              </button>
+              <button class="dropdown__item dropdown__item--single" @mousedown.prevent="exporter.copyAsImage(); copyOpen = false">
+                <span class="dropdown__name">{{ '🖼 ' + t('toolbar.copyImage') }}</span>
+              </button>
+            </div>
+          </Teleport>
         </div>
       </div>
     </div>

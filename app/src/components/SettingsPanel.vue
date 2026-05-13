@@ -10,6 +10,7 @@ import { open as openFileDialog } from '@tauri-apps/plugin-dialog';
 import { themeLabels } from '../lib/themes';
 import { useI18n } from '../i18n';
 import { checkForUpdate, openReleaseUrl, isMasBuild } from '../lib/check-update';
+import { IS_APP_STORE_BUILD } from '../lib/app-build';
 import AISettings from './AISettings.vue';
 import CitationPickerSettings from './CitationPickerSettings.vue';
 import CaptureEndpointSettings from './CaptureEndpointSettings.vue';
@@ -709,7 +710,10 @@ function onSelectPdfFont(v: string) {
 
         <div data-cat="export"><CitationPickerSettings /></div>
 
-        <div data-cat="integrations"><AISettings
+        <!-- App Store builds strip the AI / Agent / Recipes / CostMeter
+             surface under Guideline 3.1.1 (BYOK API keys unlocking paid
+             functionality). The GitHub Developer ID build keeps them. -->
+        <div v-if="!IS_APP_STORE_BUILD" data-cat="integrations"><AISettings
           :enabled="settings.aiEnabled"
           :provider="(settings.aiProvider as any)"
           :model="settings.aiModel"
@@ -722,13 +726,13 @@ function onSelectPdfFont(v: string) {
 
         <!-- v4.0: BYOK cost meter — sits under AI so users see "your spend"
              right below "your provider key". -->
-        <div data-cat="integrations"><CostMeterSettings /></div>
+        <div v-if="!IS_APP_STORE_BUILD" data-cat="integrations"><CostMeterSettings /></div>
 
         <!-- v2.4: Integrations (CLI + MCP). -->
         <div data-cat="integrations"><IntegrationsSettings /></div>
 
         <!-- v4.0 Pillar 2: Agent Recipes. -->
-        <div data-cat="integrations"><RecipesSettings /></div>
+        <div v-if="!IS_APP_STORE_BUILD" data-cat="integrations"><RecipesSettings /></div>
 
         <section data-cat="writing">
           <label>

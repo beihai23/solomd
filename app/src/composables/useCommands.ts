@@ -25,6 +25,7 @@ import { useGitHistoryStore } from '../stores/gitHistory';
 import { useWorkspaceStore } from '../stores/workspace';
 import { useGithubSyncStore } from '../stores/githubSync';
 import { useGithubSync } from './useGithubSync';
+import { IS_APP_STORE_BUILD } from '../lib/app-build';
 
 export interface Command {
   id: string;
@@ -82,7 +83,7 @@ export function useCommands(): Command[] {
     toasts.success(successMsg);
   }
 
-  return [
+  const all: Command[] = [
     { id: 'file.new', title: 'New Markdown File', shortcut: 'Ctrl+N', run: () => files.newFile() },
     { id: 'file.newText', title: 'New Plain Text File', shortcut: 'Ctrl+Alt+N', run: () => files.newTextFile() },
     { id: 'file.open', title: 'Open File…', shortcut: 'Ctrl+O', run: () => files.openFile() },
@@ -432,4 +433,10 @@ export function useCommands(): Command[] {
       },
     },
   ];
+
+  // App Store builds strip AI / Agent commands (Apple 3.1.1).
+  if (IS_APP_STORE_BUILD) {
+    return all.filter((c) => c.id !== 'view.toggleAgentPanel');
+  }
+  return all;
 }

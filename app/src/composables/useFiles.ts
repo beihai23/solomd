@@ -2,6 +2,8 @@ import { inject } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
+import { documentDir, join } from '@tauri-apps/api/path';
+import { isIOS } from '../lib/platform';
 import { useTabsStore } from '../stores/tabs';
 import { useWorkspaceStore } from '../stores/workspace';
 import { useSettingsStore } from '../stores/settings';
@@ -152,24 +154,48 @@ export function useFiles() {
     if (!settings.showFileTree) settings.toggleFileTree();
   }
 
+  // iOS save policy: ignore the in-place path (could be a security-scoped
+  // URL from a "Open With" deep-link — unwritable from plain Rust fs) and
+  // route everything through the app's own Documents directory. With
+  // UIFileSharingEnabled set, that folder appears as "On My iPhone › SoloMD"
+  // in the Files app, so users can iCloud-sync or move from there.
+  async function iosResolvePath(tab: Tab): Promise<string> {
+    const fname = tab.fileName || (tab.language === 'markdown' ? 'Untitled.md' : 'Untitled.txt');
+    const dir = await documentDir();
+    return await join(dir, fname);
+  }
+
   async function saveTab(tab: Tab): Promise<boolean> {
-    if (!tab.filePath) return saveTabAs(tab);
+    let path = tab.filePath;
+    if (isIOS()) {
+      // On iOS, never trust the existing path — it may have come from a
+      // deep-link "Open With" and not be writable from Rust fs. Always
+      // route to Documents.
+      path = await iosResolvePath(tab);
+    } else if (!path) {
+      return saveTabAs(tab);
+    }
     try {
       await invoke('write_file', {
-        path: tab.filePath,
+        path,
         content: tab.content,
         encoding: tab.encoding || 'UTF-8',
       });
-      tabs.markSaved(tab.id, tab.filePath);
-      workspace.pushRecent(tab.filePath);
+      tabs.markSaved(tab.id, path);
+      workspace.pushRecent(path);
       // v2.5: feed the ⌘P quick-switcher's MFU ranking.
-      recentEdits.recordEdit(tab.filePath);
+      recentEdits.recordEdit(path);
       // v2.2: notify the AutoGit composable so the debounced auto-commit
       // pipeline picks up this save. Listener is in `useAutoCommit.ts`.
       window.dispatchEvent(
-        new CustomEvent('solomd:saved', { detail: { filePath: tab.filePath } }),
+        new CustomEvent('solomd:saved', { detail: { filePath: path } }),
       );
-      toasts.success(`Saved ${tab.fileName}`);
+      if (isIOS()) {
+        const fname = path.split(/[\\/]/).pop() ?? path;
+        toasts.success(`Saved to On My iPhone › SoloMD › ${fname}`);
+      } else {
+        toasts.success(`Saved ${tab.fileName}`);
+      }
       return true;
     } catch (e) {
       console.error('save failed', e);
@@ -180,11 +206,18 @@ export function useFiles() {
 
   async function saveTabAs(tab: Tab): Promise<boolean> {
     const defaultName = tab.fileName || (tab.language === 'markdown' ? 'Untitled.md' : 'Untitled.txt');
-    const path = await saveDialog({
-      defaultPath: tab.filePath ?? defaultName,
-      filters: SAVE_FILTERS,
-    });
-    if (!path) return false;
+    let path: string | null;
+    if (isIOS()) {
+      // iOS: no Save-As picker UI that round-trips to Rust safely. Write
+      // straight to app Documents; user surfaces / moves via Files app.
+      path = await iosResolvePath(tab);
+    } else {
+      path = await saveDialog({
+        defaultPath: tab.filePath ?? defaultName,
+        filters: SAVE_FILTERS,
+      });
+      if (!path) return false;
+    }
     try {
       await invoke('write_file', {
         path,
@@ -199,7 +232,7 @@ export function useFiles() {
         new CustomEvent('solomd:saved', { detail: { filePath: path } }),
       );
       const fileName = path.split(/[\\/]/).pop() ?? path;
-      toasts.success(`Saved as ${fileName}`);
+      toasts.success(isIOS() ? `Saved to On My iPhone › SoloMD › ${fileName}` : `Saved as ${fileName}`);
       return true;
     } catch (e) {
       console.error('save-as failed', e);

@@ -52,6 +52,7 @@ import { openWelcomeTour } from './lib/welcome-tour';
 import { useWorkspaceStore } from './stores/workspace';
 import { useWorkspaceIndexStore } from './stores/workspaceIndex';
 import { useRagStore } from './stores/rag';
+import { IS_APP_STORE_BUILD } from './lib/app-build';
 
 const tabs = useTabsStore();
 const settings = useSettingsStore();
@@ -565,8 +566,9 @@ onMounted(async () => {
   // v4.0 first-run agent setup wizard. Fires after the welcome tour on a
   // fresh install — once. Re-openable from Settings → AI ("Run setup
   // wizard again") for users who skipped it. We wait one tick so the
-  // welcome tour overlay (if any) shows first.
-  if (!settings.agentWizardSeen) {
+  // welcome tour overlay (if any) shows first. App Store builds skip
+  // entirely (Apple 3.1.1 — no AI surface).
+  if (!IS_APP_STORE_BUILD && !settings.agentWizardSeen) {
     setTimeout(() => {
       wizardOpen.value = true;
     }, isFreshLaunch ? 800 : 0);
@@ -730,7 +732,8 @@ const showHistoryPane = computed(
 );
 // v4.0 pillar 1: Agent Panel — workspace-level visibility (not per-tab).
 // Toggled via command palette `view.toggleAgentPanel`; persists in settings.
-const showAgentPane = computed(() => settings.showAgentPanel);
+// App Store builds strip the AI/Agent surface entirely (Apple 3.1.1).
+const showAgentPane = computed(() => !IS_APP_STORE_BUILD && settings.showAgentPanel);
 // v4.0.2 — search is a session-only pane (PR #50). ⌘⇧F toggles searchOpen;
 // no setting persisted because users don't want search living in their
 // sidebar across launches.
@@ -926,6 +929,7 @@ watchEffect(() => { void settings.aiEnabled; void settings.aiProvider; refreshAi
     </template>
 
     <AIRewriteOverlay
+      v-if="!IS_APP_STORE_BUILD"
       :enabled="settings.aiEnabled"
       :provider="(settings.aiProvider as any)"
       :model="settings.aiModel"
@@ -948,7 +952,7 @@ watchEffect(() => { void settings.aiEnabled; void settings.aiProvider; refreshAi
     />
     <CjkProofread :open="cjkProofreadOpen" @close="cjkProofreadOpen = false" />
     <AboutDialog :open="aboutOpen" @close="aboutOpen = false" />
-    <AgentSetupWizard :open="wizardOpen" @close="wizardOpen = false" />
+    <AgentSetupWizard v-if="!IS_APP_STORE_BUILD" :open="wizardOpen" @close="wizardOpen = false" />
     <UnsavedDialog
       :open="unsavedOpen"
       :mode="unsavedMode"

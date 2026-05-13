@@ -1,3 +1,4 @@
+pub mod app_build;
 pub mod commands;
 pub mod search;
 pub mod workspace_index;
@@ -109,10 +110,14 @@ pub fn run() {
             // v4.0 Pillar 2 — start the cron-trigger loop. Sleeps until
             // a `schedule` recipe is due; harmless when no recipes are
             // loaded yet (the loop polls workspace state every minute).
-            recipe_runner::spawn_cron_loop(app.handle().clone());
+            // Skipped in App Store builds (no AI / Agent / Recipe surface).
+            if !app_build::IS_APP_STORE {
+                recipe_runner::spawn_cron_loop(app.handle().clone());
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            app_build::app_build_info,
             commands::read_file,
             commands::read_binary_file,
             commands::write_file,

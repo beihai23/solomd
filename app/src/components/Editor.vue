@@ -34,6 +34,7 @@ import { tagAutocompleteExtension, tagComplete } from '../lib/cm-tag-autocomplet
 import { citationsExtension, citationCompleteSource } from '../lib/cm-citations';
 import { autocompletion } from '@codemirror/autocomplete';
 import { aiRewriteExtension } from '../lib/cm-ai-rewrite';
+import { IS_APP_STORE_BUILD } from '../lib/app-build';
 import { slashCommandsExtension } from '../lib/cm-slash-commands';
 import { useI18n } from '../i18n';
 import { spellcheckExtension } from '../lib/cm-spellcheck';
@@ -214,7 +215,7 @@ function buildExtensions() {
             defaultKeymap: true,
             activateOnTyping: true,
           }),
-          aiRewriteExtension(),
+          ...(IS_APP_STORE_BUILD ? [] : [aiRewriteExtension()]),
           spellcheckExtension({ enabled: () => settings.spellcheckEnabled }),
           spellcheckTheme,
           slashCompartment.of(slashExt()),

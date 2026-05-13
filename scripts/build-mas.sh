@@ -45,7 +45,7 @@ fi
 : "${MAS_PROVISIONING_PROFILE:?Set MAS_PROVISIONING_PROFILE (path to .provisionprofile)}"
 
 MAS_VERSION="${MAS_VERSION:-1.0.0}"
-MAS_BUILD_NUMBER="${MAS_BUILD_NUMBER:-1.0.2}"
+MAS_BUILD_NUMBER="${MAS_BUILD_NUMBER:-1.0.4}"
 
 if [ ! -f "$MAS_PROVISIONING_PROFILE" ]; then
   echo "ERROR: provisioning profile not found at $MAS_PROVISIONING_PROFILE" >&2
@@ -53,7 +53,9 @@ if [ ! -f "$MAS_PROVISIONING_PROFILE" ]; then
 fi
 
 ENTITLEMENTS="app/src-tauri/entitlements.mas.plist"
-[ -f "$ENTITLEMENTS" ] || { echo "ERROR: $ENTITLEMENTS missing" >&2; exit 1; }
+SIDECAR_ENTITLEMENTS="app/src-tauri/entitlements.mas-sidecar.plist"
+[ -f "$ENTITLEMENTS" ]         || { echo "ERROR: $ENTITLEMENTS missing" >&2; exit 1; }
+[ -f "$SIDECAR_ENTITLEMENTS" ] || { echo "ERROR: $SIDECAR_ENTITLEMENTS missing" >&2; exit 1; }
 
 echo "==> SoloMD MAS build"
 echo "    Short version: $MAS_VERSION"
@@ -72,6 +74,13 @@ echo "==> Building .app (universal)"
 # Tauri's default macOS signing uses APPLE_SIGNING_IDENTITY which is the
 # Developer ID cert; we unset it for this build.
 unset APPLE_SIGNING_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID
+# App Store distribution: strip the AI / Agent / Recipe surface (Apple 3.1.1
+# rejected 1.0.3 on this point). SOLOMD_APP_STORE_BUILD gates Rust commands
+# (option_env! in app_build.rs); VITE_APP_STORE_BUILD gates the Vue UI.
+# VITE_MAS_BUILD stays set for the legacy update-banner gate.
+export SOLOMD_APP_STORE_BUILD=1
+export VITE_APP_STORE_BUILD=true
+export VITE_MAS_BUILD=1
 pnpm tauri build --target universal-apple-darwin --bundles app
 
 APP="src-tauri/target/universal-apple-darwin/release/bundle/macos/SoloMD.app"
@@ -124,12 +133,19 @@ codesign --remove-signature "app/$APP" 2>/dev/null || true
 echo "==> Signing sidecar binaries with MAS identity"
 # Sidecars in Contents/MacOS/ — solomd-mcp universal binary. Must be signed
 # with the same identity as the parent or library validation rejects it.
-# Entitlements are the same since they inherit the sandbox from the parent.
 #
-# IMPORTANT: do NOT pass a custom --identifier for child binaries — Apple's
-# MAS validator rejects sub-identifiers like "app.solomd.solomd-mcp" with
-# ITMS errors. Let codesign derive the identifier from the binary name.
-# Also no --options runtime: hardened runtime conflicts with MAS sandbox
+# IMPORTANT: use the SIDECAR entitlements (sandbox + inherit only) — NOT the
+# full main-app entitlements. The main one carries
+# `com.apple.application-identifier`, which baked into the sidecar's
+# signature triggers TestFlight error ITMS-90885 ("nested executable is
+# missing a provisioning profile but has an application identifier in its
+# signature"). Sub-processes inherit the sandbox + app-id from the parent at
+# launch via `com.apple.security.inherit`; they must not declare their own.
+#
+# Also: do NOT pass a custom --identifier for child binaries — Apple's MAS
+# validator rejects sub-identifiers like "app.solomd.solomd-mcp" with ITMS
+# errors. Let codesign derive the identifier from the binary name. No
+# --options runtime either: hardened runtime conflicts with MAS sandbox
 # enforcement (Apple wants one security model per submission, not both).
 for bin in app/$APP/Contents/MacOS/*; do
   [ -f "$bin" ] || continue
@@ -137,7 +153,7 @@ for bin in app/$APP/Contents/MacOS/*; do
   if [ "$(basename "$bin")" = "SoloMD" ]; then continue; fi
   echo "    signing sidecar: $(basename "$bin")"
   codesign --force --sign "$MAS_SIGNING_IDENTITY" \
-    --entitlements "$ENTITLEMENTS" \
+    --entitlements "$SIDECAR_ENTITLEMENTS" \
     "$bin"
 done
 

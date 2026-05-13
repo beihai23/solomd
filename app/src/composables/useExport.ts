@@ -2,6 +2,8 @@ import { save as saveDialog } from '@tauri-apps/plugin-dialog';
 import { invoke } from '@tauri-apps/api/core';
 import { writeText, writeHtml, writeImage } from '@tauri-apps/plugin-clipboard-manager';
 import { Image } from '@tauri-apps/api/image';
+import { documentDir, join } from '@tauri-apps/api/path';
+import { isIOS } from '../lib/platform';
 import { markdownToDocxBlob } from '../lib/docx-export';
 import { markdownToPdfBlob } from '../lib/pdf-export';
 import { markdownToImageBlob } from '../lib/image-export';
@@ -256,19 +258,50 @@ export function useExport() {
       : { source: ctx.content, isSelection: false };
   }
 
+  // iOS save flow: Tauri's saveDialog returns a `file:///…` URL that
+  // `write_file` can't write to (Rust's `std::fs::write` treats the URL
+  // literally → ENOENT; even if we strip `file://`, security-scoped paths
+  // outside our sandbox are unreachable without NSURL's
+  // startAccessingSecurityScopedResource). Instead, on iOS we write to the
+  // app's own Documents directory — UIFileSharingEnabled + LSSupports
+  // OpeningDocumentsInPlace surface that folder under "On My iPhone › SoloMD"
+  // in the Files app, so users can move/iCloud-sync from there.
+  async function pickWritePath(
+    filename: string,
+    filters: { name: string; extensions: string[] }[],
+  ): Promise<string | null> {
+    if (isIOS()) {
+      const dir = await documentDir();
+      return await join(dir, filename);
+    }
+    return await saveDialog({ defaultPath: filename, filters });
+  }
+
+  function iosSavedToast(filename: string): string {
+    return `Saved to On My iPhone › SoloMD › ${filename}`;
+  }
+
+  // Modern Clipboard API works on all desktops and on iOS 16+ WKWebView,
+  // and supports rich types (HTML, PNG) — unlike Tauri's plugin-clipboard-
+  // manager iOS implementation which only ships `writeText`.
+  function hasNativeClipboardWrite(): boolean {
+    return typeof navigator !== 'undefined'
+      && typeof navigator.clipboard !== 'undefined'
+      && typeof navigator.clipboard.write === 'function'
+      && typeof (window as unknown as { ClipboardItem?: unknown }).ClipboardItem !== 'undefined';
+  }
+
   async function exportHtml() {
     track('file_exported', { format: 'html' });
     const ctx = activeOr();
     if (!ctx) return;
-    const path = await saveDialog({
-      defaultPath: `${ctx.baseName}.html`,
-      filters: [{ name: 'HTML', extensions: ['html'] }],
-    });
+    const filename = `${ctx.baseName}.html`;
+    const path = await pickWritePath(filename, [{ name: 'HTML', extensions: ['html'] }]);
     if (!path) return;
     const html = HTML_TEMPLATE(ctx.baseName, renderMarkdown(ctx.content));
     try {
       await invoke('write_file', { path, content: html, encoding: 'UTF-8' });
-      toasts.success('Exported to HTML');
+      toasts.success(isIOS() ? iosSavedToast(filename) : 'Exported to HTML');
     } catch (e) {
       toasts.error(`Export failed: ${e}`);
     }
@@ -278,17 +311,15 @@ export function useExport() {
     track('file_exported', { format: 'docx' });
     const ctx = activeOr();
     if (!ctx) return;
-    const path = await saveDialog({
-      defaultPath: `${ctx.baseName}.docx`,
-      filters: [{ name: 'Word Document', extensions: ['docx'] }],
-    });
+    const filename = `${ctx.baseName}.docx`;
+    const path = await pickWritePath(filename, [{ name: 'Word Document', extensions: ['docx'] }]);
     if (!path) return;
     try {
       const blob = await markdownToDocxBlob(ctx.content, ctx.baseName, ctx.filePath);
       const buffer = new Uint8Array(await blob.arrayBuffer());
       // Tauri 2 serializes Uint8Array as a number array which Rust accepts as Vec<u8>.
       await invoke('write_binary_file', { path, data: Array.from(buffer) });
-      toasts.success('Exported to DOCX');
+      toasts.success(isIOS() ? iosSavedToast(filename) : 'Exported to DOCX');
     } catch (e) {
       console.error(e);
       toasts.error(`DOCX export failed: ${e}`);
@@ -300,10 +331,8 @@ export function useExport() {
     track('file_exported', { format: 'pdf' });
     const ctx = activeOr();
     if (!ctx) return;
-    const path = await saveDialog({
-      defaultPath: `${ctx.baseName}.pdf`,
-      filters: [{ name: 'PDF', extensions: ['pdf'] }],
-    });
+    const filename = `${ctx.baseName}.pdf`;
+    const path = await pickWritePath(filename, [{ name: 'PDF', extensions: ['pdf'] }]);
     if (!path) return;
     const tid = toasts.info('Generating PDF…', 0);
     try {
@@ -316,7 +345,7 @@ export function useExport() {
       const buffer = new Uint8Array(await blob.arrayBuffer());
       await invoke('write_binary_file', { path, data: Array.from(buffer) });
       toasts.dismiss(tid);
-      toasts.success('Exported to PDF');
+      toasts.success(isIOS() ? iosSavedToast(filename) : 'Exported to PDF');
     } catch (e) {
       console.error(e);
       toasts.dismiss(tid);
@@ -400,6 +429,22 @@ export function useExport() {
     if (!src) return;
     const html = renderMarkdown(src.source);
     const okMsg = src.isSelection ? 'Copied selection as HTML' : 'Copied as HTML';
+    // Native Clipboard API first — supports rich HTML on all desktops and on
+    // iOS 16+. Tauri's `writeHtml` is unimplemented on iOS so we'd otherwise
+    // fall through to plain text and lose formatting.
+    if (hasNativeClipboardWrite()) {
+      try {
+        const item = new ClipboardItem({
+          'text/html': new Blob([html], { type: 'text/html' }),
+          'text/plain': new Blob([src.source], { type: 'text/plain' }),
+        });
+        await navigator.clipboard.write([item]);
+        toasts.success(okMsg);
+        return;
+      } catch {
+        // fall through to Tauri plugin
+      }
+    }
     try {
       await writeHtml(html);
       toasts.success(okMsg);
@@ -444,10 +489,8 @@ export function useExport() {
     track('file_exported', { format: 'image' });
     const ctx = activeOr();
     if (!ctx) return;
-    const path = await saveDialog({
-      defaultPath: `${ctx.baseName}.png`,
-      filters: [{ name: 'PNG Image', extensions: ['png'] }],
-    });
+    const filename = `${ctx.baseName}.png`;
+    const path = await pickWritePath(filename, [{ name: 'PNG Image', extensions: ['png'] }]);
     if (!path) return;
     const tid = toasts.info('Generating image…', 0);
     try {
@@ -457,7 +500,7 @@ export function useExport() {
       const buffer = new Uint8Array(await blob.arrayBuffer());
       await invoke('write_binary_file', { path, data: Array.from(buffer) });
       toasts.dismiss(tid);
-      toasts.success('Exported to PNG image');
+      toasts.success(isIOS() ? iosSavedToast(filename) : 'Exported to PNG image');
     } catch (e) {
       console.error(e);
       toasts.dismiss(tid);
@@ -477,9 +520,23 @@ export function useExport() {
       const blob = await markdownToImageBlob(source, ctx.baseName, ctx.filePath, {
         branding: settings.imageExportBranding,
       });
+
+      // Native Clipboard API supports `image/png` on iOS 16+ and all
+      // desktops. Tauri's `writeImage` is unimplemented on iOS so we'd
+      // otherwise fall through to the save-as fallback.
+      if (hasNativeClipboardWrite()) {
+        try {
+          const item = new ClipboardItem({ 'image/png': blob });
+          await navigator.clipboard.write([item]);
+          toasts.dismiss(tid);
+          toasts.success(isSelection ? 'Copied selection as image' : 'Copied as image');
+          return;
+        } catch {
+          // fall through to Tauri plugin
+        }
+      }
+
       const bytes = new Uint8Array(await blob.arrayBuffer());
-      // Use Tauri's clipboard plugin (browser Clipboard API doesn't support
-      // images in webview contexts).
       const img = await Image.fromBytes(bytes);
       await writeImage(img);
       toasts.dismiss(tid);
@@ -489,17 +546,15 @@ export function useExport() {
       toasts.dismiss(tid);
       // Fallback: save to file instead
       try {
-        const path = await saveDialog({
-          defaultPath: `${ctx.baseName}.png`,
-          filters: [{ name: 'PNG Image', extensions: ['png'] }],
-        });
+        const filename = `${ctx.baseName}.png`;
+        const path = await pickWritePath(filename, [{ name: 'PNG Image', extensions: ['png'] }]);
         if (path) {
           const blob2 = await markdownToImageBlob(source, ctx.baseName, ctx.filePath, {
             branding: settings.imageExportBranding,
           });
           const buffer = new Uint8Array(await blob2.arrayBuffer());
           await invoke('write_binary_file', { path, data: Array.from(buffer) });
-          toasts.success('Clipboard failed — saved as PNG instead');
+          toasts.success(isIOS() ? iosSavedToast(filename) : 'Clipboard failed — saved as PNG instead');
         } else {
           toasts.error(`Copy image failed: ${e}`);
         }

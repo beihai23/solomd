@@ -119,6 +119,11 @@ echo "==> Regenerating .xcodeproj from project.yml"
 ( cd app/src-tauri/gen/apple && xcodegen generate )
 
 echo "==> Building iOS .ipa (release / arm64)"
+# App Store distribution: strip the AI / Agent / Recipe surface (Apple 3.1.1).
+# SOLOMD_APP_STORE_BUILD gates Rust commands (option_env! in app_build.rs);
+# VITE_APP_STORE_BUILD gates the Vue UI (import.meta.env in app-build.ts).
+export SOLOMD_APP_STORE_BUILD=1
+export VITE_APP_STORE_BUILD=true
 ( cd app && pnpm tauri ios build )
 
 IPA=app/src-tauri/gen/apple/build/arm64/SoloMD.ipa
