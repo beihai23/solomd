@@ -117,7 +117,19 @@ pub fn run() {
             {
                 dev_bridge::spawn(app.handle().clone());
             }
-            #[cfg(not(debug_assertions))]
+            // Show the window only after first paint to suppress the
+            // position-jump flicker on Windows (issue #60). The window
+            // is born hidden (tauri.conf.json: "visible": false) and
+            // we reveal it here once the webview has settled.
+            #[cfg(not(any(target_os = "android", target_os = "ios")))]
+            {
+                use tauri::Manager;
+                if let Some(win) = app.get_webview_window("main") {
+                    let _ = win.show();
+                    let _ = win.set_focus();
+                }
+            }
+            #[cfg(any(target_os = "android", target_os = "ios"))]
             {
                 let _ = app;
             }

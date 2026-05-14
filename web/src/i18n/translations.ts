@@ -91,6 +91,7 @@ export const t = {
         windows: { name: 'Windows', note: 'x64 · Windows 10/11', primary: 'Download .msi', secondary: '.exe installer' },
         linux: { name: 'Linux', note: 'x64 · .AppImage / .deb / .rpm', primary: 'Download .AppImage', secondary: '.deb (Debian/Ubuntu)', tertiary: '.rpm (Fedora/RHEL)' },
         linuxArm: { name: 'Linux (ARM64)', note: 'aarch64 · Raspberry Pi 4/5 · ARM servers', primary: 'Download .AppImage', secondary: '.deb (arm64)', tertiary: '.rpm (aarch64)' },
+        android: { name: 'Android', note: 'API 24+ · ARM64 · x86_64 · F-Droid / Play Store', primary: 'Download universal .apk', secondary: '.apk (arm64-v8a)', tertiary: '.apk (armv7)' },
       },
       notes: {
         macos: 'Drag SoloMD.app to /Applications. Notarized — no Gatekeeper warning.',
@@ -429,6 +430,7 @@ export const t = {
         windows: { name: 'Windows', note: 'x64 · Windows 10/11', primary: '下载 .msi', secondary: '.exe 安装程序' },
         linux: { name: 'Linux', note: 'x64 · .AppImage / .deb / .rpm', primary: '下载 .AppImage', secondary: '.deb (Debian/Ubuntu)', tertiary: '.rpm (Fedora/RHEL)' },
         linuxArm: { name: 'Linux (ARM64)', note: 'aarch64 · 树莓派 4/5 · ARM 服务器', primary: '下载 .AppImage', secondary: '.deb (arm64)', tertiary: '.rpm (aarch64)' },
+        android: { name: 'Android', note: 'API 24+ · ARM64 · x86_64 · F-Droid / Play 商店', primary: '下载通用 .apk', secondary: '.apk (arm64-v8a)', tertiary: '.apk (armv7)' },
       },
       notes: {
         macos: '将 SoloMD.app 拖入 /Applications。已 notarized,无任何安全警告。',
@@ -771,6 +773,7 @@ export const t = {
         windows: { name: 'Windows', note: 'x64 · Windows 10/11', primary: '.msi をダウンロード', secondary: '.exe インストーラ' },
         linux: { name: 'Linux', note: 'x64 · .AppImage / .deb / .rpm', primary: '.AppImage をダウンロード', secondary: '.deb (Debian/Ubuntu)', tertiary: '.rpm (Fedora/RHEL)' },
         linuxArm: { name: 'Linux (ARM64)', note: 'aarch64 · Raspberry Pi 4/5 · ARM サーバー', primary: '.AppImage をダウンロード', secondary: '.deb (arm64)', tertiary: '.rpm (aarch64)' },
+        android: { name: 'Android', note: 'API 24+ · ARM64 · x86_64 · F-Droid / Play ストア', primary: '.apk をダウンロード', secondary: '.apk (arm64-v8a)', tertiary: '.apk (armv7)' },
       },
       notes: {
         macos: 'SoloMD.app を /Applications にドラッグ。Notarize 済み — Gatekeeper 警告なし。',
@@ -1005,6 +1008,7 @@ export const t = {
         windows: { name: 'Windows', note: 'x64 · Windows 10/11', primary: '.msi 다운로드', secondary: '.exe 인스톨러' },
         linux: { name: 'Linux', note: 'x64 · .AppImage / .deb / .rpm', primary: '.AppImage 다운로드', secondary: '.deb (Debian/Ubuntu)', tertiary: '.rpm (Fedora/RHEL)' },
         linuxArm: { name: 'Linux (ARM64)', note: 'aarch64 · Raspberry Pi 4/5 · ARM 서버', primary: '.AppImage 다운로드', secondary: '.deb (arm64)', tertiary: '.rpm (aarch64)' },
+        android: { name: 'Android', note: 'API 24+ · ARM64 · x86_64 · F-Droid / Play 스토어', primary: '.apk 다운로드', secondary: '.apk (arm64-v8a)', tertiary: '.apk (armv7)' },
       },
       notes: {
         macos: 'SoloMD.app을 /Applications에 드래그. Notarize 완료 — Gatekeeper 경고 없음.',
@@ -1239,6 +1243,7 @@ export const t = {
         windows: { name: 'Windows', note: 'x64 · Windows 10/11', primary: '.msi herunterladen', secondary: '.exe Installer' },
         linux: { name: 'Linux', note: 'x64 · .AppImage / .deb / .rpm', primary: '.AppImage herunterladen', secondary: '.deb (Debian/Ubuntu)', tertiary: '.rpm (Fedora/RHEL)' },
         linuxArm: { name: 'Linux (ARM64)', note: 'aarch64 · Raspberry Pi 4/5 · ARM-Server', primary: '.AppImage herunterladen', secondary: '.deb (arm64)', tertiary: '.rpm (aarch64)' },
+        android: { name: 'Android', note: 'API 24+ · ARM64 · x86_64 · F-Droid / Play Store', primary: 'Universal .apk herunterladen', secondary: '.apk (arm64-v8a)', tertiary: '.apk (armv7)' },
       },
       notes: {
         macos: 'SoloMD.app in /Applications ziehen. Notarisiert — keine Gatekeeper-Warnung.',
@@ -1473,6 +1478,7 @@ export const t = {
         windows: { name: 'Windows', note: 'x64 · Windows 10/11', primary: 'Télécharger .msi', secondary: 'Installateur .exe' },
         linux: { name: 'Linux', note: 'x64 · .AppImage / .deb / .rpm', primary: 'Télécharger .AppImage', secondary: '.deb (Debian/Ubuntu)', tertiary: '.rpm (Fedora/RHEL)' },
         linuxArm: { name: 'Linux (ARM64)', note: 'aarch64 · Raspberry Pi 4/5 · serveurs ARM', primary: 'Télécharger .AppImage', secondary: '.deb (arm64)', tertiary: '.rpm (aarch64)' },
+        android: { name: 'Android', note: 'API 24+ · ARM64 · x86_64 · F-Droid / Play Store', primary: 'Télécharger .apk universel', secondary: '.apk (arm64-v8a)', tertiary: '.apk (armv7)' },
       },
       notes: {
         macos: 'Glisser SoloMD.app dans /Applications. Notarisé — pas d\'avertissement Gatekeeper.',
@@ -1707,6 +1713,7 @@ export const t = {
         windows: { name: 'Windows', note: 'x64 · Windows 10/11', primary: 'Descargar .msi', secondary: 'Instalador .exe' },
         linux: { name: 'Linux', note: 'x64 · .AppImage / .deb / .rpm', primary: 'Descargar .AppImage', secondary: '.deb (Debian/Ubuntu)', tertiary: '.rpm (Fedora/RHEL)' },
         linuxArm: { name: 'Linux (ARM64)', note: 'aarch64 · Raspberry Pi 4/5 · servidores ARM', primary: 'Descargar .AppImage', secondary: '.deb (arm64)', tertiary: '.rpm (aarch64)' },
+        android: { name: 'Android', note: 'API 24+ · ARM64 · x86_64 · F-Droid / Play Store', primary: 'Descargar .apk universal', secondary: '.apk (arm64-v8a)', tertiary: '.apk (armv7)' },
       },
       notes: {
         macos: 'Arrastra SoloMD.app a /Applications. Notarizado — sin advertencia de Gatekeeper.',
@@ -1941,6 +1948,7 @@ export const t = {
         windows: { name: 'Windows', note: 'x64 · Windows 10/11', primary: 'Baixar .msi', secondary: 'Instalador .exe' },
         linux: { name: 'Linux', note: 'x64 · .AppImage / .deb / .rpm', primary: 'Baixar .AppImage', secondary: '.deb (Debian/Ubuntu)', tertiary: '.rpm (Fedora/RHEL)' },
         linuxArm: { name: 'Linux (ARM64)', note: 'aarch64 · Raspberry Pi 4/5 · servidores ARM', primary: 'Baixar .AppImage', secondary: '.deb (arm64)', tertiary: '.rpm (aarch64)' },
+        android: { name: 'Android', note: 'API 24+ · ARM64 · x86_64 · F-Droid / Play Store', primary: 'Baixar .apk universal', secondary: '.apk (arm64-v8a)', tertiary: '.apk (armv7)' },
       },
       notes: {
         macos: 'Arraste SoloMD.app para /Applications. Notarizado — sem aviso do Gatekeeper.',
@@ -2175,6 +2183,7 @@ export const t = {
         windows: { name: 'Windows', note: 'x64 · Windows 10/11', primary: 'Scarica .msi', secondary: 'Installer .exe' },
         linux: { name: 'Linux', note: 'x64 · .AppImage / .deb / .rpm', primary: 'Scarica .AppImage', secondary: '.deb (Debian/Ubuntu)', tertiary: '.rpm (Fedora/RHEL)' },
         linuxArm: { name: 'Linux (ARM64)', note: 'aarch64 · Raspberry Pi 4/5 · server ARM', primary: 'Scarica .AppImage', secondary: '.deb (arm64)', tertiary: '.rpm (aarch64)' },
+        android: { name: 'Android', note: 'API 24+ · ARM64 · x86_64 · F-Droid / Play Store', primary: 'Scarica .apk universale', secondary: '.apk (arm64-v8a)', tertiary: '.apk (armv7)' },
       },
       notes: {
         macos: 'Trascina SoloMD.app in /Applications. Notarizzato — nessun avviso Gatekeeper.',
@@ -2409,6 +2418,7 @@ export const t = {
         windows: { name: 'Windows', note: 'x64 · Windows 10/11', primary: 'Pobierz .msi', secondary: 'Instalator .exe' },
         linux: { name: 'Linux', note: 'x64 · .AppImage / .deb / .rpm', primary: 'Pobierz .AppImage', secondary: '.deb (Debian/Ubuntu)', tertiary: '.rpm (Fedora/RHEL)' },
         linuxArm: { name: 'Linux (ARM64)', note: 'aarch64 · Raspberry Pi 4/5 · serwery ARM', primary: 'Pobierz .AppImage', secondary: '.deb (arm64)', tertiary: '.rpm (aarch64)' },
+        android: { name: 'Android', note: 'API 24+ · ARM64 · x86_64 · F-Droid / Sklep Play', primary: 'Pobierz uniwersalny .apk', secondary: '.apk (arm64-v8a)', tertiary: '.apk (armv7)' },
       },
       notes: {
         macos: 'Przeciągnij SoloMD.app do /Applications. Notarized — żadnych ostrzeżeń Gatekeepera.',
@@ -2643,6 +2653,7 @@ export const t = {
         windows: { name: 'Windows', note: 'x64 · Windows 10/11', primary: 'Download .msi', secondary: '.exe-installer' },
         linux: { name: 'Linux', note: 'x64 · .AppImage / .deb / .rpm', primary: 'Download .AppImage', secondary: '.deb (Debian/Ubuntu)', tertiary: '.rpm (Fedora/RHEL)' },
         linuxArm: { name: 'Linux (ARM64)', note: 'aarch64 · Raspberry Pi 4/5 · ARM-servers', primary: 'Download .AppImage', secondary: '.deb (arm64)', tertiary: '.rpm (aarch64)' },
+        android: { name: 'Android', note: 'API 24+ · ARM64 · x86_64 · F-Droid / Play Store', primary: 'Universele .apk downloaden', secondary: '.apk (arm64-v8a)', tertiary: '.apk (armv7)' },
       },
       notes: {
         macos: 'Sleep SoloMD.app naar /Applications. Genotariseerd — geen Gatekeeper-waarschuwing.',
@@ -2877,6 +2888,7 @@ export const t = {
         windows: { name: 'Windows', note: 'x64 · Windows 10/11', primary: '.msi indir', secondary: '.exe yükleyici' },
         linux: { name: 'Linux', note: 'x64 · .AppImage / .deb / .rpm', primary: '.AppImage indir', secondary: '.deb (Debian/Ubuntu)', tertiary: '.rpm (Fedora/RHEL)' },
         linuxArm: { name: 'Linux (ARM64)', note: 'aarch64 · Raspberry Pi 4/5 · ARM sunucular', primary: '.AppImage indir', secondary: '.deb (arm64)', tertiary: '.rpm (aarch64)' },
+        android: { name: 'Android', note: 'API 24+ · ARM64 · x86_64 · F-Droid / Play Store', primary: 'Evrensel .apk indir', secondary: '.apk (arm64-v8a)', tertiary: '.apk (armv7)' },
       },
       notes: {
         macos: 'SoloMD.app\'ı /Applications klasörüne sürükle. Noter onaylı — Gatekeeper uyarısı yok.',
@@ -3111,6 +3123,7 @@ export const t = {
         windows: { name: 'Windows', note: 'x64 · Windows 10/11', primary: 'Ladda ner .msi', secondary: '.exe-installer' },
         linux: { name: 'Linux', note: 'x64 · .AppImage / .deb / .rpm', primary: 'Ladda ner .AppImage', secondary: '.deb (Debian/Ubuntu)', tertiary: '.rpm (Fedora/RHEL)' },
         linuxArm: { name: 'Linux (ARM64)', note: 'aarch64 · Raspberry Pi 4/5 · ARM-servrar', primary: 'Ladda ner .AppImage', secondary: '.deb (arm64)', tertiary: '.rpm (aarch64)' },
+        android: { name: 'Android', note: 'API 24+ · ARM64 · x86_64 · F-Droid / Play Store', primary: 'Ladda ner universell .apk', secondary: '.apk (arm64-v8a)', tertiary: '.apk (armv7)' },
       },
       notes: {
         macos: 'Dra SoloMD.app till /Applications. Notariserad — ingen Gatekeeper-varning.',
@@ -3345,6 +3358,7 @@ export const t = {
         windows: { name: 'Windows', note: 'x64 · Windows 10/11', primary: 'Завантажити .msi', secondary: 'Інсталятор .exe' },
         linux: { name: 'Linux', note: 'x64 · .AppImage / .deb / .rpm', primary: 'Завантажити .AppImage', secondary: '.deb (Debian/Ubuntu)', tertiary: '.rpm (Fedora/RHEL)' },
         linuxArm: { name: 'Linux (ARM64)', note: 'aarch64 · Raspberry Pi 4/5 · ARM-сервери', primary: 'Завантажити .AppImage', secondary: '.deb (arm64)', tertiary: '.rpm (aarch64)' },
+        android: { name: 'Android', note: 'API 24+ · ARM64 · x86_64 · F-Droid / Play Маркет', primary: 'Завантажити універсальний .apk', secondary: '.apk (arm64-v8a)', tertiary: '.apk (armv7)' },
       },
       notes: {
         macos: 'Перетягніть SoloMD.app у /Applications. Нотаризовано — без попереджень Gatekeeper.',

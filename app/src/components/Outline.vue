@@ -293,7 +293,8 @@ onBeforeUnmount(() => window.removeEventListener('keydown', onWindowKey));
 
 <style scoped>
 .outline {
-  width: 240px;
+  width: 100%;
+  min-width: 220px;
   height: 100%;
   background: var(--bg-elev);
   border-right: 1px solid var(--border);

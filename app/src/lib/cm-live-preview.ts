@@ -122,13 +122,21 @@ const liveTheme = EditorView.theme({
   '.cm-line': {
     fontVariantLigatures: 'none',
   },
-  // Block-level: code fences look like real code blocks
+  // Block-level: code fences look like real code blocks. We use
+  // box-shadow inset instead of background-color so it paints UNDER
+  // the selection layer (.cm-selectionBackground), keeping the
+  // text-selection highlight visible inside code fences (issue #).
   '.cm-line:has(.tok-monospace)': {
-    backgroundColor: 'var(--bg-hover)',
+    boxShadow: 'inset 0 0 0 9999px var(--bg-hover)',
   },
   '.tok-meta, .cm-formatting, .ͼe': {
     color: 'var(--text-faint)',
   },
+  // Selection layer must paint over the inline-code background too —
+  // bump z-index so .cm-selectionBackground sits above .tok-monospace
+  // span backgrounds (issue: 在 `` 中选择字符没有高亮).
+  '.cm-selectionLayer': { zIndex: '1' },
+  '.cm-selectionBackground': { zIndex: '1' },
 });
 
 /** Full live-preview extension bundle. Pass `[]` to disable. */

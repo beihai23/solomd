@@ -12,6 +12,7 @@ import { useRagStore, type RagHit } from '../stores/rag';
 import { useFiles } from '../composables/useFiles';
 import { useWorkspaceStore } from '../stores/workspace';
 import { useSettingsStore } from '../stores/settings';
+import { useToastsStore } from '../stores/toasts';
 import { useI18n } from '../i18n';
 
 const props = defineProps<{ open: boolean }>();
@@ -19,6 +20,7 @@ const emit = defineEmits<{ (e: 'close'): void; (e: 'open-settings'): void }>();
 
 const { t } = useI18n();
 const rag = useRagStore();
+const toasts = useToastsStore();
 const files = useFiles();
 const workspace = useWorkspaceStore();
 const settings = useSettingsStore();
@@ -79,6 +81,11 @@ async function openHit(hit: RagHit) {
 
 async function onReindex() {
   await rag.reindex(workspace.currentFolder);
+  if (rag.lastError) {
+    toasts.error(`RAG reindex failed: ${rag.lastError}`);
+    return;
+  }
+  toasts.success(`Reindexed ${rag.status?.indexed_files ?? 0} files`);
   if (query.value) doSearch();
 }
 

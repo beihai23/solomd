@@ -900,6 +900,12 @@ watchEffect(() => { void settings.aiEnabled; void settings.aiProvider; refreshAi
           :style="sideSidebarStyle"
         >
           <div class="side-sidebar__resize side-sidebar__resize--left" @mousedown="onSidebarResize('right', $event)" />
+          <button
+            class="side-sidebar__close"
+            @click="settings.toggleRightSidebar"
+            title="Close right sidebar (⌥⌘B)"
+            aria-label="Close right sidebar"
+          >×</button>
           <template v-for="(p, idx) in visibleRsPanes" :key="p.id">
             <RsSplitter v-if="idx > 0" :above="visibleRsPanes[idx-1].id" :below="p.id" />
             <div :data-rs-pane="p.id" :class="['rs-pane-host', `rs-pane-host--${p.id}`]" :style="paneStyle(p.id)">
@@ -995,7 +1001,7 @@ watchEffect(() => { void settings.aiEnabled; void settings.aiProvider; refreshAi
   flex-direction: column;
   width: 260px;
   flex: 0 0 260px;
-  min-width: 0;
+  min-width: 240px;
   background: var(--bg-soft, var(--bg));
 }
 .side-sidebar--left {
@@ -1012,20 +1018,43 @@ watchEffect(() => { void settings.aiEnabled; void settings.aiProvider; refreshAi
   position: absolute;
   top: 0;
   bottom: 0;
-  width: 5px;
+  width: 8px;
   cursor: ew-resize;
   z-index: 10;
   background: transparent;
 }
 .side-sidebar__resize--right {
-  right: -2px;
+  right: -4px;
 }
 .side-sidebar__resize--left {
-  left: -2px;
+  left: -4px;
 }
 .side-sidebar__resize:hover {
   background: var(--accent, #6366f1);
   opacity: 0.5;
+}
+.side-sidebar__close {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  z-index: 11;
+  padding: 0;
+}
+.side-sidebar__close:hover {
+  background: var(--hover-bg);
+  color: var(--text);
 }
 /* v4.0.2 — each pane lives inside an .rs-pane-host wrapper so the
    <RsSplitter> can find adjacent panes via [data-rs-pane] and resize

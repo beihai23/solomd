@@ -395,9 +395,11 @@ CREATE TABLE IF NOT EXISTS rag_files (
 
 fn open_db(path: &Path) -> Result<Connection, String> {
     if let Some(parent) = path.parent() {
-        let _ = fs::create_dir_all(parent);
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("create dir {}: {e}", parent.display()))?;
     }
-    let conn = Connection::open(path).map_err(|e| format!("open db: {e}"))?;
+    let conn = Connection::open(path)
+        .map_err(|e| format!("open db at {}: {e}", path.display()))?;
     conn.execute_batch(SCHEMA).map_err(|e| format!("schema: {e}"))?;
 
     // Wipe + start fresh if INDEX_VERSION moved.

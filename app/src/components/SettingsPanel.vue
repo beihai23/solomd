@@ -120,11 +120,19 @@ async function onToggleRagEnabled() {
   } else {
     await rag.setEnabled(workspace.currentFolder, false);
   }
+  if (rag.lastError) {
+    toasts.error(`RAG: ${rag.lastError}`);
+  }
 }
 
 async function onReindexNow() {
   if (!workspace.currentFolder) return;
   await rag.reindex(workspace.currentFolder);
+  if (rag.lastError) {
+    toasts.error(`RAG reindex failed: ${rag.lastError}`);
+  } else {
+    toasts.success(`Reindexed ${rag.status?.indexed_files ?? 0} files`);
+  }
 }
 
 function onToggleOutlineGlobal() {
