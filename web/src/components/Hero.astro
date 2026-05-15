@@ -4,7 +4,7 @@ interface Props { lang: Lang }
 const { lang } = Astro.props;
 const tr = getT(lang);
 
-const VERSION = '4.1.0';
+const VERSION = '4.1.8';
 const REPO = 'zhitongblog/solomd';
 const baseUrl = `https://github.com/${REPO}/releases/download/v${VERSION}`;
 const langPrefix = lang === 'en' ? '' : `/${lang}`;
@@ -80,6 +80,10 @@ const initialStarsText = initialStars > 0 ? fmtStars(initialStars) : '';
 const initialDownloadsText = initialDownloads > 0 ? fmtDownloads(initialDownloads) : '';
 ---
 
+<a class="android-beta-banner" href="mailto:lixd220@gmail.com?subject=SoloMD%20Android%20Beta%20Signup&body=Please%20add%20me%20to%20the%20Android%20closed%20testing.%20Google%20account%20email%3A%20">
+  <span class="android-beta-banner__text">{tr.hero.androidBeta}</span>
+</a>
+
 <section class="hero">
   <div class="container hero__inner">
     <div class="hero__badge">{tr.hero.badge} · <span id="hero-stars">{initialStarsText}</span> · <span id="hero-dl-count">{initialDownloadsText}</span></div>
@@ -108,7 +112,7 @@ const initialDownloadsText = initialDownloads > 0 ? fmtDownloads(initialDownload
         ⬇ {tr.hero.ctaPrimary}
       </a>
       <a
-        href={agentsHref}
+        href="#features"
         class="btn btn--secondary btn--lg"
       >
         {tr.hero.ctaSecondary}
@@ -258,6 +262,30 @@ const initialDownloadsText = initialDownloads > 0 ? fmtDownloads(initialDownload
 </script>
 
 <style>
+  /* Top recruitment banner — sits above the hero, full-bleed, accent
+     gradient so it reads as a real call to action without overwhelming
+     the hero typography below. */
+  .android-beta-banner {
+    display: block;
+    text-align: center;
+    text-decoration: none;
+    padding: 12px 20px;
+    background: linear-gradient(90deg, #d97706 0%, #f59e0b 50%, #d97706 100%);
+    color: #1a1a1a;
+    font-weight: 600;
+    font-size: 14px;
+    letter-spacing: 0.01em;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+    transition: filter 0.15s;
+  }
+  .android-beta-banner:hover {
+    filter: brightness(1.06);
+  }
+  .android-beta-banner__text { display: inline-block; }
+  @media (max-width: 640px) {
+    .android-beta-banner { font-size: 13px; padding: 10px 14px; }
+  }
+
   /* Flat cream hero — the orange radial-gradient that used to bloom
      across the top of the page made the whole site read as a marketing
      splash. The H1 + serif typography now carries the visual weight. */
