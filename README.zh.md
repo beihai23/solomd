@@ -180,7 +180,7 @@ MCP server 是独立 crate,在 `mcp-server/` 目录;端到端测试用的 dev MC
 
 ## 贡献
 
-欢迎 Issue / PR —— [开一个](https://github.com/zhitongblog/solomd/issues)。方向参考 [`docs/roadmap.md`](docs/roadmap.md)。v4.0 的工程笔记在 [solomd.app/zh/blog/v4-0-0-how-we-built-it/](https://solomd.app/zh/blog/v4-0-0-how-we-built-it/) —— 想理解工程原则后再 PR,从这里开始。
+欢迎 Issue / PR —— [开一个](https://github.com/zhitongblog/solomd/issues)。方向参考 [`docs/roadmap.md`](docs/roadmap.md)。v4.0 的工程笔记在 [solomd.app/blog/v4-0-0-how-we-built-it/](https://solomd.app/blog/v4-0-0-how-we-built-it/) —— 想理解工程原则后再 PR,从这里开始。
 
 ## 联系
 
