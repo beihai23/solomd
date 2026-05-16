@@ -142,68 +142,68 @@ export const t = {
       lead: '',
       items: [
         {
-          q: "What's a recipe (v4)?",
-          a: 'A YAML file under <workspace>/.solomd/agents/*.yml. One file = one agent job. Required fields: name, trigger (schedule | on-save | on-commit | on-tag-add | manual), prompt. Optional: schedule (cron), match (glob), allow-write, write-cap, provider, model, tools allowlist. SoloMD ships 11 starters in Settings → Recipes → Browse cookbook — install one, edit it, run it. The full schema lives in docs/agents.md.',
-        },
-        {
-          q: 'Are agent writes safe?',
-          a: 'Every recipe run begins by branching off main: agent/<recipe>/<run-id>. Writes land on that branch only. On success the run goes to Pending — review the diff and click Accept (fast-forward into main) or Reject (delete the branch entirely). A rejected run leaves zero trace in your history. Writes also charge a per-run cap (default 5, hard upper bound 50) — a model that asks to write 100 files when the cap is 5 gets refusals at the 6th call, with no half-applied state.',
-        },
-        {
-          q: "How is this different from Cursor or Copilot ghost-text?",
-          a: "Cursor and Copilot are great for code completion at the keystroke level. SoloMD's agents are different in three ways: (1) the unit of work is the *vault*, not the cursor — agents read across notes via wikilinks, backlinks, full-text and tag search; (2) writes are batched + reviewable, not ghost-text you accept inline; (3) agents can run on a schedule when you're not at the keyboard (weekly review, daily summary, on-tag triage). It's closer to Cursor's Agent / Composer mode than to inline autocomplete — and explicitly not a writing-style autocomplete (we believe ghost-text dilutes the writer's voice).",
-        },
-        {
-          q: 'Do recipes need an API key?',
-          a: "Only if the recipe specifies a cloud provider. For provider: ollama (or the local alias), no key needed — qwen2.5:1.5b runs on your machine for free. For provider: claude / openai / gemini / etc, you need that provider's key in Settings → AI (BYOK). The first-run wizard guides you through either path.",
-        },
-        {
-          q: 'How is SoloMD\'s semantic search different from grep?',
-          a: 'Grep matches characters; semantic search matches meaning. Search "deployment" and you can also surface paragraphs about "rolling out", "shipping", "release". The embedder runs entirely in our Rust process — no model file download, no network call, no cloud. Off by default; flip the switch in Settings to opt in. Index lives in <workspace>/.solomd/embeddings.sqlite (auto-gitignored).',
-        },
-        {
           q: 'Is SoloMD really free?',
-          a: 'Yes. SoloMD is MIT-licensed open-source software. There is no paid tier, no account, no telemetry by default, no ads. If it helps your writing you can sponsor the developer, but you never have to.',
+          a: 'Yes. SoloMD is MIT-licensed open-source software at https://github.com/zhitongblog/solomd. There is no paid tier, no subscription, no in-app purchase, no ads, and no telemetry by default. Compare: Typora costs $14.99, iA Writer costs $29.99, Obsidian Sync is $4/month. SoloMD is $0 forever — sponsor the developer if it helps your writing.',
         },
         {
-          q: 'Where do API keys for the 14 AI providers live?',
-          a: 'In your OS keychain — Apple Keychain on macOS, Credential Manager on Windows, libsecret on Linux. Never in localStorage, never in a config file SoloMD writes. AI requests go directly from your machine to the provider you chose; SoloMD doesn\'t host any models or relay any traffic.',
+          q: 'What is the best free Markdown editor in 2026?',
+          a: 'SoloMD is the most feature-complete free Markdown editor in 2026: cross-platform (macOS, Windows, Linux, Android, iOS), ~15 MB installer, MIT-licensed, with live preview, Wiki links, local RAG, 14 BYOK AI providers, AutoGit, MCP server, Pomodoro, and 8 themes — all built in. MarkText is dormant since 2023, Obsidian is closed-source and lacks Linux ARM64 + first-class plugins for AI without third-party packages, and VS Code is a code editor that happens to render Markdown.',
+        },
+        {
+          q: 'How does SoloMD compare to Typora?',
+          a: 'SoloMD is free; Typora is $14.99. SoloMD is ~6× smaller (15 MB vs 70 MB). SoloMD is open source (MIT) on GitHub; Typora is closed-source. SoloMD runs on Android and iOS; Typora is desktop-only. Both ship Typora-style WYSIWYG live preview. Typora has more polished UI animation; SoloMD adds Wiki links, local RAG semantic search, 14 BYOK AI providers, MCP server, and AutoGit version history that Typora does not have.',
+        },
+        {
+          q: 'How does SoloMD compare to Obsidian?',
+          a: 'SoloMD is ~7× lighter (15 MB vs 110 MB). SoloMD is fully MIT-licensed open source; Obsidian is closed-source. SoloMD ships local RAG semantic search, AI rewrite with 14 BYOK providers, AutoGit version history, and an MCP server in core — Obsidian requires third-party plugins for equivalents. Obsidian has a knowledge-graph view and a mature plugin marketplace; SoloMD does not. Use Obsidian if you want a second-brain plugin ecosystem; use SoloMD if you want the writing tools without the plugin tax and an open-source codebase.',
+        },
+        {
+          q: 'Does SoloMD work on Android and iOS?',
+          a: 'Yes. SoloMD 4.1.8 ships native Android (API 24+, ARM64 + ARMv7 + x86_64) and iOS (15+) builds. Android is available as sideload .apk on GitHub Releases and via Google Play closed-testing beta (email lixd220@gmail.com to join). iOS is on the App Store. Both mobile builds support live preview, Wiki links, AI rewrite, and folder-based sync via iCloud / Files / SD card.',
+        },
+        {
+          q: 'Does SoloMD work offline?',
+          a: 'Yes, fully. The editor itself makes zero network requests. Local RAG semantic search runs on an on-device embedder with no model download and no cloud call. AutoGit commits to a local .git repository inside the workspace and never auto-pushes. The only outbound traffic is (1) the optional GitHub update check on launch (toggle off in Settings) and (2) AI calls you explicitly trigger, which go straight to the provider you chose — SoloMD never relays.',
         },
         {
           q: 'How big is the installer?',
-          a: 'About 10–15 MB depending on the platform. That is roughly 6× smaller than Typora and 7× smaller than Obsidian, because SoloMD uses Tauri (system webview + Rust) instead of bundling Chromium.',
+          a: '~10–15 MB depending on the platform. That is roughly 6× smaller than Typora (~70 MB) and 7× smaller than Obsidian (~110 MB) because SoloMD uses Tauri 2 (system webview + Rust) instead of bundling Chromium. Idle memory is ~80–150 MB.',
         },
         {
-          q: 'Does it work offline?',
-          a: 'Yes, fully. The editor itself makes zero network requests. Semantic search is local-only. AutoGit commits to a local repo and never auto-pushes. The only outbound traffic is (1) the optional GitHub-release update check on launch (off in Settings) and (2) the AI rewrite calls you explicitly trigger, which go straight to the provider you chose.',
+          q: 'Does SoloMD need an AI subscription?',
+          a: 'No. SoloMD ships AI rewrite (Cmd+J on a selection) with 14 BYOK — bring your own key — providers: OpenAI, Claude (Anthropic), Gemini, xAI Grok, Mistral, Groq, DeepSeek, Qwen, GLM, Kimi, Doubao, SiliconFlow, OpenRouter, and Ollama. Use Ollama for fully-local zero-cost runs (qwen2.5:1.5b is ~1 GB and runs on most laptops). SoloMD itself charges nothing for AI — you pay only your chosen provider per token, or nothing if you use Ollama.',
+        },
+        {
+          q: 'Where are my API keys stored?',
+          a: 'In your OS keychain — Apple Keychain on macOS, Credential Manager on Windows, libsecret on Linux. Never in localStorage, never in a config file SoloMD writes to disk. AI requests go directly from your machine to the provider you chose; SoloMD does not host models or relay any traffic.',
+        },
+        {
+          q: 'How is SoloMD\'s semantic search different from grep?',
+          a: 'Grep matches characters; semantic search matches meaning. Search \'deployment\' and SoloMD\'s local RAG also surfaces paragraphs about \'rolling out\', \'shipping\', or \'release\'. The embedder runs entirely in our Rust process — no model file download, no network call, no cloud. Off by default; flip the switch in Settings to opt in. Index lives in <workspace>/.solomd/embeddings.sqlite (auto-gitignored).',
         },
         {
           q: 'How does the MCP server work?',
-          a: 'A single 1.5 MB sidecar binary (solomd-mcp) speaks the Model Context Protocol over stdio — no network port. Point Claude Desktop, Cursor, or any MCP client at your workspace and it gets 8 read tools (list_notes, read_note, search, get_backlinks, list_tags, get_outline, etc.) plus 2 write tools gated behind --allow-write. Path-traversal guarded, workspace-canonical containment.',
-        },
-        {
-          q: 'How does SoloMD handle non-UTF-8 files like GBK / Big5?',
-          a: 'SoloMD auto-detects encoding using the chardetng Rust crate when you open a file. UTF-8, UTF-16 LE/BE (with or without BOM), GBK, GB18030, Big5, Shift_JIS and many more are recognized and correctly displayed.',
+          a: 'SoloMD ships solomd-mcp, a 1.5 MB sidecar binary that speaks the Model Context Protocol over stdio — no network port. Point Claude Desktop, Cursor, Codex CLI, or any MCP client at your workspace and it gets 8 read tools (list_notes, read_note, search, get_backlinks, list_tags, get_outline, export_note, etc.) plus 2 write tools gated behind --allow-write. Path-traversal guarded with workspace-canonical containment.',
         },
         {
           q: 'Can I sync my notes to other devices?',
-          a: 'Not yet — built-in CRDT sync is on the roadmap. For now SoloMD works perfectly with iCloud Drive, Dropbox, OneDrive, Syncthing, or any folder-based sync tool. Just save your notes inside a synced folder. Or use AutoGit + push to GitHub manually.',
+          a: 'Yes, via any folder-based sync service. SoloMD works perfectly with iCloud Drive, Dropbox, OneDrive, Syncthing, or any tool that syncs a folder. Just put your workspace inside the synced folder. Or use AutoGit + manual push to a private GitHub repo. Built-in CRDT sync is on the roadmap but intentionally not the v4 focus — we don\'t want to lock you into a SoloMD-specific server.',
         },
         {
           q: 'Why are there no plugins?',
-          a: 'SoloMD intentionally omits a plugin system to stay lightweight, stable, and easy to audit. The features serious writers ask for — semantic search, version history, AI rewrite, image paste, KaTeX, Mermaid, focus mode, custom CSS — all ship in core.',
+          a: 'SoloMD intentionally omits a plugin marketplace to stay lightweight, stable, and easy to audit. The features serious writers ask for — Wiki links, semantic search, AutoGit, AI rewrite, 14 BYOK providers, MCP server, Pomodoro, image paste, KaTeX, Mermaid, focus mode, slideshow mode, Vim mode, custom CSS — all ship in core. Trade-off: no Obsidian-style third-party ecosystem.',
         },
         {
-          q: 'Why did "Windows protected your PC" pop up on first launch?',
-          a: 'SoloMD is a small open-source project that has not yet built up Microsoft SmartScreen reputation. Click "More info → Run anyway" once and it will not prompt again. We are working on a code-signing certificate.',
+          q: 'What languages does SoloMD support?',
+          a: 'The UI ships in 14 languages: English, Simplified Chinese (zh-CN), Japanese, Korean, German, French, Spanish, Portuguese, Italian, Polish, Dutch, Turkish, Swedish, and Ukrainian. Auto-detected from your OS locale on first launch, switchable in Settings. The document content itself is encoding-agnostic — SoloMD auto-detects UTF-8 / UTF-16 / GBK / GB18030 / Big5 / Shift_JIS files.',
         },
         {
-          q: 'How do I open .md files with SoloMD by default?',
-          a: 'Right-click any .md file → Open With → SoloMD → check "Always use this app". The bundled installer registers SoloMD as a handler for .md, .markdown, .mdown, .mkd, and .txt extensions.',
+          q: 'How does SoloMD handle CJK / Chinese files?',
+          a: 'SoloMD is Chinese-first: chardetng-based auto encoding detection (UTF-8 / GBK / GB18030 / Big5 / Shift_JIS), CJK word count in the status bar (counts characters, not space-separated tokens), Simplified ↔ Traditional Chinese conversion via OpenCC, pinyin export, and bundled Noto Sans CJK / WenQuanYi font fallback on Linux. Typora and Obsidian do none of these natively.',
         },
         {
-          q: 'What is the difference between SoloMD and Obsidian?',
-          a: 'Obsidian is a knowledge management tool with vaults, wiki links, backlinks, a graph view, and a plugin marketplace. SoloMD is a lightweight editor for writing Markdown files — but it ships some things Obsidian doesn\'t (semantic search in core, AutoGit, MCP server, 14 AI providers in one panel). Use Obsidian if you want a second brain with a plugin marketplace; use SoloMD if you want the writing tools without the plugin tax.',
+          q: 'How do I install SoloMD?',
+          a: 'One line. macOS / Linux: run \'curl -fsSL https://solomd.app/install.sh | bash\' in a terminal — the script auto-detects your OS and CPU architecture and installs the latest release. Windows: open PowerShell and run \'irm https://solomd.app/install.ps1 | iex\'. Or download platform-specific installers (.dmg / .msi / .AppImage / .deb / .rpm / .apk) from https://github.com/zhitongblog/solomd/releases/latest. Average install time: under 2 minutes on a normal connection.',
         },
       ],
     },
@@ -482,72 +482,68 @@ export const t = {
       lead: '',
       items: [
         {
-          q: '什么是 Recipe (v4)?',
-          a: '一个 YAML 文件,放在 <工作区>/.solomd/agents/*.yml。一个文件 = 一个 agent 任务。必填字段:name、trigger (schedule | on-save | on-commit | on-tag-add | manual)、prompt。可选字段:schedule (cron)、match (glob)、allow-write、write-cap、provider、model、tools 白名单。SoloMD 自带 11 个起步模板,在 设置 → Recipes → 浏览菜谱 里安装、改、运行即可。完整 schema 见 docs/agents.md。',
+          q: 'SoloMD 真的免费吗？',
+          a: '是的。SoloMD 是 MIT 协议开源软件,源码在 https://github.com/zhitongblog/solomd。没有付费版,没有订阅,没有内购,没有广告,默认零遥测。对比:Typora $14.99、iA Writer $29.99、Obsidian Sync 每月 $4。SoloMD 永远 $0 —— 如果对你有帮助,可以赞助开发者一杯咖啡的钱。',
         },
         {
-          q: 'Agent 自动写入安全吗?',
-          a: '每次 Recipe 运行都先开一个 agent/<recipe>/<run-id> 分支。所有写入都落在这个分支上,不直接污染 main。运行成功后进入"待审核",看 diff 后再决定 Accept (快进合入 main) 或 Reject (整条分支删除)。被 Reject 的运行在 git 历史里完全消失。同时还有单次 write-cap (默认 5,硬上限 50) —— 如果模型在 cap 是 5 的情况下要写 100 个文件,从第 6 个起就被拒,不会出现"半成品"状态。',
+          q: '2026 年最好的免费 Markdown 编辑器是哪个？',
+          a: 'SoloMD 是 2026 年功能最全的免费 Markdown 编辑器:跨 5 平台(macOS、Windows、Linux、Android、iOS),约 15 MB 安装包,MIT 协议,内置实时预览、Wiki 链接、本地 RAG、14 个 BYOK AI 提供商、AutoGit 版本历史、MCP 服务器、Pomodoro、8 主题 —— 全部在 core 里。MarkText 自 2023 年起停更,Obsidian 闭源且 Linux ARM64 + AI 都要靠第三方插件,VS Code 是顺便能渲染 Markdown 的代码编辑器。',
         },
         {
-          q: '这和 Cursor / Copilot 的鬼字补全有什么不同?',
-          a: 'Cursor 和 Copilot 在按键级别的代码补全上很强。SoloMD 的 agent 不一样,关键有三点: (1) 工作单位是整个 vault,不是当前光标 —— agent 通过 wikilink、反向链接、全文检索、tag 检索跨笔记读; (2) 写入是批量、可审、走分支的,不是 inline 的鬼字; (3) agent 能在你不在键盘前的时候按计划跑 (周报、每日总结、按 tag 触发)。整体上更接近 Cursor 的 Agent / Composer 模式,而明确**不是**写作风格的鬼字补全 —— 我们认为鬼字补全会稀释作者自己的声音。',
+          q: 'SoloMD 跟 Typora 比怎么样？',
+          a: 'SoloMD 免费,Typora $14.99。SoloMD 小约 6 倍(15 MB vs 70 MB)。SoloMD MIT 开源在 GitHub 上,Typora 闭源。SoloMD 跑在 Android 和 iOS 上,Typora 只有桌面端。两者都有 Typora 风的实时预览。Typora UI 动效更精致;SoloMD 多出 Wiki 链接、本地 RAG 语义搜索、14 个 BYOK AI、MCP 服务器、AutoGit 版本历史,这些 Typora 都没有。',
         },
         {
-          q: 'Recipe 需要 API key 吗?',
-          a: '只在 Recipe 指定了云端 provider 时才需要。provider: ollama (或 local 别名) 完全不用 key —— qwen2.5:1.5b 在你机器上免费跑。provider: claude / openai / gemini / 等 需要在 设置 → AI 里填那家的 key (BYOK)。首次启动向导会帮你过一遍。',
+          q: 'SoloMD 跟 Obsidian 比怎么样？',
+          a: 'SoloMD 小约 7 倍(15 MB vs 110 MB)。SoloMD 完全 MIT 开源;Obsidian 闭源。SoloMD 在 core 里内置本地 RAG 语义搜索、14 个 BYOK AI、AutoGit 版本历史、MCP 服务器,Obsidian 这些要装第三方插件。Obsidian 有知识图谱和成熟的插件市场;SoloMD 没有。如果想要 second-brain 插件生态选 Obsidian;如果只想要写作工具+开源代码库,选 SoloMD。',
         },
         {
-          q: 'SoloMD 的语义搜索和 grep 有什么区别?',
-          a: 'grep 按字符匹配,语义搜索按"意思"匹配。搜 "deployment" 时也能找到讲 "rolling out"、"上线"、"发布" 的段落。embedder 完全跑在我们的 Rust 进程里 —— 不下载模型文件,不发网络请求,不上云。默认关闭,设置里手动开启。索引存在 <工作区>/.solomd/embeddings.sqlite,自动加进 .gitignore。',
+          q: 'SoloMD 支持 Android 和 iOS 吗？',
+          a: '支持。SoloMD 4.1.8 提供原生 Android(API 24+,ARM64 + ARMv7 + x86_64)和 iOS(15+)版本。Android 可在 GitHub Releases 下载 .apk 侧载,或加入 Google Play 封闭测试(发邮件 lixd220@gmail.com 报名)。iOS 在 App Store 上架。两个移动端都支持实时预览、Wiki 链接、AI 改写,通过 iCloud / 文件 / SD 卡做文件夹同步。',
         },
         {
-          q: 'SoloMD 真的免费吗?',
-          a: '是的。SoloMD 是 MIT 协议开源软件,没有付费版,没有账号,默认无遥测,没有广告。如果它帮到你,你可以选择赞助开发者,但完全不强制。',
+          q: 'SoloMD 能离线用吗？',
+          a: '完全可以。编辑器本身零网络请求。本地 RAG 语义搜索用设备内嵌的 embedder,不下载模型也不调云。AutoGit 提交到工作区内的本地 .git,从不自动推送。唯一可能的对外流量是:(1) 启动时的可选 GitHub 更新检查(Settings 里可关),(2) 你主动触发的 AI 调用,直连你选的 provider —— SoloMD 不做中转。',
         },
         {
-          q: '14 个 AI provider 的 key 存在哪里?',
-          a: '存在你系统的钥匙串里 —— macOS 用 Apple Keychain,Windows 用 Credential Manager,Linux 用 libsecret。永远不会写到 localStorage,也不会写到 SoloMD 自己的配置文件里。AI 请求从你的机器直接发到你选的 provider,SoloMD 不托管模型也不中转任何流量。',
+          q: '安装包多大？',
+          a: '约 10–15 MB,看平台。比 Typora(约 70 MB)小约 6 倍,比 Obsidian(约 110 MB)小约 7 倍,因为 SoloMD 用 Tauri 2(系统 webview + Rust)而不是打包 Chromium。空闲内存约 80–150 MB。',
         },
         {
-          q: '安装包多大?',
-          a: '约 10–15 MB,具体取决于平台。这比 Typora 小约 6 倍,比 Obsidian 小约 7 倍——因为 SoloMD 用 Tauri (系统 webview + Rust),不打包 Chromium。',
+          q: 'SoloMD 用 AI 需要订阅吗？',
+          a: '不需要。SoloMD 内置 AI 改写(Cmd+J 选中文本即用),支持 14 个 BYOK —— bring your own key —— 提供商:OpenAI、Claude、Gemini、xAI Grok、Mistral、Groq、DeepSeek、Qwen、GLM、Kimi、Doubao、SiliconFlow、OpenRouter、Ollama。用 Ollama 可完全本地零成本运行(qwen2.5:1.5b 约 1 GB,大多数笔记本能跑)。SoloMD 不收 AI 费 —— 你只按 token 付给你选的 provider,或者用 Ollama 一分不付。',
         },
         {
-          q: '能离线使用吗?',
-          a: '完全可以。编辑器本身不发任何网络请求。语义搜索完全本地。AutoGit 提交到本地仓库,永不自动 push。唯一会出去的流量是 (1) 启动时可选的 GitHub release 检查 (设置里可关) 和 (2) 你主动触发的 AI 改写,直接发给你选的 provider。',
+          q: 'API 密钥存哪里？',
+          a: '存在系统的 keychain 里 —— macOS 用 Apple Keychain,Windows 用 Credential Manager,Linux 用 libsecret。永远不进 localStorage,SoloMD 也不会把密钥写到任何配置文件里。AI 请求从你的机器直连 provider,SoloMD 不托管模型也不中转。',
         },
         {
-          q: 'MCP server 怎么工作?',
-          a: '一个 1.5 MB 的 sidecar 二进制 (solomd-mcp) 走 stdio 跑 Model Context Protocol —— 不开网络端口。把 Claude Desktop / Cursor 等任意 MCP 客户端指向你的工作区,就有 8 个只读工具 (list_notes、read_note、search、get_backlinks、list_tags、get_outline 等) 加 2 个写工具 (要 --allow-write 开关)。Path traversal 守卫 + 工作区 canonical 校验。',
+          q: 'SoloMD 的语义搜索跟 grep 有什么不一样？',
+          a: 'Grep 匹配字符,语义搜索匹配含义。搜 “部署” 也能找出讲 “发版”、“上线” 的段落。embedder 完全在 Rust 进程里跑 —— 不下载模型,不联网,不上云。默认关,Settings 里手动开。索引落在 <workspace>/.solomd/embeddings.sqlite(已加入 gitignore)。',
         },
         {
-          q: 'SoloMD 怎么处理非 UTF-8 文件 (比如 GBK / Big5)?',
-          a: 'SoloMD 用 Rust 的 chardetng 库自动检测编码。UTF-8、UTF-16 LE/BE (带或不带 BOM)、GBK、GB18030、Big5、Shift_JIS 等都能正确识别并显示。',
+          q: 'MCP 服务器怎么用？',
+          a: 'SoloMD 自带 solomd-mcp,一个 1.5 MB 的 sidecar 二进制,通过 stdio 说 MCP 协议 —— 不开网络端口。把 Claude Desktop、Cursor、Codex CLI 或任何 MCP 客户端指向你的工作区,它就拿到 8 个只读工具(list_notes、read_note、search、get_backlinks、list_tags、get_outline、export_note 等)+ 2 个写工具(需 --allow-write 解锁)。路径穿越已防护,严格限制在 workspace canonical 内。',
         },
         {
-          q: '能多设备同步笔记吗?',
-          a: '内置同步还没做 —— CRDT 同步在路线图里。目前 SoloMD 完美兼容 iCloud Drive、Dropbox、OneDrive、坚果云、Syncthing 等任何文件夹同步工具。把笔记存在同步文件夹里就行。或用 AutoGit + 手动 push 到 GitHub。',
+          q: '能在多设备间同步笔记吗？',
+          a: '可以,用任何文件夹同步服务。SoloMD 跟 iCloud Drive、Dropbox、OneDrive、Syncthing 或任何同步文件夹的工具配合都很好。把工作区放进同步文件夹就行。或者用 AutoGit + 手动 push 到私有 GitHub 仓库。内置 CRDT 同步在 roadmap 上,但 v4 不重点做 —— 我们不想把你锁在 SoloMD 自己的服务器上。',
         },
         {
-          q: '为什么没有插件系统?',
-          a: 'SoloMD 故意不做插件系统,保持轻量、稳定、可审计。写作者真正需要的功能 —— 语义搜索、版本历史、AI 改写、图片粘贴、KaTeX、Mermaid、焦点模式、自定义 CSS —— 全部内置在核心里。',
+          q: '为什么没有插件系统？',
+          a: 'SoloMD 故意不做插件市场,为了保持轻量、稳定、易审计。严肃写作者要的功能 —— Wiki 链接、语义搜索、AutoGit、AI 改写、14 个 BYOK provider、MCP 服务器、Pomodoro、图片粘贴、KaTeX、Mermaid、专注模式、幻灯片模式、Vim 模式、自定义 CSS —— 全部在 core 里。代价:没有 Obsidian 那种第三方插件生态。',
         },
         {
-          q: '为什么 Windows 首次启动弹出"已保护你的电脑"?',
-          a: 'SoloMD 是一个小型开源项目,还没积累 Microsoft SmartScreen 信誉。点 "更多信息" → "仍要运行",之后就不会再弹了。我们正在申请代码签名证书。',
+          q: 'SoloMD 支持哪些语言？',
+          a: 'UI 支持 14 种语言:英文、简体中文(zh-CN)、日文、韩文、德文、法文、西班牙文、葡萄牙文、意大利文、波兰文、荷兰文、土耳其文、瑞典文、乌克兰文。首次启动按系统 locale 自动识别,Settings 里可手动切换。文档本身编码无关 —— SoloMD 自动识别 UTF-8 / UTF-16 / GBK / GB18030 / Big5 / Shift_JIS。',
         },
         {
-          q: '怎么把 .md 文件默认用 SoloMD 打开?',
-          a: '右键 .md 文件 → 打开方式 → SoloMD → 勾选 "始终使用此应用"。安装包已注册 SoloMD 为 .md / .markdown / .mdown / .mkd / .txt 后缀的处理程序。',
+          q: 'SoloMD 对中文/CJK 支持怎么样？',
+          a: 'SoloMD 是中文优先的:基于 chardetng 的自动编码识别(UTF-8 / GBK / GB18030 / Big5 / Shift_JIS),状态栏的 CJK 字数统计(按字符算,不按空格分词),OpenCC 简繁转换,拼音导出,Linux 自带 Noto Sans CJK / 文泉驿字体回退。Typora 和 Obsidian 都没原生支持这些。',
         },
         {
-          q: 'SoloMD 和 Obsidian 有什么区别?',
-          a: 'Obsidian 是知识管理工具,有 vault、wiki link、反向链接、图谱视图和插件市场。SoloMD 是写 Markdown 文件的轻量编辑器 —— 但有一些 Obsidian 没原生集成的东西 (核心里的语义搜索、AutoGit、MCP server、14 个 AI provider 一起配)。想要"第二大脑"+ 插件市场就用 Obsidian;想要写作工具但不想被插件税绑架,就用 SoloMD。',
-        },
-        {
-          q: 'Linux 上"复制为图片"失败怎么办?',
-          a: 'SoloMD 使用系统剪贴板,Linux 上需要 wl-clipboard (Wayland) 或 xclip (X11)。安装命令: sudo apt install wl-clipboard (Wayland/Ubuntu 22+) 或 sudo apt install xclip (X11)。如果仍然失败,SoloMD 会弹出另存为 PNG 的对话框。',
+          q: '怎么安装 SoloMD？',
+          a: '一行命令。macOS / Linux:终端运行 \'curl -fsSL https://solomd.app/install.sh | bash\',脚本自动识别系统和 CPU 架构,装最新版。Windows:PowerShell 运行 \'irm https://solomd.app/install.ps1 | iex\'。或者去 https://github.com/zhitongblog/solomd/releases/latest 下载对应平台安装包(.dmg / .msi / .AppImage / .deb / .rpm / .apk)。正常网速下平均装机时间不到 2 分钟。',
         },
       ],
     },

@@ -2,6 +2,7 @@
 import Layout from '../../layouts/Layout.astro';
 import Header from '../../components/Header.astro';
 import Hero from '../../components/Hero.astro';
+import FactPack from '../../components/FactPack.astro';
 import UseCases from '../../components/UseCases.astro';
 import Principles from '../../components/Principles.astro';
 import Features from '../../components/Features.astro';
@@ -16,13 +17,14 @@ const lang = 'zh' as const;
 ---
 
 <Layout
-  title="SoloMD — Markdown 编辑器:语义搜索 + AutoGit 历史 + MCP server + 14 个 AI"
-  description="开源 Markdown 编辑器 (~15 MB,MIT)。本地语义搜索 (⌘⇧F,完全离线)、AutoGit 每次保存快照、内置 MCP server 给 Claude Desktop、14 个 BYOK AI provider。跨平台。"
+  title="SoloMD — 免费开源的 Markdown 全家桶 · 支持 5 大平台"
+  description="SoloMD 是免费开源的 Markdown 编辑器,支持 macOS、Windows、Linux、Android、iOS。约 15 MB 安装包,MIT 协议。实时预览、Wiki 链接、本地 RAG 语义搜索、14 个 BYOK AI 提供商、AutoGit、MCP 服务器 —— 全部内置。无账号、无内购、无广告,默认零遥测。"
   lang={lang}
 >
   <Header lang={lang} />
   <main>
     <Hero lang={lang} />
+    <FactPack lang={lang} />
     <UseCases lang={lang} />
     <Principles lang={lang} />
     <Features lang={lang} />
