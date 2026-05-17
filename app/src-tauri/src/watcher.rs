@@ -1,6 +1,6 @@
 use notify::{RecommendedWatcher, RecursiveMode};
 use notify_debouncer_mini::{new_debouncer, Debouncer};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
@@ -73,7 +73,15 @@ fn within_sync_rewrite_window(canonical_path: &std::path::Path) -> bool {
 /// `watched_dirs` ref-counts how many tracked files live in each dir,
 /// so we can unwatch the dir cleanly when the last file is closed.
 struct WatcherInner {
-    watched_files: HashSet<PathBuf>,
+    /// canonical path → original path string passed to `watch_file`.
+    ///
+    /// We emit the **original** path back to JS, not the canonical one.
+    /// macOS resolves `/tmp/x` → `/private/tmp/x`; if we emitted the
+    /// canonical form, the JS-side `tab.filePath` (the user-supplied
+    /// path) would never match the event payload and the reload would
+    /// silently no-op. Same kind of mismatch happens with symlinked
+    /// workspace dirs (e.g. `~/Documents` → `~/Library/Mobile Documents/...`).
+    watched_files: HashMap<PathBuf, String>,
     /// canonical parent dir → refcount of watched files under it
     watched_dirs: HashMap<PathBuf, usize>,
 }
@@ -88,7 +96,7 @@ impl WatcherState {
         Self {
             debouncer: Mutex::new(None),
             inner: Arc::new(Mutex::new(WatcherInner {
-                watched_files: HashSet::new(),
+                watched_files: HashMap::new(),
                 watched_dirs: HashMap::new(),
             })),
         }
@@ -117,19 +125,32 @@ fn ensure_watcher(app: &AppHandle, state: &WatcherState) {
                 .unwrap_or_else(|_| event.path.clone());
 
             // Watching the parent dir means we see events for siblings
-            // too — filter to just the files the UI cares about.
-            if !inner.lock().unwrap().watched_files.contains(&canonical) {
-                continue;
-            }
+            // too — filter to just the files the UI cares about. Look
+            // up the original user-supplied path while we hold the lock
+            // so the emit downstream uses the form the JS side stored.
+            let original_path = {
+                let g = inner.lock().unwrap();
+                match g.watched_files.get(&canonical) {
+                    Some(p) => p.clone(),
+                    None => continue,
+                }
+            };
 
-            let path_str = canonical.to_string_lossy().to_string();
+            let canonical_str = canonical.to_string_lossy().to_string();
             let suppressed = self_writes()
                 .lock()
                 .unwrap()
-                .get(&path_str)
+                .get(&canonical_str)
                 .map_or(false, |t| {
                     t.elapsed().as_millis() < SELF_WRITE_SUPPRESSION_MS as u128
-                });
+                })
+                || self_writes()
+                    .lock()
+                    .unwrap()
+                    .get(&original_path)
+                    .map_or(false, |t| {
+                        t.elapsed().as_millis() < SELF_WRITE_SUPPRESSION_MS as u128
+                    });
 
             if suppressed {
                 continue;
@@ -139,7 +160,7 @@ fn ensure_watcher(app: &AppHandle, state: &WatcherState) {
                 continue;
             }
 
-            let _ = app_handle.emit("solomd://file-changed", path_str);
+            let _ = app_handle.emit("solomd://file-changed", original_path);
         }
     });
 
@@ -167,9 +188,15 @@ pub fn watch_file(
     // before touching the debouncer to avoid holding two locks at once.
     let parent_is_new = {
         let mut inner = state.inner.lock().unwrap();
-        if !inner.watched_files.insert(canonical.clone()) {
-            return Ok(()); // already watching this exact file
+        if inner.watched_files.contains_key(&canonical) {
+            // Already watching this exact file — refresh the original
+            // path in case the caller passed a different alias for the
+            // same canonical target (e.g. opened first via `/tmp/x`,
+            // later via `/private/tmp/x`).
+            inner.watched_files.insert(canonical.clone(), path.clone());
+            return Ok(());
         }
+        inner.watched_files.insert(canonical.clone(), path.clone());
         let count = inner.watched_dirs.entry(parent.clone()).or_insert(0);
         *count += 1;
         *count == 1
@@ -217,7 +244,7 @@ pub fn unwatch_file(
 
     let parent_now_empty = {
         let mut inner = state.inner.lock().unwrap();
-        if !inner.watched_files.remove(&canonical) {
+        if inner.watched_files.remove(&canonical).is_none() {
             return Ok(()); // wasn't watching it
         }
         if let Some(count) = inner.watched_dirs.get_mut(&parent) {
@@ -249,31 +276,33 @@ mod tests {
 
     fn fresh() -> Arc<Mutex<WatcherInner>> {
         Arc::new(Mutex::new(WatcherInner {
-            watched_files: HashSet::new(),
+            watched_files: HashMap::new(),
             watched_dirs: HashMap::new(),
         }))
     }
 
     /// Bookkeeping helper that mirrors `watch_file` minus the OS watch
     /// call — lets us assert the refcount logic without spinning up a
-    /// real notify watcher.
+    /// real notify watcher. Treats the input string as both the
+    /// "canonical" and "original" path for test purposes.
     fn track(inner: &Arc<Mutex<WatcherInner>>, file: &str) -> bool {
-        let file = PathBuf::from(file);
-        let parent = file.parent().unwrap().to_path_buf();
+        let path = PathBuf::from(file);
+        let parent = path.parent().unwrap().to_path_buf();
         let mut g = inner.lock().unwrap();
-        if !g.watched_files.insert(file) {
+        if g.watched_files.contains_key(&path) {
             return false; // already watching
         }
+        g.watched_files.insert(path, file.to_string());
         let count = g.watched_dirs.entry(parent).or_insert(0);
         *count += 1;
         *count == 1
     }
 
     fn untrack(inner: &Arc<Mutex<WatcherInner>>, file: &str) -> bool {
-        let file = PathBuf::from(file);
-        let parent = file.parent().unwrap().to_path_buf();
+        let path = PathBuf::from(file);
+        let parent = path.parent().unwrap().to_path_buf();
         let mut g = inner.lock().unwrap();
-        if !g.watched_files.remove(&file) {
+        if g.watched_files.remove(&path).is_none() {
             return false;
         }
         if let Some(c) = g.watched_dirs.get_mut(&parent) {
@@ -294,6 +323,12 @@ mod tests {
         let g = inner.lock().unwrap();
         assert_eq!(g.watched_files.len(), 1);
         assert_eq!(g.watched_dirs.get(&PathBuf::from("/tmp/notes")), Some(&1));
+        // The original-path map keeps the caller's exact string so we
+        // can emit it back unchanged in the event payload.
+        assert_eq!(
+            g.watched_files.get(&PathBuf::from("/tmp/notes/a.md")),
+            Some(&"/tmp/notes/a.md".to_string())
+        );
     }
 
     #[test]
