@@ -602,6 +602,12 @@ export const zh: I18n = {
   },
   rsPane: {
     dragToReorder: '拖动以重新排序此侧栏面板',
+    search: '搜索',
+    outline: '大纲',
+    backlinks: '反向链接',
+    tags: '标签',
+    history: '历史',
+    agent: 'AI 助手',
   },
   inbox: {
     heading: '收件箱',

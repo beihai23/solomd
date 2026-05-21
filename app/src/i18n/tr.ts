@@ -607,6 +607,12 @@ export const tr: I18n = {
   },
   rsPane: {
     dragToReorder: 'Bu kenar çubuğu bölmesini yeniden sıralamak için sürükle',
+    search: 'Ara',
+    outline: 'Anahat',
+    backlinks: 'Geri Bağlantılar',
+    tags: 'Etiketler',
+    history: 'Geçmiş',
+    agent: 'Aracı',
   },
   inbox: {
     heading: 'Gelen Kutusu',

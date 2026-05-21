@@ -607,6 +607,12 @@ export const nl: I18n = {
   },
   rsPane: {
     dragToReorder: 'Sleep om dit zijbalkpaneel te herschikken',
+    search: 'Zoeken',
+    outline: 'Overzicht',
+    backlinks: 'Backlinks',
+    tags: 'Tags',
+    history: 'Geschiedenis',
+    agent: 'Agent',
   },
   inbox: {
     heading: 'Inbox',

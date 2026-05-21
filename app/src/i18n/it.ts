@@ -604,6 +604,12 @@ export const it: I18n = {
   },
   rsPane: {
     dragToReorder: 'Trascina per riordinare questo pannello laterale',
+    search: 'Cerca',
+    outline: 'Struttura',
+    backlinks: 'Retrolink',
+    tags: 'Tag',
+    history: 'Cronologia',
+    agent: 'Agente',
   },
   inbox: {
     heading: 'Inbox',

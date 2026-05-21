@@ -605,6 +605,12 @@ export const en = {
   },
   rsPane: {
     dragToReorder: 'Drag to reorder this sidebar pane',
+    search: 'Search',
+    outline: 'Outline',
+    backlinks: 'Backlinks',
+    tags: 'Tags',
+    history: 'History',
+    agent: 'Agent',
   },
   inbox: {
     heading: 'Inbox',

@@ -604,6 +604,12 @@ export const ja: I18n = {
   },
   rsPane: {
     dragToReorder: 'ドラッグしてこのサイドバーペインを並べ替える',
+    search: '検索',
+    outline: 'アウトライン',
+    backlinks: 'バックリンク',
+    tags: 'タグ',
+    history: '履歴',
+    agent: 'エージェント',
   },
   inbox: {
     heading: 'Inbox',

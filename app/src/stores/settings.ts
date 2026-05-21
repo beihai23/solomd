@@ -186,6 +186,16 @@ interface Settings {
   // (PR #74 — yzcj105). Bound to ⌃⌘+/⌃⌘-/⌃⌘0; the editor axis (existing
   // `fontSize`) is bound to ⌘⇧+/⌘⇧-/⌘⇧0. Range 10–32.
   previewFontSize: number;
+  // v4.2.5 PR #75 (beihai23) — transient (not persisted) snapshot of the
+  // right-sidebar pane visibility taken when the sidebar is hidden, so
+  // toggling it back on can restore the exact previous layout instead of
+  // leaving the user with a blank sidebar.
+  _rsPanesBeforeHide: {
+    showBacklinks: boolean;
+    showTagsPanel: boolean;
+    showHistoryPanel: boolean;
+    showAgentPanel: boolean;
+  } | null;
 }
 
 /** v2.5 PDF / print export defaults. */
@@ -330,6 +340,7 @@ function defaults(): Settings {
     codeBlockLineNumbers: false,
     rsPaneOrder: ['search', 'outline', 'backlinks', 'tags', 'history', 'agent'],
     previewFontSize: 15,
+    _rsPanesBeforeHide: null,
   };
 }
 
@@ -396,7 +407,11 @@ export const useSettingsStore = defineStore('settings', {
   actions: {
     persist() {
       try {
-        localStorage.setItem(LS_KEY, JSON.stringify(this.$state));
+        // v4.2.5 PR #75 — drop transient `_rsPanesBeforeHide` from disk;
+        // it's only meaningful for the current session.
+        const { _rsPanesBeforeHide, ...rest } = this.$state as any;
+        void _rsPanesBeforeHide;
+        localStorage.setItem(LS_KEY, JSON.stringify(rest));
       } catch {}
     },
     setTheme(theme: Theme) {
@@ -482,8 +497,54 @@ export const useSettingsStore = defineStore('settings', {
       this.persist();
     },
     toggleRightSidebar() {
-      this.rightSidebarHidden = !this.rightSidebarHidden;
+      // v4.2.5 PR #75 — when hiding, snapshot the current pane visibility so
+      // toggling back on can restore the exact layout instead of a blank
+      // sidebar; when restoring, ensure at least one pane is on so the
+      // sidebar isn't empty.
+      if (!this.rightSidebarHidden) {
+        this._rsPanesBeforeHide = {
+          showBacklinks: this.showBacklinks,
+          showTagsPanel: this.showTagsPanel,
+          showHistoryPanel: this.showHistoryPanel,
+          showAgentPanel: this.showAgentPanel,
+        };
+        this.rightSidebarHidden = true;
+      } else {
+        this.rightSidebarHidden = false;
+        const saved = this._rsPanesBeforeHide;
+        if (saved) {
+          this.showBacklinks = saved.showBacklinks;
+          this.showTagsPanel = saved.showTagsPanel;
+          this.showHistoryPanel = saved.showHistoryPanel;
+          this.showAgentPanel = saved.showAgentPanel;
+          this._rsPanesBeforeHide = null;
+        }
+        if (!this.showBacklinks && !this.showTagsPanel && !this.showHistoryPanel && !this.showAgentPanel) {
+          this.showBacklinks = true;
+          this.showTagsPanel = true;
+        }
+      }
       this.persist();
+    },
+    /** v4.2.5 PR #75 — called when the user toggles off the last visible
+     *  pane via the right-click context menu; auto-hides the sidebar and
+     *  remembers the pre-toggle layout for later restore. */
+    hideRightSidebarFromPane(paneBeforeToggle: {
+      showBacklinks: boolean;
+      showTagsPanel: boolean;
+      showHistoryPanel: boolean;
+      showAgentPanel: boolean;
+    }) {
+      this._rsPanesBeforeHide = paneBeforeToggle;
+      this.rightSidebarHidden = true;
+      this.persist();
+    },
+    /** v4.2.5 PR #75 — ensure the sidebar is visible (used when toggling a
+     *  pane ON from the context menu while the sidebar was auto-hidden). */
+    ensureRightSidebarVisible() {
+      if (this.rightSidebarHidden) {
+        this.rightSidebarHidden = false;
+      }
     },
     toggleLivePreview() {
       this.livePreview = !this.livePreview;

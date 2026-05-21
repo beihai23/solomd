@@ -604,6 +604,12 @@ export const ko: I18n = {
   },
   rsPane: {
     dragToReorder: '드래그하여 이 사이드바 창 재정렬',
+    search: '검색',
+    outline: '개요',
+    backlinks: '백링크',
+    tags: '태그',
+    history: '기록',
+    agent: '에이전트',
   },
   inbox: {
     heading: 'Inbox',

@@ -604,6 +604,12 @@ export const de: I18n = {
   },
   rsPane: {
     dragToReorder: 'Ziehen zum Neuordnen dieses Seitenleisten-Bereichs',
+    search: 'Suche',
+    outline: 'Gliederung',
+    backlinks: 'Rückverweise',
+    tags: 'Tags',
+    history: 'Verlauf',
+    agent: 'Agent',
   },
   inbox: {
     heading: 'Inbox',

@@ -607,6 +607,12 @@ export const sv: I18n = {
   },
   rsPane: {
     dragToReorder: 'Dra för att ordna om denna sidofältsruta',
+    search: 'Sök',
+    outline: 'Disposition',
+    backlinks: 'Bakåtlänkar',
+    tags: 'Taggar',
+    history: 'Historik',
+    agent: 'Agent',
   },
   inbox: {
     heading: 'Inkorg',

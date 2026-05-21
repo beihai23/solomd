@@ -607,6 +607,12 @@ export const uk: I18n = {
   },
   rsPane: {
     dragToReorder: 'Перетягніть, щоб змінити порядок цієї панелі бічної панелі',
+    search: 'Пошук',
+    outline: 'Структура',
+    backlinks: 'Зворотні посилання',
+    tags: 'Теги',
+    history: 'Історія',
+    agent: 'Агент',
   },
   inbox: {
     heading: 'Вхідні',

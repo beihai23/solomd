@@ -607,6 +607,12 @@ export const pl: I18n = {
   },
   rsPane: {
     dragToReorder: 'Przeciągnij, aby zmienić kolejność tego panelu paska bocznego',
+    search: 'Szukaj',
+    outline: 'Konspekt',
+    backlinks: 'Linki zwrotne',
+    tags: 'Tagi',
+    history: 'Historia',
+    agent: 'Agent',
   },
   inbox: {
     heading: 'Skrzynka odbiorcza',
