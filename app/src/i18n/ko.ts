@@ -128,6 +128,11 @@ export const ko: I18n = {
     fontFamilyHint: '추천 글꼴(LXGW WenKai, Source Han 등)은 시스템에 설치되어 있어야 합니다. macOS: brew install --cask font-lxgw-wenkai. 없으면 PingFang으로 대체됩니다.',
     fontSize: '에디터 글꼴 크기',
     uiFontSize: 'UI 글꼴 크기',
+    globalZoom: '전체 확대/축소',
+    globalZoomHint: '앱 전체 — 편집기, 미리보기, UI를 축척. 고해상도 화면에 유용. 단축키: ⌘+ / ⌘− / ⌘0.',
+    globalZoomReset: '재설정',
+    codeBlockLineNumbers: '코드 블록 줄 번호',
+    codeBlockLineNumbersHint: '미리보기의 각 펜스 코드 블록에 1, 2, 3… 줄 번호 거터를 추가. PDF / DOCX / 이미지 내보내기에도 적용.',
     wordWrap: '자동 줄바꿈',
     lineNumbers: '행 번호',
     livePreview: '라이브 미리 보기(Markdown) — 행 외 마커는 숨기고 제목·굵게 등을 렌더링',
@@ -592,6 +597,13 @@ export const ko: I18n = {
     hintNav: '↑↓ 이동 · ↵ 열기 · Esc 닫기',
     disabledHeading:
       '시맨틱 검색이 꺼져 있습니다. 설정에서 활성화하여 이 워크스페이스의 로컬 인덱스를 빌드하세요.',
+  },
+  statusBar: {
+    selection: '선택: {words} 단어 / {chars} 문자',
+    selectionTooltip: '선택한 텍스트의 단어 수 및 문자 수',
+  },
+  rsPane: {
+    dragToReorder: '드래그하여 이 사이드바 창 재정렬',
   },
   inbox: {
     heading: 'Inbox',

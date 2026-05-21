@@ -13,6 +13,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'cursor', line: number, col: number): void;
+  (e: 'selection', text: string): void;
 }>();
 
 const settings = useSettingsStore();
@@ -38,6 +39,12 @@ const isFocused = computed(() => tiles.focusedPaneId === props.paneId);
 function onCursor(line: number, col: number) {
   if (isFocused.value) {
     emit('cursor', line, col);
+  }
+}
+
+function onSelection(text: string) {
+  if (isFocused.value) {
+    emit('selection', text);
   }
 }
 
@@ -142,8 +149,58 @@ function bindScrollSync() {
   syncPreviewScroll = () => preview.removeEventListener('scroll', onPreviewScroll);
 }
 
-watch(() => settings.viewMode, async () => {
+// v4.2.5 issue #67: preserve scroll position across view-mode switches.
+// User flow: scrolls down in preview → finds typo → flips to edit mode →
+// previously snapped back to line 1, forcing them to find the spot again.
+// We snapshot the "current top line" from whichever view is leaving the DOM,
+// then scroll the newly mounted view(s) to that line so the cursor / reader
+// stays in roughly the same place.
+function getCurrentTopLine(paneEl: Element, fromMode: string): number | null {
+  if (fromMode === 'preview' || fromMode === 'reading') {
+    const preview = paneEl.querySelector('.pane--preview .preview-host') as HTMLElement | null;
+    if (!preview) return null;
+    const list = getPreviewElementsByLine(preview);
+    const wrapTop = preview.getBoundingClientRect().top;
+    for (const { line, el } of list) {
+      const r = el.getBoundingClientRect();
+      if (r.bottom >= wrapTop) return line;
+    }
+    return null;
+  }
+  // edit / liveEdit / split — use the editor's top visible line
+  const cmRef = editorRef.value as any;
+  return cmRef?.getViewLine ? cmRef.getViewLine() : null;
+}
+
+function restoreToLine(paneEl: Element, toMode: string, line: number) {
+  if (toMode === 'edit' || toMode === 'liveEdit' || toMode === 'split') {
+    const cmRef = editorRef.value as any;
+    if (cmRef?.scrollToLine) cmRef.scrollToLine(line);
+  }
+  if (toMode === 'preview' || toMode === 'reading' || toMode === 'split') {
+    const preview = paneEl.querySelector('.pane--preview .preview-host') as HTMLElement | null;
+    if (preview) {
+      const list = getPreviewElementsByLine(preview);
+      const entry = findNearestEntry(list, line);
+      if (entry) {
+        const elRect = entry.el.getBoundingClientRect();
+        const wrapRect = preview.getBoundingClientRect();
+        preview.scrollTop += elRect.top - wrapRect.top - 8;
+      }
+    }
+  }
+}
+
+watch(() => settings.viewMode, async (newMode, oldMode) => {
+  // Snapshot the logical position from the OLD view while it's still mounted.
+  const paneEl = document.querySelector(`[data-pane-id="${props.paneId}"]`);
+  const savedLine = paneEl ? getCurrentTopLine(paneEl, oldMode) : null;
+  // 100ms matches the existing settle window before bindScrollSync.
   await new Promise((r) => setTimeout(r, 100));
+  if (savedLine != null) {
+    const newPaneEl = document.querySelector(`[data-pane-id="${props.paneId}"]`);
+    if (newPaneEl) restoreToLine(newPaneEl, newMode, savedLine);
+  }
   bindScrollSync();
 });
 
@@ -199,6 +256,7 @@ function onPreviewSearchEvent(e: Event) {
         :typewriter-mode="settings.typewriterMode"
         :spell-check="settings.spellCheck"
         @cursor="onCursor"
+        @selection="onSelection"
       />
     </div>
     <div class="pane pane--preview" v-if="showPreview && tab">

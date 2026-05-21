@@ -128,6 +128,11 @@ export const zh: I18n = {
     fontFamilyHint: '推荐写作字体（霞鹜文楷、思源黑/宋等）需先安装到系统。macOS：brew install --cask font-lxgw-wenkai。未安装时自动回退到 PingFang。',
     fontSize: '编辑器字号',
     uiFontSize: '界面字号',
+    globalZoom: '全局缩放',
+    globalZoomHint: '缩放整个应用 — 编辑器、预览、界面。适合高分辨率屏幕。快捷键：⌘+ / ⌘− / ⌘0。',
+    globalZoomReset: '重置',
+    codeBlockLineNumbers: '代码块显示行号',
+    codeBlockLineNumbersHint: '在预览中的每个围栏代码块旁显示 1, 2, 3… 行号列。PDF / DOCX / 图片导出会沿用。',
     wordWrap: '自动换行',
     lineNumbers: '显示行号',
     livePreview: '实时预览 (Markdown) — 离开行时隐藏标记符,渲染标题和粗体等',
@@ -590,6 +595,13 @@ export const zh: I18n = {
     reindex: '重建索引',
     hintNav: '↑↓ 选择 · ↵ 打开 · Esc 关闭',
     disabledHeading: '语义搜索已关闭。请在设置中开启以为当前工作区建立本地索引。',
+  },
+  statusBar: {
+    selection: '已选: {words} 词 / {chars} 字符',
+    selectionTooltip: '当前选中文本的字数和字符数',
+  },
+  rsPane: {
+    dragToReorder: '拖动以重新排序此侧栏面板',
   },
   inbox: {
     heading: '收件箱',

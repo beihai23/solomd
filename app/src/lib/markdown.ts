@@ -136,6 +136,39 @@ const BLOCK_OPEN_TYPES = new Set([
   'html_block',
   'math_block',
 ]);
+// v4.2.5 issue #65: wrap each line of a rendered fence in a <span
+// class="cb-line"> so a CSS counter can display line numbers when the
+// `codeBlockLineNumbers` setting is on. The CSS is gated by a
+// `cb-numbered` class added to <pre> here and `cb-numbered-on` on the
+// `.preview-content` root — so flipping the setting is a pure-CSS swap,
+// no re-render needed.
+const defaultFenceRenderer = md.renderer.rules.fence;
+md.renderer.rules.fence = function (tokens, idx, options, env, self) {
+  const html = defaultFenceRenderer
+    ? defaultFenceRenderer(tokens, idx, options, env, self)
+    : self.renderToken(tokens, idx, options);
+  // Skip mermaid — Preview.vue replaces these blocks with rendered SVGs.
+  const tok = tokens[idx];
+  const info = (tok.info || '').trim().toLowerCase();
+  if (info === 'mermaid') return html;
+  // Inject .cb-line wrappers on each line. We do this on the rendered HTML
+  // because the highlight has already produced <span class="hljs-..."> spans
+  // that may straddle multiple lines (most don't, but a few hljs grammars do
+  // emit multi-line comment spans). Split on '\n' and wrap each piece.
+  return html.replace(/<code([^>]*)>([\s\S]*?)<\/code>/, (_m, codeAttrs, inner) => {
+    // Strip the trailing newline if any so we don't render an empty
+    // line-numbered row at the end.
+    const trimmed = inner.endsWith('\n') ? inner.slice(0, -1) : inner;
+    const lines = trimmed.split('\n');
+    const wrapped = lines
+      .map((line: string) => `<span class="cb-line">${line || ' '}</span>`)
+      .join('\n');
+    return `<code${codeAttrs}>${wrapped}</code>`;
+  })
+    // Add cb-numbered class on the <pre> so CSS can scope the counter.
+    .replace(/<pre>/, '<pre class="cb-numbered">');
+};
+
 md.core.ruler.push('source_line_map', (state) => {
   for (const tok of state.tokens) {
     if (!BLOCK_OPEN_TYPES.has(tok.type)) continue;
@@ -279,9 +312,68 @@ function renderFrontMatterHtml(raw: string): string {
   return `<div class="md-frontmatter"><dl>${rows}</dl></div>`;
 }
 
+// Tags that markdown-it will treat as HTML blocks when they start at column 0
+// AND are surrounded by blank lines. mineru / many AI-PDF-to-Markdown tools
+// emit `<table>...</table>` indented 4 spaces or wedged between text lines
+// without blank-line separators, which makes markdown-it treat the chunk as
+// a code block (4-space indent) or escape it as inline HTML inside a
+// paragraph. The preprocessor pulls these tags back to column 0 and inserts
+// blank lines around them so the HTML-block rule fires. See issue #71.
+const HTML_BLOCK_PASSTHROUGH_TAGS = [
+  'table',
+  'div',
+  'details',
+  'figure',
+  'iframe',
+  'blockquote',
+  'pre',
+  'section',
+  'article',
+  'aside',
+];
+const HTML_BLOCK_RE = new RegExp(
+  `^([ \\t]*)(<(?:${HTML_BLOCK_PASSTHROUGH_TAGS.join('|')})\\b[\\s\\S]*?</(?:${HTML_BLOCK_PASSTHROUGH_TAGS.join('|')})>)[ \\t]*$`,
+  'gmi',
+);
+
+/** Preprocess: ensure block-level HTML elements (like `<table>` emitted by
+ *  mineru) are at column 0 with blank lines around them so markdown-it parses
+ *  them as HTML blocks rather than indented code or inline HTML inside a
+ *  paragraph. Skipped inside fenced code blocks so we don't mangle code
+ *  examples.
+ */
+function unwrapInlineHtmlBlocks(source: string): string {
+  // Split on fenced code blocks (``` or ~~~) and only transform the non-code
+  // segments. Lightweight split — markdown-it's own fence parser is the
+  // authority but this approximation is sufficient for the common case.
+  const FENCE_RE = /(^|\n)(```|~~~)[^\n]*\n[\s\S]*?\n\2[ \t]*(?=\n|$)/g;
+  const segments: { text: string; isFence: boolean }[] = [];
+  let lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = FENCE_RE.exec(source)) !== null) {
+    if (m.index > lastIndex) {
+      segments.push({ text: source.slice(lastIndex, m.index), isFence: false });
+    }
+    segments.push({ text: m[0], isFence: true });
+    lastIndex = m.index + m[0].length;
+  }
+  if (lastIndex < source.length) {
+    segments.push({ text: source.slice(lastIndex), isFence: false });
+  }
+  return segments
+    .map((seg) => {
+      if (seg.isFence) return seg.text;
+      return seg.text.replace(HTML_BLOCK_RE, (_match, _indent, html) => {
+        return `\n\n${html}\n\n`;
+      });
+    })
+    .join('');
+}
+
 export function renderMarkdown(source: string): string {
   lastFrontMatterRaw = null;
-  const body = md.render(source || '');
+  const normalized = unwrapInlineHtmlBlocks(source || '');
+  const body = md.render(normalized);
   if (lastFrontMatterRaw !== null) {
     const fmHtml = renderFrontMatterHtml(lastFrontMatterRaw);
     lastFrontMatterRaw = null;

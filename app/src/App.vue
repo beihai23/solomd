@@ -82,10 +82,13 @@ pomodoro.rehydrate();
 // Pinia internals. Dev-only convenience — release builds ignore the
 // extra hook.
 (window as any).usePomodoroStore = usePomodoroStore;
-useI18n();
+const { t } = useI18n();
 
 const cursorLine = ref(1);
 const cursorCol = ref(1);
+// v4.2.5 issue #70: selection text from the editor, surfaced in StatusBar
+// as "selected: N words / M chars". Empty string when nothing is selected.
+const selectionText = ref('');
 const paletteOpen = ref(false);
 const quickSwitcherOpen = ref(false);
 const settingsOpen = ref(false);
@@ -169,7 +172,32 @@ useShortcuts({
 useFileWatcher(showFileChangedDialog);
 
 // Esc closes the topmost modal
+function onZoomShortcut(e: KeyboardEvent): boolean {
+  // v4.2.5 issue #72 — Cmd/Ctrl + / Cmd/Ctrl - / Cmd/Ctrl 0
+  // We intercept `=` and `+` for zoom-in (typical zoom shortcut works on both
+  // Shift-= and the plus key) and `-` for zoom-out. `0` resets to 1.0.
+  const mod = e.metaKey || e.ctrlKey;
+  if (!mod || e.altKey) return false;
+  if (e.key === '=' || e.key === '+') {
+    e.preventDefault();
+    settings.zoomIn();
+    return true;
+  }
+  if (e.key === '-' || e.key === '_') {
+    e.preventDefault();
+    settings.zoomOut();
+    return true;
+  }
+  if (e.key === '0') {
+    e.preventDefault();
+    settings.resetZoom();
+    return true;
+  }
+  return false;
+}
+
 function onEsc(e: KeyboardEvent) {
+  if (onZoomShortcut(e)) return;
   if (e.key !== 'Escape') return;
   if (aboutOpen.value) aboutOpen.value = false;
   else if (cjkProofreadOpen.value) cjkProofreadOpen.value = false;
@@ -188,6 +216,10 @@ function onEsc(e: KeyboardEvent) {
 function onCursor(line: number, col: number) {
   cursorLine.value = line;
   cursorCol.value = col;
+}
+
+function onSelection(text: string) {
+  selectionText.value = text;
 }
 
 function onOutlineGoto(line: number) {
@@ -262,6 +294,15 @@ watch(
 // UI font size
 watchEffect(() => {
   document.documentElement.style.setProperty('--ui-font-size', `${settings.uiFontSize}px`);
+});
+
+// v4.2.5 (issue #72): global zoom — scales everything for high-DPI screens.
+// Uses CSS `zoom` so layout reflows rather than being scaled with transform
+// (which would clip + break click targets). wry's webview on every platform
+// supports it.
+watchEffect(() => {
+  const z = settings.globalZoom || 1;
+  (document.documentElement.style as any).zoom = String(z);
 });
 
 // Sync native menu bar language
@@ -758,15 +799,67 @@ const showRightSidebar = computed(() => {
 // Search slots in at the top because users typically want results visible
 // while scanning the rest of the sidebar context.
 const visibleRsPanes = computed(() => {
-  const panes: { id: 'search' | 'outline' | 'backlinks' | 'tags' | 'history' | 'agent' }[] = [];
-  if (showSearchPane.value) panes.push({ id: 'search' });
-  if (showOutlinePane.value) panes.push({ id: 'outline' });
-  if (showBacklinksPane.value) panes.push({ id: 'backlinks' });
-  if (showTagsPane.value) panes.push({ id: 'tags' });
-  if (showHistoryPane.value) panes.push({ id: 'history' });
-  if (showAgentPane.value) panes.push({ id: 'agent' });
-  return panes;
+  // v4.2.5 issue #57b — order driven by settings.rsPaneOrder so users can
+  // drag-reorder. Unknown ids (newly-shipped future panes) get appended at
+  // the end so a SoloMD update doesn't blow away an existing user layout.
+  const all: Record<'search' | 'outline' | 'backlinks' | 'tags' | 'history' | 'agent', boolean> = {
+    search: showSearchPane.value,
+    outline: showOutlinePane.value,
+    backlinks: showBacklinksPane.value,
+    tags: showTagsPane.value,
+    history: showHistoryPane.value,
+    agent: showAgentPane.value,
+  };
+  const known = ['search', 'outline', 'backlinks', 'tags', 'history', 'agent'] as const;
+  const ordered: string[] = [];
+  for (const id of settings.rsPaneOrder || []) {
+    if (id in all && !ordered.includes(id)) ordered.push(id);
+  }
+  for (const id of known) {
+    if (!ordered.includes(id)) ordered.push(id);
+  }
+  return ordered
+    .filter((id) => all[id as keyof typeof all])
+    .map((id) => ({ id: id as 'search' | 'outline' | 'backlinks' | 'tags' | 'history' | 'agent' }));
 });
+
+// v4.2.5 issue #57b — HTML5 drag state for right-sidebar pane reordering.
+// Holding null = nothing dragging; a string = the pane id currently being
+// dragged. The drop target index is computed by the dragover handler.
+const draggingPaneId = ref<string | null>(null);
+const dragOverPaneId = ref<string | null>(null);
+function onPaneDragStart(e: DragEvent, id: string) {
+  draggingPaneId.value = id;
+  if (e.dataTransfer) {
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('application/x-solomd-rs-pane', id);
+  }
+}
+function onPaneDragOver(e: DragEvent, id: string) {
+  if (!draggingPaneId.value || draggingPaneId.value === id) return;
+  e.preventDefault();
+  dragOverPaneId.value = id;
+  if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+}
+function onPaneDragLeave(id: string) {
+  if (dragOverPaneId.value === id) dragOverPaneId.value = null;
+}
+function onPaneDrop(_e: DragEvent, targetId: string) {
+  const src = draggingPaneId.value;
+  draggingPaneId.value = null;
+  dragOverPaneId.value = null;
+  if (!src || src === targetId) return;
+  // Find the target's index in the full order list (not just the visible
+  // subset) so reordering survives toggling pane visibility off + on.
+  const order = [...(settings.rsPaneOrder || [])];
+  const targetIdx = order.indexOf(targetId);
+  if (targetIdx < 0) return;
+  settings.moveRsPane(src, targetIdx);
+}
+function onPaneDragEnd() {
+  draggingPaneId.value = null;
+  dragOverPaneId.value = null;
+}
 
 // Sidebar visibility / pane composition changes the editor's available
 // width. CodeMirror's ResizeObserver may lag for a frame, so dispatch
@@ -868,7 +961,26 @@ watchEffect(() => { void settings.aiEnabled; void settings.aiProvider; refreshAi
           <div class="side-sidebar__resize side-sidebar__resize--right" @mousedown="onSidebarResize('left', $event)" />
           <template v-for="(p, idx) in visibleRsPanes" :key="p.id">
             <RsSplitter v-if="idx > 0" :above="visibleRsPanes[idx-1].id" :below="p.id" />
-            <div :data-rs-pane="p.id" :class="['rs-pane-host', `rs-pane-host--${p.id}`]" :style="paneStyle(p.id)">
+            <div
+              :data-rs-pane="p.id"
+              :class="[
+                'rs-pane-host',
+                `rs-pane-host--${p.id}`,
+                draggingPaneId === p.id ? 'rs-pane-host--dragging' : '',
+                dragOverPaneId === p.id ? 'rs-pane-host--drop-target' : '',
+              ]"
+              :style="paneStyle(p.id)"
+              @dragover="onPaneDragOver($event, p.id)"
+              @dragleave="onPaneDragLeave(p.id)"
+              @drop="onPaneDrop($event, p.id)"
+            >
+              <div
+                class="rs-pane-grip"
+                draggable="true"
+                :title="t('rsPane.dragToReorder')"
+                @dragstart="onPaneDragStart($event, p.id)"
+                @dragend="onPaneDragEnd"
+              >⋮⋮</div>
               <GlobalSearch
                 v-if="p.id === 'search'"
                 :prefill="searchPrefill"
@@ -892,7 +1004,7 @@ watchEffect(() => { void settings.aiEnabled; void settings.aiProvider; refreshAi
         </aside>
         <div class="content">
           <BasesView v-if="basesOpen" />
-          <TileRoot v-else :node="tiles.root" @cursor="onCursor" />
+          <TileRoot v-else :node="tiles.root" @cursor="onCursor" @selection="onSelection" />
         </div>
         <aside
           v-if="showRightSidebar && settings.outlineSide !== 'left'"
@@ -908,7 +1020,26 @@ watchEffect(() => { void settings.aiEnabled; void settings.aiProvider; refreshAi
           >×</button>
           <template v-for="(p, idx) in visibleRsPanes" :key="p.id">
             <RsSplitter v-if="idx > 0" :above="visibleRsPanes[idx-1].id" :below="p.id" />
-            <div :data-rs-pane="p.id" :class="['rs-pane-host', `rs-pane-host--${p.id}`]" :style="paneStyle(p.id)">
+            <div
+              :data-rs-pane="p.id"
+              :class="[
+                'rs-pane-host',
+                `rs-pane-host--${p.id}`,
+                draggingPaneId === p.id ? 'rs-pane-host--dragging' : '',
+                dragOverPaneId === p.id ? 'rs-pane-host--drop-target' : '',
+              ]"
+              :style="paneStyle(p.id)"
+              @dragover="onPaneDragOver($event, p.id)"
+              @dragleave="onPaneDragLeave(p.id)"
+              @drop="onPaneDrop($event, p.id)"
+            >
+              <div
+                class="rs-pane-grip"
+                draggable="true"
+                :title="t('rsPane.dragToReorder')"
+                @dragstart="onPaneDragStart($event, p.id)"
+                @dragend="onPaneDragEnd"
+              >⋮⋮</div>
               <GlobalSearch
                 v-if="p.id === 'search'"
                 :prefill="searchPrefill"
@@ -931,7 +1062,7 @@ watchEffect(() => { void settings.aiEnabled; void settings.aiProvider; refreshAi
           </template>
         </aside>
       </div>
-      <StatusBar :line="cursorLine" :col="cursorCol" />
+      <StatusBar :line="cursorLine" :col="cursorCol" :selection-text="selectionText" />
     </template>
 
     <AIRewriteOverlay
@@ -1090,6 +1221,44 @@ watchEffect(() => { void settings.aiEnabled; void settings.aiProvider; refreshAi
 .rs-pane-host :deep(.backlinks) {
   border-left: 0;
   border-right: 0;
+}
+/* v4.2.5 issue #57b — drag grip + drop-target highlight for right-sidebar
+   reordering. Grip is intentionally subtle (8px dotted strip at the top of
+   each pane); hovering surfaces it more clearly. Only the grip is draggable
+   so text selection inside the pane still works. */
+.rs-pane-grip {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 10px;
+  flex: 0 0 10px;
+  color: var(--text-faint);
+  font-size: 8px;
+  letter-spacing: 2px;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  background: transparent;
+  transition: background 120ms, color 120ms;
+}
+.rs-pane-grip:hover {
+  background: var(--bg-hover);
+  color: var(--text-muted);
+}
+.rs-pane-grip:active {
+  cursor: grabbing;
+}
+.rs-pane-host--dragging {
+  opacity: 0.4;
+}
+.rs-pane-host--drop-target {
+  outline: 2px dashed var(--accent);
+  outline-offset: -2px;
+}
+/* Make sure the grip + content layout share vertical space cleanly. */
+.rs-pane-host > .rs-pane-grip + :deep(*) {
+  flex: 1 1 0;
+  min-height: 0;
 }
 .content {
   flex: 1;

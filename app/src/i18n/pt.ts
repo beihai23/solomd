@@ -130,6 +130,11 @@ export const pt: I18n = {
     fontFamilyHint: 'Fontes recomendadas (LXGW WenKai, Source Han etc.) precisam estar instaladas no seu sistema. macOS: brew install --cask font-lxgw-wenkai. Cai para PingFang se ausente.',
     fontSize: 'Tamanho da fonte do editor',
     uiFontSize: 'Tamanho da fonte da interface',
+    globalZoom: 'Zoom global',
+    globalZoomHint: 'Dimensiona o aplicativo inteiro — editor, pré-visualização e interface. Útil em telas de alta resolução. Teclado: ⌘+ / ⌘− / ⌘0.',
+    globalZoomReset: 'Restaurar',
+    codeBlockLineNumbers: 'Números de linha em blocos de código',
+    codeBlockLineNumbersHint: 'Adiciona uma calha 1, 2, 3… a cada bloco de código cercado na pré-visualização. Herdado por exportações PDF/DOCX/imagem.',
     wordWrap: 'Quebra de linha',
     lineNumbers: 'Números de linha',
     livePreview: 'Pré-visualização ao vivo (Markdown) — esconder marcadores fora da linha, renderizar títulos, negrito etc.',
@@ -594,6 +599,13 @@ export const pt: I18n = {
     hintNav: '↑↓ navegar · ↵ abrir · Esc fechar',
     disabledHeading:
       'A busca semântica está desativada. Ative-a em Configurações para construir um índice local deste workspace.',
+  },
+  statusBar: {
+    selection: 'seleção: {words} palavras / {chars} caracteres',
+    selectionTooltip: 'Contagem de palavras e caracteres da seleção',
+  },
+  rsPane: {
+    dragToReorder: 'Arraste para reordenar este painel da barra lateral',
   },
   inbox: {
     heading: 'Inbox',

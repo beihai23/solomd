@@ -165,6 +165,22 @@ interface Settings {
   // for a free MIT app), but explicitly toggleable in Settings → Export
   // for users who don't want the watermark on screenshots they share.
   imageExportBranding: boolean;
+  // v4.2.5: global UI zoom (scales the entire app — editor, preview, chrome,
+  // sidebars, modals). Helpful on high-DPI screens where everything renders
+  // too small even at the OS default scale. Range 0.75x – 2.5x. Wired via
+  // `document.documentElement.style.zoom`, which Chromium / WebKit / wry all
+  // support. Bound to ⌘=, ⌘-, ⌘0 shortcuts. Issue #72.
+  globalZoom: number;
+  // v4.2.5: show line numbers next to each line of code in the rendered
+  // preview (and Pandoc/PDF/PNG exports — they all share the preview HTML).
+  // Default off so existing exports don't surprise anyone. Issue #65.
+  codeBlockLineNumbers: boolean;
+  // v4.2.5: user-customisable order of the right-sidebar panes. Each entry
+  // is a pane id (search / outline / backlinks / tags / history / agent).
+  // Default matches the pre-v4.2.5 hardcoded order. Panes not in the list
+  // (newly added in a future release) get appended to the end so the user's
+  // saved layout isn't blown away by a SoloMD update. Issue #57b.
+  rsPaneOrder: string[];
 }
 
 /** v2.5 PDF / print export defaults. */
@@ -305,6 +321,9 @@ function defaults(): Settings {
     pomodoroDefaultMinutes: 25,
     slashCommandsEnabled: true,
     imageExportBranding: true,
+    globalZoom: 1,
+    codeBlockLineNumbers: false,
+    rsPaneOrder: ['search', 'outline', 'backlinks', 'tags', 'history', 'agent'],
   };
 }
 
@@ -676,6 +695,44 @@ export const useSettingsStore = defineStore('settings', {
     },
     toggleImageExportBranding() {
       this.imageExportBranding = !this.imageExportBranding;
+      this.persist();
+    },
+    setGlobalZoom(n: number) {
+      // Clamp to a sane range: 0.75 (text uncomfortably small) to 2.5 (text
+      // huge for accessibility / 8K screens). Round to 0.05 so the slider
+      // / shortcuts don't accumulate floating-point drift.
+      const clean = Math.max(0.75, Math.min(2.5, Math.round((n || 1) * 20) / 20));
+      this.globalZoom = clean;
+      this.persist();
+    },
+    zoomIn() {
+      this.setGlobalZoom((this.globalZoom || 1) + 0.1);
+    },
+    zoomOut() {
+      this.setGlobalZoom((this.globalZoom || 1) - 0.1);
+    },
+    resetZoom() {
+      this.setGlobalZoom(1);
+    },
+    toggleCodeBlockLineNumbers() {
+      this.codeBlockLineNumbers = !this.codeBlockLineNumbers;
+      this.persist();
+    },
+    /** v4.2.5 issue #57b — reorder the right sidebar by moving a pane id to
+     *  a new index. Tolerates out-of-range targets (clamps), no-ops for
+     *  unknown ids. */
+    moveRsPane(paneId: string, targetIdx: number) {
+      const order = [...(this.rsPaneOrder || [])];
+      const from = order.indexOf(paneId);
+      if (from < 0) return;
+      const [item] = order.splice(from, 1);
+      const clamped = Math.max(0, Math.min(order.length, targetIdx));
+      order.splice(clamped, 0, item);
+      this.rsPaneOrder = order;
+      this.persist();
+    },
+    resetRsPaneOrder() {
+      this.rsPaneOrder = ['search', 'outline', 'backlinks', 'tags', 'history', 'agent'];
       this.persist();
     },
   },

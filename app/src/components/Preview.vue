@@ -236,6 +236,7 @@ defineExpose({ scrollToLine, openSearch });
       :class="{
         'preview-content--fit': settings.previewFitWidth && skin !== 'reading',
         'preview-content--reading': skin === 'reading',
+        'cb-numbered-on': settings.codeBlockLineNumbers,
       }"
       v-html="html"
     ></article>
@@ -313,6 +314,36 @@ defineExpose({ scrollToLine, openSearch });
   font-family: var(--font-mono);
   background: transparent;
   padding: 0;
+}
+/* v4.2.5 issue #65: optional line numbers for fenced code blocks. The
+ * `.cb-line` wrappers are always emitted by markdown.ts; numbering is
+ * activated only when `.preview-content` has `cb-numbered-on`, set by the
+ * `codeBlockLineNumbers` setting. Counter increments per line; the gutter
+ * uses ::before so it doesn't pollute copy/paste of the code itself. */
+.preview-content.cb-numbered-on pre.cb-numbered {
+  counter-reset: cb-line;
+  padding-left: 0;
+}
+.preview-content.cb-numbered-on pre.cb-numbered code {
+  display: block;
+}
+.preview-content.cb-numbered-on pre.cb-numbered code .cb-line {
+  counter-increment: cb-line;
+  display: block;
+  padding-left: 3.4em;
+  position: relative;
+}
+.preview-content.cb-numbered-on pre.cb-numbered code .cb-line::before {
+  content: counter(cb-line);
+  position: absolute;
+  left: 0;
+  width: 2.6em;
+  padding-right: 0.6em;
+  text-align: right;
+  color: var(--text-faint);
+  border-right: 1px solid var(--border);
+  user-select: none;
+  -webkit-user-select: none;
 }
 :where(.preview-content) blockquote {
   border-left: 3px solid var(--accent);

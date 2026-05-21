@@ -58,11 +58,41 @@ android {
         }
         getByName("release") {
             isMinifyEnabled = true
+            // v4.2.5 issue #73 — strip unused resources after R8 finishes
+            // tree-shaking the Kotlin/Java code. Removes drawable / layout
+            // / string assets that no kept code path references. Typically
+            // shaves 1-3 MB off the universal APK and a few hundred KB
+            // off each per-ABI APK.
+            isShrinkResources = true
             proguardFiles(
                 *fileTree(".") { include("**/*.pro") }
                     .plus(getDefaultProguardFile("proguard-android-optimize.txt"))
                     .toList().toTypedArray()
             )
+            // v4.2.5 issue #73 — strip debug symbols from native .so libs in
+            // release. Tauri's Rust binary normally compiles with `strip = "symbols"`
+            // in Cargo.toml, but this provides a belt-and-braces guarantee.
+            packaging {
+                jniLibs {
+                    keepDebugSymbols.clear()
+                    // useLegacyPackaging defaults to false in AGP 7+, which
+                    // means .so files stay compressed inside the APK rather
+                    // than being extracted to /data/app on install — halves
+                    // the disk footprint vs legacy mode.
+                }
+                resources {
+                    // Cut Kotlin metadata, license files, and module manifests
+                    // that JVM-side tooling reads but Android runtime ignores.
+                    excludes += setOf(
+                        "/META-INF/{AL2.0,LGPL2.1}",
+                        "/META-INF/*.kotlin_module",
+                        "/META-INF/versions/**",
+                        "/kotlin/**",
+                        "/kotlin-tooling-metadata.json",
+                        "/DebugProbesKt.bin",
+                    )
+                }
+            }
             val cfg = signingConfigs.getByName("release")
             if (cfg.storeFile != null) {
                 signingConfig = cfg

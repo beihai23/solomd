@@ -128,6 +128,11 @@ export const sv: I18n = {
     fontFamilyHint: 'Rekommenderade skrivteckensnitt (LXGW WenKai, Source Han m.fl.) måste vara installerade på systemet. macOS: brew install --cask font-lxgw-wenkai. Faller tillbaka till PingFang om de saknas.',
     fontSize: 'Teckenstorlek i editor',
     uiFontSize: 'Teckenstorlek i gränssnitt',
+    globalZoom: 'Global zoom',
+    globalZoomHint: 'Skalar hela appen — editor, förhandsvisning och gränssnitt. Användbart på HiDPI-skärmar. Tangenter: ⌘+ / ⌘− / ⌘0.',
+    globalZoomReset: 'Återställ',
+    codeBlockLineNumbers: 'Radnummer i kodblock',
+    codeBlockLineNumbersHint: 'Lägger till en 1, 2, 3…-ränna i varje inhägnat kodblock i förhandsvisningen. Ärvs av PDF/DOCX/bildexporter.',
     wordWrap: 'Radbrytning',
     lineNumbers: 'Radnummer',
     livePreview: 'Liveförhandsgranskning (Markdown) — dölj markörer utanför raden, rendera rubriker, fetstil m.m.',
@@ -595,6 +600,13 @@ export const sv: I18n = {
     hintNav: '↑↓ navigera · ↵ öppna · Esc stäng',
     disabledHeading:
       'Semantisk sökning är avstängd. Aktivera den i Inställningar för att bygga ett lokalt index av denna arbetsyta.',
+  },
+  statusBar: {
+    selection: 'valt: {words} ord / {chars} tecken',
+    selectionTooltip: 'Antal ord och tecken i markeringen',
+  },
+  rsPane: {
+    dragToReorder: 'Dra för att ordna om denna sidofältsruta',
   },
   inbox: {
     heading: 'Inkorg',

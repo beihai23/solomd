@@ -128,6 +128,11 @@ export const nl: I18n = {
     fontFamilyHint: 'Aanbevolen schrijflettertypen (LXGW WenKai, Source Han, enz.) moeten op je systeem geïnstalleerd zijn. macOS: brew install --cask font-lxgw-wenkai. Valt terug op PingFang als het ontbreekt.',
     fontSize: 'Lettergrootte editor',
     uiFontSize: 'Lettergrootte UI',
+    globalZoom: 'Algemene zoom',
+    globalZoomHint: 'Schaalt de hele app — editor, voorbeeld en interface. Handig op HiDPI-schermen. Toetsenbord: ⌘+ / ⌘− / ⌘0.',
+    globalZoomReset: 'Resetten',
+    codeBlockLineNumbers: 'Regelnummers in codeblokken',
+    codeBlockLineNumbersHint: 'Voegt een 1, 2, 3…-goot toe aan elk afgebakend codeblok in het voorbeeld. Overgenomen door PDF/DOCX/afbeelding-exports.',
     wordWrap: 'Regelterugloop',
     lineNumbers: 'Regelnummers',
     livePreview: 'Live-voorvertoning (Markdown) — markers buiten regel verbergen, koppen, vetgedrukt enz. renderen',
@@ -595,6 +600,13 @@ export const nl: I18n = {
     hintNav: '↑↓ navigeren · ↵ openen · Esc sluiten',
     disabledHeading:
       'Semantisch zoeken staat uit. Schakel het in via Instellingen om een lokale index van deze werkruimte op te bouwen.',
+  },
+  statusBar: {
+    selection: 'selectie: {words} woorden / {chars} tekens',
+    selectionTooltip: 'Woord- en tekenaantal van de selectie',
+  },
+  rsPane: {
+    dragToReorder: 'Sleep om dit zijbalkpaneel te herschikken',
   },
   inbox: {
     heading: 'Inbox',

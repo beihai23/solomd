@@ -128,6 +128,11 @@ export const ja: I18n = {
     fontFamilyHint: '推奨フォント (LXGW WenKai、Source Han など) はシステムにインストールが必要です。macOS: brew install --cask font-lxgw-wenkai。見つからない場合は PingFang にフォールバックします。',
     fontSize: 'エディタフォントサイズ',
     uiFontSize: 'UI フォントサイズ',
+    globalZoom: 'グローバルズーム',
+    globalZoomHint: 'アプリ全体（エディタ・プレビュー・UI）をスケーリング。高解像度ディスプレイ向け。ショートカット: ⌘+ / ⌘− / ⌘0。',
+    globalZoomReset: 'リセット',
+    codeBlockLineNumbers: 'コードブロックの行番号',
+    codeBlockLineNumbersHint: 'プレビューの各フェンスコードブロックに 1, 2, 3… の行番号列を表示。PDF / DOCX / 画像エクスポートに引き継がれます。',
     wordWrap: '行折り返し',
     lineNumbers: '行番号',
     livePreview: 'ライブプレビュー（Markdown）— 行外マーカーを隠して見出し・太字などをレンダリング',
@@ -592,6 +597,13 @@ export const ja: I18n = {
     hintNav: '↑↓ 移動 · ↵ 開く · Esc 閉じる',
     disabledHeading:
       'セマンティック検索はオフです。設定で有効化して、このワークスペースのローカルインデックスを構築してください。',
+  },
+  statusBar: {
+    selection: '選択中: {words} 語 / {chars} 文字',
+    selectionTooltip: '選択範囲の語数と文字数',
+  },
+  rsPane: {
+    dragToReorder: 'ドラッグしてこのサイドバーペインを並べ替える',
   },
   inbox: {
     heading: 'Inbox',

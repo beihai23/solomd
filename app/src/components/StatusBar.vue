@@ -11,7 +11,10 @@ import PomodoroPill from './PomodoroPill.vue';
 import SyncStatusPill from './SyncStatusPill.vue';
 import { usePomodoroStore } from '../stores/pomodoro';
 
-const props = defineProps<{ line: number; col: number }>();
+const props = withDefaults(
+  defineProps<{ line: number; col: number; selectionText?: string }>(),
+  { selectionText: '' },
+);
 const tabs = useTabsStore();
 const settings = useSettingsStore();
 const writingSession = useWritingSessionStore();
@@ -31,6 +34,15 @@ const lineCount = computed(() => {
   const c = tabs.activeTab?.content ?? '';
   return c ? c.split('\n').length : 0;
 });
+// v4.2.5 issue #70: stats for the current editor selection. Shown only when
+// non-empty; uses the same cjkWordCount tokenizer as the document totals so
+// CJK + Latin counts line up.
+const selStats = computed(() => {
+  const s = props.selectionText ?? '';
+  if (!s) return null;
+  return cjkWordCount(s);
+});
+
 const lang = computed(() => (tabs.activeTab?.language === 'markdown' ? 'Markdown' : 'Plain Text'));
 const enc = computed(() => tabs.activeTab?.encoding ?? 'UTF-8');
 
@@ -59,6 +71,11 @@ function onPillClick() {
     </span>
     <span class="sep">·</span>
     <span class="seg">{{ charCount }} chars</span>
+    <span v-if="selStats" class="seg seg--selection" :title="t('statusBar.selectionTooltip')">
+      ·
+      {{ t('statusBar.selection', { words: String(selStats.total), chars: String(selStats.chars) }) }}
+      <span v-if="selStats.cjk > 0" class="seg--cjk">({{ selStats.cjk }} 字)</span>
+    </span>
     <WritingGoals v-if="settings.showWritingStats" />
     <span class="spacer"></span>
     <span
@@ -106,6 +123,7 @@ function onPillClick() {
 .sep { color: var(--text-faint); }
 .seg--lang { color: var(--accent); }
 .seg--cjk { color: var(--accent); margin-left: -4px; }
+.seg--selection { color: var(--accent); font-weight: 500; }
 .seg--inbox {
   background: var(--accent);
   color: var(--bg-elev);

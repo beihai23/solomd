@@ -126,6 +126,11 @@ export const en = {
     fontFamilyHint: 'Recommended writing fonts (LXGW WenKai, Source Han, etc.) need to be installed on your system. macOS: brew install --cask font-lxgw-wenkai. Falls back to PingFang if missing.',
     fontSize: 'Editor Font Size',
     uiFontSize: 'UI Font Size',
+    globalZoom: 'Global Zoom',
+    globalZoomHint: 'Scales the entire app — editor, preview, and chrome. Useful on high-DPI screens. Keyboard: ⌘+ / ⌘− / ⌘0.',
+    globalZoomReset: 'Reset',
+    codeBlockLineNumbers: 'Line numbers in fenced code blocks',
+    codeBlockLineNumbersHint: 'Adds a 1, 2, 3… gutter to each fenced code block in the preview. Inherited by PDF / DOCX / image exports.',
     wordWrap: 'Word Wrap',
     lineNumbers: 'Line Numbers',
     livePreview: 'Live Preview (Markdown) — hide markers off-line, render headings, bold etc.',
@@ -593,6 +598,13 @@ export const en = {
     hintNav: '↑↓ navigate · ↵ open · Esc close',
     disabledHeading:
       'Semantic search is off. Enable it in Settings to build a local index of this workspace.',
+  },
+  statusBar: {
+    selection: 'selected: {words} words / {chars} chars',
+    selectionTooltip: 'Word and character count for the current selection',
+  },
+  rsPane: {
+    dragToReorder: 'Drag to reorder this sidebar pane',
   },
   inbox: {
     heading: 'Inbox',

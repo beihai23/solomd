@@ -77,7 +77,10 @@ const props = withDefaults(
     spellCheck: true,
   },
 );
-const emit = defineEmits<{ (e: 'cursor', line: number, col: number): void }>();
+const emit = defineEmits<{
+  (e: 'cursor', line: number, col: number): void;
+  (e: 'selection', text: string): void;
+}>();
 
 const tabs = useTabsStore();
 const settings = useSettingsStore();
@@ -171,6 +174,17 @@ const fontSizeTheme = (px: number, family: string) =>
     '.cm-activeLineGutter': { backgroundColor: 'transparent', color: 'var(--accent)' },
     '.cm-cursor': { borderLeftColor: 'var(--accent)', borderLeftWidth: '2px' },
     '.cm-selectionBackground, ::selection': { backgroundColor: 'rgba(255,159,64,0.25) !important' },
+    // v4.2.5 issue #67: distinct current-match highlight for the Cmd+F search
+    // panel. CM6 marks the active result with `.cm-searchMatch-selected` —
+    // by default it's the same translucent color as the other matches so the
+    // user can't tell which one they're on. Brighten it to the accent color
+    // and tint the others down so the current one pops.
+    '.cm-searchMatch': { backgroundColor: 'rgba(255,159,64,0.22)', borderRadius: '2px' },
+    '.cm-searchMatch.cm-searchMatch-selected': {
+      backgroundColor: 'var(--accent, #ff9f40)',
+      color: 'var(--accent-fg, #fff)',
+      outline: '1px solid var(--accent, #ff9f40)',
+    },
   });
 
 function buildExtensions() {
@@ -232,6 +246,10 @@ function buildExtensions() {
         const head = u.state.selection.main.head;
         const line = u.state.doc.lineAt(head);
         emit('cursor', line.number, head - line.from + 1);
+        // v4.2.5 issue #70: emit selection text so StatusBar can show
+        // selected word/char count. Empty string when nothing's selected.
+        const sel = u.state.selection.main;
+        emit('selection', sel.empty ? '' : u.state.sliceDoc(sel.from, sel.to));
       }
     }),
   ];

@@ -9,6 +9,7 @@ defineProps<{
 
 const emit = defineEmits<{
   (e: 'cursor', line: number, col: number): void;
+  (e: 'selection', text: string): void;
   (e: 'goto-line', paneId: string, line: number): void;
 }>();
 </script>
@@ -20,6 +21,7 @@ const emit = defineEmits<{
     :pane-id="node.id"
     :active-tab-id="node.activeTabId"
     @cursor="(l, c) => emit('cursor', l, c)"
+    @selection="(t) => emit('selection', t)"
   />
 
   <!-- Branch: flex container with two children and a divider -->
@@ -35,6 +37,7 @@ const emit = defineEmits<{
       <TileRoot
         :node="node.children[0]"
         @cursor="(l: number, c: number) => emit('cursor', l, c)"
+        @selection="(t: string) => emit('selection', t)"
       />
     </div>
     <TileDivider
@@ -45,6 +48,7 @@ const emit = defineEmits<{
       <TileRoot
         :node="node.children[1]"
         @cursor="(l: number, c: number) => emit('cursor', l, c)"
+        @selection="(t: string) => emit('selection', t)"
       />
     </div>
   </div>

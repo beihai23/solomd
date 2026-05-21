@@ -128,6 +128,11 @@ export const tr: I18n = {
     fontFamilyHint: 'Önerilen yazı tipleri (LXGW WenKai, Source Han vb.) sisteminizde yüklü olmalıdır. macOS: brew install --cask font-lxgw-wenkai. Eksikse PingFang kullanılır.',
     fontSize: 'Düzenleyici Yazı Boyutu',
     uiFontSize: 'Arayüz Yazı Boyutu',
+    globalZoom: 'Genel Yakınlaştırma',
+    globalZoomHint: 'Tüm uygulamayı ölçeklendirir — editör, önizleme ve arayüz. Yüksek DPI ekranlarda kullanışlı. Klavye: ⌘+ / ⌘− / ⌘0.',
+    globalZoomReset: 'Sıfırla',
+    codeBlockLineNumbers: 'Kod bloklarında satır numaraları',
+    codeBlockLineNumbersHint: 'Önizlemedeki her çitli kod bloğuna 1, 2, 3… sütunu ekler. PDF/DOCX/görüntü dışa aktarımları tarafından devralınır.',
     wordWrap: 'Sözcük Kaydırma',
     lineNumbers: 'Satır Numaraları',
     livePreview: 'Canlı Önizleme (Markdown) — etkin satır dışında işaretleri gizle, başlık, kalın vb. biçimlendir',
@@ -595,6 +600,13 @@ export const tr: I18n = {
     hintNav: '↑↓ gez · ↵ aç · Esc kapat',
     disabledHeading:
       'Anlamsal arama kapalı. Bu çalışma alanının yerel dizinini oluşturmak için Ayarlar\'dan etkinleştirin.',
+  },
+  statusBar: {
+    selection: 'seçim: {words} kelime / {chars} karakter',
+    selectionTooltip: 'Seçimin kelime ve karakter sayısı',
+  },
+  rsPane: {
+    dragToReorder: 'Bu kenar çubuğu bölmesini yeniden sıralamak için sürükle',
   },
   inbox: {
     heading: 'Gelen Kutusu',

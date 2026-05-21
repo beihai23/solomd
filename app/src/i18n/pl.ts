@@ -128,6 +128,11 @@ export const pl: I18n = {
     fontFamilyHint: 'Polecane czcionki do pisania (LXGW WenKai, Source Han itp.) muszą być zainstalowane w systemie. macOS: brew install --cask font-lxgw-wenkai. W razie braku używana jest PingFang.',
     fontSize: 'Rozmiar czcionki edytora',
     uiFontSize: 'Rozmiar czcionki interfejsu',
+    globalZoom: 'Globalne powiększenie',
+    globalZoomHint: 'Skaluje całą aplikację — edytor, podgląd i interfejs. Przydatne na ekranach HiDPI. Klawiatura: ⌘+ / ⌘− / ⌘0.',
+    globalZoomReset: 'Resetuj',
+    codeBlockLineNumbers: 'Numery wierszy w blokach kodu',
+    codeBlockLineNumbersHint: 'Dodaje rynnę 1, 2, 3… do każdego ogrodzonego bloku kodu w podglądzie. Dziedziczone przez eksporty PDF/DOCX/obraz.',
     wordWrap: 'Zawijanie wierszy',
     lineNumbers: 'Numery wierszy',
     livePreview: 'Podgląd na żywo (Markdown) — ukryj znaczniki poza linią, renderuj nagłówki, pogrubienie itd.',
@@ -595,6 +600,13 @@ export const pl: I18n = {
     hintNav: '↑↓ nawiguj · ↵ otwórz · Esc zamknij',
     disabledHeading:
       'Wyszukiwanie semantyczne jest wyłączone. Włącz je w Ustawieniach, aby zbudować lokalny indeks tego obszaru roboczego.',
+  },
+  statusBar: {
+    selection: 'zaznaczenie: {words} słów / {chars} znaków',
+    selectionTooltip: 'Liczba słów i znaków w zaznaczeniu',
+  },
+  rsPane: {
+    dragToReorder: 'Przeciągnij, aby zmienić kolejność tego panelu paska bocznego',
   },
   inbox: {
     heading: 'Skrzynka odbiorcza',

@@ -346,6 +346,32 @@ function onSelectPdfFont(v: string) {
 
         <section data-cat="basics">
           <label>
+            {{ t('settings.globalZoom') }}:
+            {{ Math.round((settings.globalZoom || 1) * 100) }}%
+          </label>
+          <input
+            type="range"
+            min="0.75"
+            max="2.5"
+            step="0.05"
+            :value="settings.globalZoom"
+            @input="settings.setGlobalZoom(+($event.target as HTMLInputElement).value)"
+          />
+          <p class="setting-hint">
+            {{ t('settings.globalZoomHint') }}
+            <button
+              type="button"
+              class="link-button"
+              style="margin-left: 8px;"
+              @click="settings.resetZoom()"
+            >
+              {{ t('settings.globalZoomReset') }}
+            </button>
+          </p>
+        </section>
+
+        <section data-cat="basics">
+          <label>
             <input type="checkbox" :checked="settings.wordWrap" @change="settings.toggleWordWrap()" />
             {{ t('settings.wordWrap') }}
           </label>
@@ -388,6 +414,18 @@ function onSelectPdfFont(v: string) {
             <input type="checkbox" :checked="settings.previewFitWidth" @change="settings.togglePreviewFitWidth()" />
             {{ t('settings.previewFitWidth') }}
           </label>
+        </section>
+
+        <section data-cat="basics">
+          <label>
+            <input
+              type="checkbox"
+              :checked="settings.codeBlockLineNumbers"
+              @change="settings.toggleCodeBlockLineNumbers()"
+            />
+            {{ t('settings.codeBlockLineNumbers') }}
+          </label>
+          <p class="setting-hint">{{ t('settings.codeBlockLineNumbersHint') }}</p>
         </section>
 
         <section data-cat="basics">

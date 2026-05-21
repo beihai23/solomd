@@ -13,6 +13,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: 'cursor', line: number, col: number): void;
+  (e: 'selection', text: string): void;
   (e: 'goto-line', line: number): void;
 }>();
 
@@ -75,6 +76,10 @@ function onFocusIn() {
 function onCursor(line: number, col: number) {
   emit('cursor', line, col);
 }
+
+function onSelection(text: string) {
+  emit('selection', text);
+}
 </script>
 
 <template>
@@ -94,6 +99,7 @@ function onCursor(line: number, col: number) {
       :pane-id="paneId"
       :tab="activeTab"
       @cursor="onCursor"
+      @selection="onSelection"
     />
     <!-- Drop zone overlay indicators -->
     <div class="drop-zone drop-zone--left" v-if="dropZone === 'horizontal'" />

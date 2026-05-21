@@ -29,6 +29,27 @@ import {
 } from '@codemirror/view';
 import { resolveImageSrc } from './image-resolve';
 import { renderMarkdown, extractImageRoot } from './markdown';
+import mermaid from 'mermaid';
+
+// v4.2.5 issue #57a — live-render math + Mermaid blocks in the editor.
+// Mermaid is async; we render lazily into a counter-keyed cache so the
+// widget toDOM() can pull a ready SVG without re-rendering. The cache is
+// keyed on source text → SVG so the same diagram across multiple panes
+// renders once.
+const mermaidSvgCache = new Map<string, { svg: string | null; error: string | null }>();
+let mermaidIdSeq = 0;
+async function ensureMermaidRendered(source: string): Promise<void> {
+  if (mermaidSvgCache.has(source)) return;
+  // Reserve the slot first so concurrent calls don't double-render.
+  mermaidSvgCache.set(source, { svg: null, error: null });
+  try {
+    const id = `cm-mmd-${++mermaidIdSeq}`;
+    const { svg } = await mermaid.render(id, source);
+    mermaidSvgCache.set(source, { svg, error: null });
+  } catch (e) {
+    mermaidSvgCache.set(source, { svg: null, error: (e as Error).message });
+  }
+}
 
 // `^\s*!\[<alt>\](<url>)\s*$` — whole-line image with no surrounding prose.
 // Why whole-line: replacing inline images would split text in the middle and
@@ -116,6 +137,75 @@ class TableWidget extends WidgetType {
   }
 }
 
+// v4.2.5 issue #57a — block math (`$$...$$`). Goes through markdown-it so
+// it picks up the same KaTeX renderer used in the preview pane. We render
+// the wrapping `$$\n…\n$$` literal so markdown-it-katex sees it as block
+// math and emits `<span class="katex-display">`.
+class MathWidget extends WidgetType {
+  constructor(private readonly source: string) {
+    super();
+  }
+
+  eq(other: MathWidget): boolean {
+    return other.source === this.source;
+  }
+
+  toDOM(): HTMLElement {
+    const wrap = document.createElement('div');
+    wrap.className = 'cm-live-block cm-live-block--math';
+    try {
+      wrap.innerHTML = renderMarkdown(this.source);
+    } catch (e) {
+      wrap.classList.add('cm-live-block--broken');
+      wrap.textContent = `∑ ${(e as Error).message}`;
+    }
+    return wrap;
+  }
+
+  ignoreEvent(): boolean {
+    return false;
+  }
+}
+
+// v4.2.5 issue #57a — mermaid fenced blocks. Mermaid is async so we render
+// into a module-level cache; toDOM() pulls the SVG when available, falls
+// back to a "rendering…" placeholder, then dispatches `solomd:cm-relayout`
+// to ask the editor to rebuild decorations once the cache fills.
+class MermaidWidget extends WidgetType {
+  constructor(private readonly source: string, private readonly view: EditorView) {
+    super();
+  }
+
+  eq(other: MermaidWidget): boolean {
+    return other.source === this.source;
+  }
+
+  toDOM(): HTMLElement {
+    const wrap = document.createElement('div');
+    wrap.className = 'cm-live-block cm-live-block--mermaid';
+    const cached = mermaidSvgCache.get(this.source);
+    if (cached?.svg) {
+      wrap.innerHTML = cached.svg;
+    } else if (cached?.error) {
+      wrap.classList.add('cm-live-block--broken');
+      wrap.textContent = `Mermaid: ${cached.error}`;
+    } else {
+      wrap.textContent = '⌛ Rendering Mermaid…';
+      ensureMermaidRendered(this.source).then(() => {
+        // Force CM to rebuild decorations now that the cache has the SVG.
+        try {
+          this.view.dispatch({});
+        } catch {}
+      });
+    }
+    return wrap;
+  }
+
+  ignoreEvent(): boolean {
+    return false;
+  }
+}
+
 interface BlockOptions {
   /** Workspace context for resolving relative image paths. */
   getImageRoot?: () => string | null;
@@ -182,6 +272,93 @@ export function liveBlocksPlugin(opts: BlockOptions = {}) {
             }
             i += 1;
             continue;
+          }
+
+          // v4.2.5 issue #57a — block math (`$$…$$`).
+          // Recognise either inline `$$E=mc^2$$` on a single line OR a
+          // multi-line block opened with a `$$` line and closed with a `$$`
+          // line. We only collapse if the cursor is outside.
+          const trimmedLine = line.text.trim();
+          if (trimmedLine.startsWith('$$')) {
+            // Single-line `$$ ... $$`?
+            if (trimmedLine.endsWith('$$') && trimmedLine.length > 4) {
+              const cursorInside = cursorLine === i || cursorLineEnd === i;
+              if (!cursorInside) {
+                builder.add(
+                  line.from,
+                  line.to,
+                  Decoration.replace({
+                    widget: new MathWidget(line.text),
+                    block: true,
+                  }),
+                );
+              }
+              i += 1;
+              continue;
+            }
+            // Multi-line block — scan forward for the closing `$$` line.
+            let endI = i + 1;
+            while (endI <= lastLine) {
+              const next = doc.line(endI);
+              if (next.text.trim().startsWith('$$')) break;
+              endI += 1;
+            }
+            if (endI <= lastLine) {
+              const cursorInside = cursorLine >= i && cursorLine <= endI;
+              const cursorInsideEnd = cursorLineEnd >= i && cursorLineEnd <= endI;
+              if (!cursorInside && !cursorInsideEnd) {
+                const blockFrom = doc.line(i).from;
+                const blockTo = doc.line(endI).to;
+                const source = doc.sliceString(blockFrom, blockTo);
+                builder.add(
+                  blockFrom,
+                  blockTo,
+                  Decoration.replace({
+                    widget: new MathWidget(source),
+                    block: true,
+                  }),
+                );
+              }
+              i = endI + 1;
+              continue;
+            }
+          }
+
+          // v4.2.5 issue #57a — ```mermaid fenced block. Pre-render to SVG
+          // via the mermaid cache; the widget waits for the SVG and asks
+          // CM to rebuild decorations once ready.
+          if (/^\s*```\s*mermaid\s*$/i.test(line.text)) {
+            let endI = i + 1;
+            while (endI <= lastLine) {
+              const next = doc.line(endI);
+              if (/^\s*```\s*$/.test(next.text)) break;
+              endI += 1;
+            }
+            if (endI <= lastLine) {
+              const cursorInside = cursorLine >= i && cursorLine <= endI;
+              const cursorInsideEnd = cursorLineEnd >= i && cursorLineEnd <= endI;
+              if (!cursorInside && !cursorInsideEnd) {
+                // Body is between the opening and closing fence.
+                let body = '';
+                for (let k = i + 1; k < endI; k++) {
+                  body += (k > i + 1 ? '\n' : '') + doc.line(k).text;
+                }
+                const blockFrom = doc.line(i).from;
+                const blockTo = doc.line(endI).to;
+                // Kick off async render outside the build loop.
+                ensureMermaidRendered(body);
+                builder.add(
+                  blockFrom,
+                  blockTo,
+                  Decoration.replace({
+                    widget: new MermaidWidget(body, view),
+                    block: true,
+                  }),
+                );
+              }
+              i = endI + 1;
+              continue;
+            }
           }
 
           // Table block — header + separator + ≥1 body row.
@@ -260,6 +437,20 @@ export const liveBlocksTheme = EditorView.theme({
   '.cm-live-block--table thead th': {
     background: 'var(--bg-soft)',
     fontWeight: '600',
+  },
+  // v4.2.5 issue #57a
+  '.cm-live-block--math': {
+    padding: '0.4em 0',
+    overflowX: 'auto',
+    textAlign: 'center',
+  },
+  '.cm-live-block--mermaid': {
+    padding: '0.6em 0',
+    textAlign: 'center',
+  },
+  '.cm-live-block--mermaid svg': {
+    maxWidth: '100%',
+    height: 'auto',
   },
 });
 
