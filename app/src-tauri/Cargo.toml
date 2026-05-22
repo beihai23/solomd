@@ -19,6 +19,27 @@ autobins = false
 name = "SoloMD"
 path = "src/main.rs"
 
+# v4.3.0 issue #73 — size-optimised release profile. Most of the Android
+# APK weight (22 MB out of 26 MB on arm64-v8a) is `libapp_lib.so` —
+# the Rust shared library with all native deps bundled. Default cargo
+# release config (opt-level=3, no LTO, codegen-units=16) optimises for
+# speed; this overrides for size. Compile time goes from ~2 min to
+# ~5-8 min but runtime cost is negligible for SoloMD because the hot
+# path is the WebView (JS / KaTeX / Mermaid), not Rust. Rust only
+# handles boundary ops (file I/O, git, RAG embedder, encryption);
+# none are tight inner loops sensitive to opt-level.
+#
+# We do NOT set `panic = "abort"` even though it would save another
+# 5-10% — Tauri's command error path expects unwinding to convert a
+# panicking handler into a JS-side error; abort would crash the whole
+# process instead.
+[profile.release]
+opt-level = "z"
+lto = "fat"
+codegen-units = 1
+strip = "symbols"
+incremental = false
+
 [lib]
 # The `_lib` suffix may seem redundant but it is necessary
 # to make the lib name unique and wouldn't conflict with the bin name.

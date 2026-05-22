@@ -119,6 +119,12 @@ pub async fn write_file(
 /// duplicated here because P4 (Federation) hasn't merged yet and we
 /// don't want to depend on the mcp-server crate from inside the Tauri
 /// app. After P4 lands, swap this for the canonical helper.
+///
+/// Android disables the recipe-runner / on-save trigger surface (AutoGit
+/// and the whole desktop-class workflow), so this helper is unused on
+/// that target. cfg-gating the definition silences the dead_code
+/// warning that started showing up after v4.0 Android port landed.
+#[cfg(not(target_os = "android"))]
 fn extract_tags_for_dispatch(body: &str) -> Vec<String> {
     let mut tags: Vec<String> = Vec::new();
     let mut in_fence = false;
