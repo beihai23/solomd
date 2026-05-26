@@ -19,6 +19,7 @@
  */
 
 import { RangeSetBuilder } from '@codemirror/state';
+import { isDragging, isDragEndTransaction } from './cm-drag-aware';
 import {
   Decoration,
   DecorationSet,
@@ -223,7 +224,15 @@ export function liveBlocksPlugin(opts: BlockOptions = {}) {
       }
 
       update(update: ViewUpdate) {
-        if (update.docChanged || update.selectionSet || update.viewportChanged) {
+        // See cm-drag-aware.ts — skip selection-driven rebuilds during a
+        // pointer drag (Windows WebView2 loses pointer capture if widgets
+        // remount mid-drag). One final rebuild fires on dragEndEffect.
+        const dragEnded = update.transactions.some(isDragEndTransaction);
+        if (update.docChanged || update.viewportChanged || dragEnded) {
+          this.decorations = this.build(update.view);
+          return;
+        }
+        if (update.selectionSet && !isDragging(update.state)) {
           this.decorations = this.build(update.view);
         }
       }

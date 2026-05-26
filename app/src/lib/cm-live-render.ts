@@ -46,6 +46,7 @@ import {
   type ViewUpdate,
 } from '@codemirror/view';
 import { tags as t } from '@lezer/highlight';
+import { isDragging, isDragEndTransaction } from './cm-drag-aware';
 
 // ---------------------------------------------------------------------------
 // Marker nodes that we hide off-line. Brackets/parens for links and
@@ -252,7 +253,14 @@ const liveRenderPlugin = ViewPlugin.fromClass(
     }
 
     update(u: ViewUpdate) {
-      if (u.docChanged || u.selectionSet || u.viewportChanged) {
+      // See cm-drag-aware.ts — freeze marker toggles during pointer drag
+      // so Windows WebView2 doesn't lose pointer capture mid-selection.
+      const dragEnded = u.transactions.some(isDragEndTransaction);
+      if (u.docChanged || u.viewportChanged || dragEnded) {
+        this.decorations = buildDecorations(u.view);
+        return;
+      }
+      if (u.selectionSet && !isDragging(u.state)) {
         this.decorations = buildDecorations(u.view);
       }
     }

@@ -27,6 +27,7 @@ import type { Tab } from '../types';
 import { livePreviewExtension, richHighlightOnly } from '../lib/cm-live-preview';
 import { liveEditExtension } from '../lib/cm-live-render';
 import { liveBlocksPlugin, liveBlocksTheme, extractImageRoot } from '../lib/cm-live-blocks';
+import { dragAwareExtension } from '../lib/cm-drag-aware';
 import { imagePasteExtension, insertImageFromPath as cmInsertImageFromPath } from '../lib/cm-image-paste';
 import { focusModeExtension, typewriterModeExtension } from '../lib/cm-focus-mode';
 import { wikilinkExtension, wikilinkComplete } from '../lib/cm-wikilink';
@@ -189,6 +190,7 @@ const fontSizeTheme = (px: number, family: string) =>
 
 function buildExtensions() {
   return [
+    dragAwareExtension(),
     history(),
     drawSelection(),
     indentOnInput(),

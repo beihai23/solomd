@@ -23,6 +23,7 @@ import {
   ViewUpdate,
 } from '@codemirror/view';
 import { tags as t } from '@lezer/highlight';
+import { isDragging, isDragEndTransaction } from './cm-drag-aware';
 
 // Marker node names (from @lezer/markdown) we want to hide off-line.
 // LinkMark (brackets) and CodeMark (backticks) intentionally kept visible —
@@ -45,7 +46,14 @@ const liveMarkdownPlugin = ViewPlugin.fromClass(
     }
 
     update(update: ViewUpdate) {
-      if (update.docChanged || update.selectionSet || update.viewportChanged) {
+      // Skip marker-toggle rebuilds during pointer drag-selection — see
+      // cm-drag-aware.ts for the Windows WebView2 pointer-capture reason.
+      const dragEnded = update.transactions.some(isDragEndTransaction);
+      if (update.docChanged || update.viewportChanged || dragEnded) {
+        this.decorations = this.build(update.view);
+        return;
+      }
+      if (update.selectionSet && !isDragging(update.state)) {
         this.decorations = this.build(update.view);
       }
     }
