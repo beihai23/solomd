@@ -99,6 +99,8 @@ export const zh: I18n = {
     reveal: '在文件管理器中显示',
     refresh: '刷新',
     openFolder: '打开文件夹…',
+    recentFolders: '最近打开的文件夹',
+    noRecentFolders: '还没有其它文件夹 —— 打开一个之后这里就能直接切换。',
   },
   statusbar: {
     ln: '行',

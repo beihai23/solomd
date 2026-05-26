@@ -97,6 +97,8 @@ export const en = {
     reveal: 'Reveal in Finder',
     refresh: 'Refresh',
     openFolder: 'Open folder…',
+    recentFolders: 'Recent folders',
+    noRecentFolders: 'No other folders yet — open one to switch later.',
   },
   statusbar: {
     ln: 'Ln',

@@ -347,14 +347,57 @@ async function revealNode(node: Node) {
   }
 }
 
+// v4.3.5 — workspace switcher dropdown state.
+const switcherOpen = ref(false);
+
+/** Recent folders rendered into the dropdown. Splits each path into the
+ *  basename (display) and the parent dir (subtitle), so two folders named
+ *  `notes/` from different drives are distinguishable. The current folder
+ *  always appears at the top, even if it isn't yet in `recentFolders` —
+ *  defends against the (rare) case where session restore set
+ *  `currentFolder` without going through `setFolder`. */
+const switcherList = computed(() => {
+  const seen = new Set<string>();
+  const out: Array<{ path: string; name: string; parent: string }> = [];
+  const push = (p: string) => {
+    if (!p || seen.has(p)) return;
+    seen.add(p);
+    const parts = p.split(/[\\/]/).filter(Boolean);
+    const name = parts.length > 0 ? parts[parts.length - 1] : p;
+    const parent = parts.length > 1 ? parts.slice(0, -1).join('/') : '';
+    out.push({ path: p, name, parent });
+  };
+  if (workspace.currentFolder) push(workspace.currentFolder);
+  for (const p of workspace.recentFolders) push(p);
+  return out;
+});
+
+function toggleSwitcher() {
+  switcherOpen.value = !switcherOpen.value;
+}
+function closeSwitcher() {
+  switcherOpen.value = false;
+}
+async function pickRecentFolder(path: string) {
+  closeSwitcher();
+  if (path === workspace.currentFolder) return;
+  workspace.setFolder(path);
+}
+async function openFolderAndClose() {
+  closeSwitcher();
+  await files.openFolder();
+}
+
 // Close the context menu on any outside click / escape.
 function onWindowClick() {
+  if (switcherOpen.value) closeSwitcher();
   if (!ctx.value) return;
   closeCtx();
 }
 function onWindowKey(e: KeyboardEvent) {
   if (e.key === 'Escape') {
     closeCtx();
+    closeSwitcher();
     if (editing.value) editing.value = null;
   }
 }
@@ -397,10 +440,40 @@ onBeforeUnmount(() => {
       <button class="ftree__open-btn" @click="files.openFolder">Open Folder…</button>
     </div>
     <div v-else class="ftree__body">
-      <div
-        class="ftree__root"
-        @contextmenu.prevent="openCtx($event, root)"
-      >{{ root.name }}</div>
+      <!-- v4.3.5: root display doubles as the workspace switcher. Click
+           opens a dropdown listing recent folders + "Open folder…". -->
+      <div class="ftree__root-wrap">
+        <button
+          class="ftree__root ftree__root--btn"
+          :title="root.path"
+          @click.stop="toggleSwitcher"
+          @contextmenu.prevent="openCtx($event, root)"
+        >
+          <span class="ftree__root-name">{{ root.name }}</span>
+          <span class="ftree__root-caret" aria-hidden="true">{{ switcherOpen ? '▾' : '▸' }}</span>
+        </button>
+        <div v-if="switcherOpen" class="ftree__switcher" @click.stop>
+          <div class="ftree__switcher-label">{{ t('explorer.recentFolders') }}</div>
+          <button
+            v-for="folder in switcherList"
+            :key="folder.path"
+            class="ftree__switcher-item"
+            :class="{ 'ftree__switcher-item--active': folder.path === root.path }"
+            :title="folder.path"
+            @click="pickRecentFolder(folder.path)"
+          >
+            <span class="ftree__switcher-name">{{ folder.name }}</span>
+            <span class="ftree__switcher-path">{{ folder.parent }}</span>
+          </button>
+          <div v-if="switcherList.length === 0" class="ftree__switcher-empty">
+            {{ t('explorer.noRecentFolders') }}
+          </div>
+          <div class="ftree__switcher-sep"></div>
+          <button class="ftree__switcher-item ftree__switcher-item--cta" @click="openFolderAndClose">
+            📁 {{ t('explorer.openFolder') }}
+          </button>
+        </div>
+      </div>
 
       <!-- Inline new/rename input — appears at the top of the tree. -->
       <div v-if="editing" class="ftree__edit">
@@ -615,6 +688,9 @@ export const FileTreeNode = defineComponent({
   overflow-y: auto;
   padding-bottom: 12px;
 }
+.ftree__root-wrap {
+  position: relative;
+}
 .ftree__root {
   padding: 8px 14px;
   font-size: 11px;
@@ -622,6 +698,111 @@ export const FileTreeNode = defineComponent({
   color: var(--text);
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+.ftree__root--btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  width: 100%;
+  background: transparent;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+}
+.ftree__root--btn:hover {
+  background: var(--bg-hover);
+}
+.ftree__root-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1 1 auto;
+}
+.ftree__root-caret {
+  font-size: 9px;
+  color: var(--text-faint);
+  flex: 0 0 auto;
+}
+.ftree__switcher {
+  position: absolute;
+  top: 100%;
+  left: 6px;
+  right: 6px;
+  z-index: 30;
+  margin-top: 2px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
+  padding: 4px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.ftree__switcher-label {
+  padding: 6px 8px 4px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.ftree__switcher-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  width: 100%;
+  padding: 6px 8px;
+  background: transparent;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  color: var(--text);
+  border-radius: 4px;
+}
+.ftree__switcher-item:hover {
+  background: var(--bg-hover);
+}
+.ftree__switcher-item--active {
+  background: var(--bg-hover);
+  font-weight: 600;
+}
+.ftree__switcher-item--cta {
+  color: var(--accent, #ff9f40);
+  font-weight: 600;
+}
+.ftree__switcher-name {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
+.ftree__switcher-path {
+  font-size: 11px;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+  direction: rtl;
+  text-align: left;
+}
+.ftree__switcher-empty {
+  padding: 6px 8px;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+.ftree__switcher-sep {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 0;
 }
 .ftree__list {
   list-style: none;
