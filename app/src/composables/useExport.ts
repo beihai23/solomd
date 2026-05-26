@@ -502,23 +502,38 @@ export function useExport() {
     }
   }
 
-  /** Export as PNG image (renders preview, captures with html2canvas). */
+  /**
+   * Export as PNG image (renders preview, captures with html2canvas).
+   * Honors the active editor selection — matches `copyAsImage` so "select
+   * region, save as image" produces an image of *just that region* instead
+   * of the whole document.
+   */
   async function exportImage() {
     track('file_exported', { format: 'image' });
     const ctx = activeOr();
     if (!ctx) return;
-    const filename = `${ctx.baseName}.png`;
+    const sel = getEditorSelectionMd();
+    const source = sel ?? ctx.content;
+    const isSelection = sel !== null;
+    const filename = isSelection
+      ? `${ctx.baseName}-selection.png`
+      : `${ctx.baseName}.png`;
     const path = await pickWritePath(filename, [{ name: 'PNG Image', extensions: ['png'] }]);
     if (!path) return;
-    const tid = toasts.info('Generating image…', 0);
+    const tid = toasts.info(isSelection ? 'Generating selection image…' : 'Generating image…', 0);
     try {
-      const blob = await markdownToImageBlob(ctx.content, ctx.baseName, ctx.filePath, {
+      const blob = await markdownToImageBlob(source, ctx.baseName, ctx.filePath, {
         branding: settings.imageExportBranding,
       });
       const buffer = new Uint8Array(await blob.arrayBuffer());
       await invoke('write_binary_file', { path, data: Array.from(buffer) });
       toasts.dismiss(tid);
-      toasts.success(isIOS() ? iosSavedToast(filename) : 'Exported to PNG image');
+      const msg = isIOS()
+        ? iosSavedToast(filename)
+        : isSelection
+          ? 'Exported selection to PNG image'
+          : 'Exported to PNG image';
+      toasts.success(msg);
     } catch (e) {
       console.error(e);
       toasts.dismiss(tid);
