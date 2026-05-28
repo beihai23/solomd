@@ -216,6 +216,8 @@ export const pt: I18n = {
     autoReloadExternalChanges: 'Recarregar automaticamente arquivos alterados por outros apps',
 
     autoReloadExternalChangesHint: 'Quando ativado (padrão), o editor recarrega no lugar se outro programa (outro editor, git checkout, cliente de sincronização) escrever o arquivo aberto. Abas não salvas sempre mostram um diálogo — suas edições nunca são perdidas em silêncio.',
+    autoSaveOnBlur: 'Auto-save when the window loses focus',
+    autoSaveOnBlurHint: 'When on, switching to another app silently saves every unsaved tab that already has a file. New untitled notes are skipped (they would pop a Save-As dialog). Off by default — Cmd/Ctrl+S still saves manually.',
     openFileInNewWindow: 'Abrir arquivos em nova janela',
     openFileInNewWindowHint: 'Quando ativo, "Abrir arquivo" lança uma nova janela em vez de adicionar uma aba à atual.',
     revealInFileTreeOnOpen: 'Revelar arquivo na árvore ao abrir',

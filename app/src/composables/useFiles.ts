@@ -165,7 +165,7 @@ export function useFiles() {
     return await join(dir, fname);
   }
 
-  async function saveTab(tab: Tab): Promise<boolean> {
+  async function saveTab(tab: Tab, opts: { silent?: boolean } = {}): Promise<boolean> {
     let path = tab.filePath;
     if (isIOS()) {
       // On iOS, never trust the existing path — it may have come from a
@@ -195,11 +195,13 @@ export function useFiles() {
       window.dispatchEvent(
         new CustomEvent('solomd:saved', { detail: { filePath: path } }),
       );
-      if (isIOS()) {
-        const fname = path.split(/[\\/]/).pop() ?? path;
-        toasts.success(`Saved to On My iPhone › SoloMD › ${fname}`);
-      } else {
-        toasts.success(`Saved ${tab.fileName}`);
+      if (!opts.silent) {
+        if (isIOS()) {
+          const fname = path.split(/[\\/]/).pop() ?? path;
+          toasts.success(`Saved to On My iPhone › SoloMD › ${fname}`);
+        } else {
+          toasts.success(`Saved ${tab.fileName}`);
+        }
       }
       return true;
     } catch (e) {
@@ -256,6 +258,20 @@ export function useFiles() {
     if (tabs.activeTab) await saveTabAs(tabs.activeTab);
   }
 
+  // #85 — auto-save on window blur. Persist every dirty tab that already has
+  // a file path, silently (no per-file toast). Untitled tabs are skipped on
+  // purpose: saving them would pop a Save-As dialog, which is jarring when
+  // triggered by simply switching to another app. Errors still toast so a
+  // failed background save isn't swallowed.
+  async function autoSaveDirtyTabs(): Promise<void> {
+    if (!settings.autoSaveOnBlur) return;
+    for (const tab of tabs.tabs) {
+      if (tab.filePath && tabs.isDirty(tab.id)) {
+        await saveTab(tab, { silent: true });
+      }
+    }
+  }
+
   type UnsavedDialog = (mode: 'tab' | 'window', fileName: string, count: number) => Promise<'save' | 'discard' | 'cancel'>;
   // Pass `null` default so Vue doesn't emit "injection not found" warnings
   // when useFiles() is called before App.vue's provide() runs (e.g. inside
@@ -294,6 +310,7 @@ export function useFiles() {
     openFolder,
     saveActive,
     saveActiveAs,
+    autoSaveDirtyTabs,
     closeTabSafe,
   };
 }

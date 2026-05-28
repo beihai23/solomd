@@ -614,8 +614,15 @@ try {
   localStorage.removeItem('solomd.window.v1');
 } catch {}
 
+// #85 — auto-save dirty tabs when the app window loses focus. Gated on the
+// `autoSaveOnBlur` setting (default off) inside autoSaveDirtyTabs().
+function onWindowBlur() {
+  void files.autoSaveDirtyTabs();
+}
+
 onMounted(async () => {
   window.addEventListener('keydown', onEsc);
+  window.addEventListener('blur', onWindowBlur);
   window.addEventListener('solomd:open-help', onOpenHelpEvent as EventListener);
   window.addEventListener('solomd:open-global-search', onOpenSearchEvent as EventListener);
   window.addEventListener('solomd:open-cjk-proofread', onOpenCjkProofreadEvent as EventListener);
@@ -822,6 +829,7 @@ window.addEventListener('solomd:open-settings', onOpenSettingsEvent as EventList
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onEsc);
+  window.removeEventListener('blur', onWindowBlur);
   window.removeEventListener('solomd:open-help', onOpenHelpEvent as EventListener);
   window.removeEventListener('solomd:open-global-search', onOpenSearchEvent as EventListener);
   window.removeEventListener('solomd:open-cjk-proofread', onOpenCjkProofreadEvent as EventListener);

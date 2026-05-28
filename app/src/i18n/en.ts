@@ -212,6 +212,8 @@ export const en = {
     autoReloadExternalChanges: 'Auto-refresh files changed by other apps',
 
     autoReloadExternalChangesHint: 'When on (default), the editor reloads in place if another program writes the file you have open (other editors, git checkout, sync clients). Unsaved tabs always prompt — your edits are never silently lost.',
+    autoSaveOnBlur: 'Auto-save when the window loses focus',
+    autoSaveOnBlurHint: 'When on, switching to another app silently saves every unsaved tab that already has a file. New untitled notes are skipped (they would pop a Save-As dialog). Off by default — Cmd/Ctrl+S still saves manually.',
     openFileInNewWindow: 'Open files in a new window',
     openFileInNewWindowHint: 'When on, "Open File" spawns a new window instead of adding a tab to the current one.',
     revealInFileTreeOnOpen: 'Reveal file in file tree on open',

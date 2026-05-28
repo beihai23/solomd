@@ -214,6 +214,8 @@ export const uk: I18n = {
     autoReloadExternalChanges: 'Автоматично оновлювати файли, змінені іншими додатками',
 
     autoReloadExternalChangesHint: 'Коли увімкнено (за замовчуванням), редактор перезавантажує файл на місці, якщо інша програма (інший редактор, git checkout, клієнт синхронізації) записує відкритий файл. Незбережені вкладки завжди показують діалог — ваші зміни ніколи не зникнуть тихо.',
+    autoSaveOnBlur: 'Auto-save when the window loses focus',
+    autoSaveOnBlurHint: 'When on, switching to another app silently saves every unsaved tab that already has a file. New untitled notes are skipped (they would pop a Save-As dialog). Off by default — Cmd/Ctrl+S still saves manually.',
     openFileInNewWindow: 'Відкривати файли в новому вікні',
     openFileInNewWindowHint: 'Якщо ввімкнено, «Відкрити файл» створює нове вікно замість додавання вкладки до поточного.',
     revealInFileTreeOnOpen: 'Показувати файл у дереві при відкритті',

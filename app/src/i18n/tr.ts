@@ -214,6 +214,8 @@ export const tr: I18n = {
     autoReloadExternalChanges: 'Diğer uygulamalar tarafından değiştirilen dosyaları otomatik yenile',
 
     autoReloadExternalChangesHint: 'Etkinleştirildiğinde (varsayılan), başka bir program (diğer editör, git checkout, eşitleme istemcisi) açık dosyayı yazarsa editör yerinde yeniden yükler. Kaydedilmemiş sekmeler her zaman iletişim kutusu gösterir — düzenlemeleriniz asla sessizce kaybolmaz.',
+    autoSaveOnBlur: 'Auto-save when the window loses focus',
+    autoSaveOnBlurHint: 'When on, switching to another app silently saves every unsaved tab that already has a file. New untitled notes are skipped (they would pop a Save-As dialog). Off by default — Cmd/Ctrl+S still saves manually.',
     openFileInNewWindow: 'Dosyaları yeni pencerede aç',
     openFileInNewWindowHint: 'Açıkken "Dosya Aç" mevcut pencereye sekme eklemek yerine yeni pencere açar.',
     revealInFileTreeOnOpen: 'Açılan dosyayı dosya ağacında göster',

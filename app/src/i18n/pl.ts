@@ -214,6 +214,8 @@ export const pl: I18n = {
     autoReloadExternalChanges: 'Automatyczne odświeżanie plików zmienionych przez inne aplikacje',
 
     autoReloadExternalChangesHint: 'Gdy włączone (domyślnie), edytor przeładowuje plik w miejscu, jeśli inny program (inny edytor, git checkout, klient synchronizacji) go zapisze. Niezapisane karty zawsze pokazują okno dialogowe — Twoje zmiany nigdy nie znikają po cichu.',
+    autoSaveOnBlur: 'Auto-save when the window loses focus',
+    autoSaveOnBlurHint: 'When on, switching to another app silently saves every unsaved tab that already has a file. New untitled notes are skipped (they would pop a Save-As dialog). Off by default — Cmd/Ctrl+S still saves manually.',
     openFileInNewWindow: 'Otwieraj pliki w nowym oknie',
     openFileInNewWindowHint: 'Gdy włączone, „Otwórz plik” otwiera nowe okno zamiast dodawać kartę do bieżącego.',
     revealInFileTreeOnOpen: 'Pokaż plik w drzewie plików przy otwieraniu',

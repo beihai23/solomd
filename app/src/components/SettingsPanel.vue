@@ -732,7 +732,7 @@ function onSelectPdfFont(v: string) {
           <p class="setting-hint">{{ t('settings.imageExportBrandingHint') }}</p>
         </section>
 
-        <section data-cat="editor">
+        <section data-cat="writing">
           <label>{{ t('settings.attachmentMode') }}</label>
           <select
             :value="settings.attachmentMode"
@@ -895,6 +895,16 @@ function onSelectPdfFont(v: string) {
           </label>
           <div style="font-size: 11px; color: var(--text-faint); margin-top: 4px; line-height: 1.5;">
             {{ t('settings.autoReloadExternalChangesHint') }}
+          </div>
+        </section>
+
+        <section data-cat="advanced">
+          <label>
+            <input type="checkbox" :checked="settings.autoSaveOnBlur" @change="settings.toggleAutoSaveOnBlur()" />
+            {{ t('settings.autoSaveOnBlur') }}
+          </label>
+          <div style="font-size: 11px; color: var(--text-faint); margin-top: 4px; line-height: 1.5;">
+            {{ t('settings.autoSaveOnBlurHint') }}
           </div>
         </section>
 

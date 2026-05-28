@@ -70,6 +70,11 @@ interface Settings {
   // show the reload/overwrite/cancel dialog regardless of this setting —
   // we never silently throw away the user's in-progress edits.
   autoReloadExternalChanges: boolean;
+  // When the app window loses focus (user switches to another app/window),
+  // silently save every dirty tab that's already backed by a file. Untitled
+  // tabs are skipped — they'd otherwise pop a Save-As dialog on blur. Default
+  // off so the explicit-⌘S mental model stays the default.
+  autoSaveOnBlur: boolean;
   // Opening a file from the toolbar/menu spawns a new Tauri window instead
   // of a new tab in the current window. Default off.
   openFileInNewWindow: boolean;
@@ -311,6 +316,7 @@ function defaults(): Settings {
     telemetryNoticeAck: false,
     restoreSession: true,
     autoReloadExternalChanges: true,
+    autoSaveOnBlur: false,
     openFileInNewWindow: false,
     revealInFileTreeOnOpen: false,
     welcomeShown: false,
@@ -615,6 +621,10 @@ export const useSettingsStore = defineStore('settings', {
     },
     toggleAutoReloadExternalChanges() {
       this.autoReloadExternalChanges = !this.autoReloadExternalChanges;
+      this.persist();
+    },
+    toggleAutoSaveOnBlur() {
+      this.autoSaveOnBlur = !this.autoSaveOnBlur;
       this.persist();
     },
     toggleOpenFileInNewWindow() {

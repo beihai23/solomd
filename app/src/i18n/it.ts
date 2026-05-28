@@ -214,6 +214,8 @@ export const it: I18n = {
     autoReloadExternalChanges: 'Ricarica automatica dei file modificati da altre app',
 
     autoReloadExternalChangesHint: 'Quando attivo (predefinito), l\'editor ricarica sul posto se un altro programma (altro editor, git checkout, client di sincronizzazione) scrive il file aperto. Le schede non salvate mostrano sempre una finestra di dialogo — le tue modifiche non vengono mai perse silenziosamente.',
+    autoSaveOnBlur: 'Auto-save when the window loses focus',
+    autoSaveOnBlurHint: 'When on, switching to another app silently saves every unsaved tab that already has a file. New untitled notes are skipped (they would pop a Save-As dialog). Off by default — Cmd/Ctrl+S still saves manually.',
     openFileInNewWindow: 'Apri file in nuova finestra',
     openFileInNewWindowHint: 'Quando attivo, "Apri file" apre una nuova finestra invece di aggiungere una scheda a quella corrente.',
     revealInFileTreeOnOpen: 'Rivela file nell\'albero all\'apertura',

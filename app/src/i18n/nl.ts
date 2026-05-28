@@ -214,6 +214,8 @@ export const nl: I18n = {
     autoReloadExternalChanges: 'Door andere apps gewijzigde bestanden automatisch herladen',
 
     autoReloadExternalChangesHint: 'Wanneer ingeschakeld (standaard), laadt de editor het bestand opnieuw als een ander programma (andere editor, git checkout, syncclient) het open bestand wijzigt. Tabbladen met niet-opgeslagen wijzigingen tonen altijd een dialoogvenster — uw bewerkingen gaan nooit stilletjes verloren.',
+    autoSaveOnBlur: 'Auto-save when the window loses focus',
+    autoSaveOnBlurHint: 'When on, switching to another app silently saves every unsaved tab that already has a file. New untitled notes are skipped (they would pop a Save-As dialog). Off by default — Cmd/Ctrl+S still saves manually.',
     openFileInNewWindow: 'Bestanden in een nieuw venster openen',
     openFileInNewWindowHint: 'Indien aan opent "Bestand openen" een nieuw venster in plaats van een tabblad toe te voegen aan het huidige venster.',
     revealInFileTreeOnOpen: 'Bestand tonen in bestandsboom bij openen',

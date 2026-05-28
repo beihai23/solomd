@@ -214,6 +214,8 @@ export const de: I18n = {
     autoReloadExternalChanges: 'Von anderen Apps geänderte Dateien automatisch neu laden',
 
     autoReloadExternalChangesHint: 'Wenn aktiviert (Standard), lädt der Editor die Datei direkt neu, falls ein anderes Programm (Editor, git checkout, Sync-Client) sie ändert. Tabs mit ungespeicherten Änderungen zeigen immer einen Dialog — Ihre Bearbeitungen gehen nie still verloren.',
+    autoSaveOnBlur: 'Auto-save when the window loses focus',
+    autoSaveOnBlurHint: 'When on, switching to another app silently saves every unsaved tab that already has a file. New untitled notes are skipped (they would pop a Save-As dialog). Off by default — Cmd/Ctrl+S still saves manually.',
     openFileInNewWindow: 'Dateien in neuem Fenster öffnen',
     openFileInNewWindowHint: 'Wenn aktiviert, öffnet "Datei öffnen" ein neues Fenster, statt einen Tab im aktuellen hinzuzufügen.',
     revealInFileTreeOnOpen: 'Datei beim Öffnen im Dateibaum anzeigen',

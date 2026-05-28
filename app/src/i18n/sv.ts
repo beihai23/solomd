@@ -214,6 +214,8 @@ export const sv: I18n = {
     autoReloadExternalChanges: 'Uppdatera automatiskt filer som ändrats av andra appar',
 
     autoReloadExternalChangesHint: 'När aktiverat (standard) laddar redigeraren om filen direkt om ett annat program (annan editor, git checkout, synkklient) skriver till den öppna filen. Osparade flikar visar alltid en dialog — dina ändringar försvinner aldrig i tysthet.',
+    autoSaveOnBlur: 'Auto-save when the window loses focus',
+    autoSaveOnBlurHint: 'When on, switching to another app silently saves every unsaved tab that already has a file. New untitled notes are skipped (they would pop a Save-As dialog). Off by default — Cmd/Ctrl+S still saves manually.',
     openFileInNewWindow: 'Öppna filer i ett nytt fönster',
     openFileInNewWindowHint: 'När påslaget öppnar "Öppna fil" ett nytt fönster istället för att lägga till en flik i det aktuella.',
     revealInFileTreeOnOpen: 'Visa fil i filträdet vid öppning',
