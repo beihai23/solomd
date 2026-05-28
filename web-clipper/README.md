@@ -5,7 +5,7 @@ Send the page you're reading — or just your text selection — to your local S
 Ships as a single codebase that builds two store-loadable artefacts:
 
 - `dist/chrome.zip` — Chrome / Edge / Brave (Manifest V3)
-- `dist/firefox.zip` — Firefox 115+ (Manifest V2)
+- `dist/firefox.zip` — Firefox 115+ (Manifest V2). **Release Firefox refuses unsigned add-ons**, so end users install the Mozilla-signed `.xpi` (see [Signing for Firefox](#signing-for-firefox-release)), not this raw zip.
 
 ## Three actions
 
@@ -47,6 +47,7 @@ pnpm install
 pnpm build           # produces dist/chrome.zip + dist/firefox.zip + dist/source.zip
 pnpm build:chrome    # only Chrome zip (faster for iterative dev)
 pnpm build:firefox   # only Firefox zip
+pnpm sign:firefox    # build + Mozilla-sign an installable .xpi (needs AMO creds, see below)
 pnpm typecheck       # tsc --noEmit
 ```
 
@@ -74,7 +75,27 @@ dist/
 1. Run `pnpm build:firefox`.
 2. `about:debugging#/runtime/this-firefox` → **Load Temporary Add-on…** → pick `web-clipper/dist/firefox/manifest.json`.
 
-(Reload after every rebuild.)
+(Reload after every rebuild. This is **dev-only** — the temporary add-on is wiped on restart. For a permanent install, end users need the signed `.xpi` below.)
+
+## Signing for Firefox (release)
+
+Release-channel Firefox only installs add-ons signed by Mozilla — handing a user the raw `firefox.zip` produces *"this add-on could not be installed because it appears to be corrupt / has not been verified"*. To produce an installable `.xpi`:
+
+1. Get AMO API credentials (once): https://addons.mozilla.org/developers/addon/api/key/ → **Generate new credentials**. Note the **JWT issuer** (`user:NNN:NN`) and **JWT secret** (shown once).
+2. Sign (channel `unlisted` = self-distribution; signs in ~1 min, no human review):
+   ```bash
+   WEB_EXT_API_KEY="user:NNN:NN" \
+   WEB_EXT_API_SECRET="<secret>" \
+   pnpm sign:firefox
+   ```
+   The signed file lands in `web-ext-artifacts/<hash>-<version>.xpi`.
+3. Distribute the `.xpi` on the GitHub Release (alongside the dmg/apk). Users install via drag-into-Firefox, or `about:addons` → gear → **Install Add-on From File**.
+
+Notes:
+- **Each signed upload needs a unique `version`** — bump `manifest.firefox.json` before re-signing.
+- The first sign auto-creates a hidden AMO entry under the manifest's `gecko.id` (`web-clipper@solomd.app`); no manual setup.
+- MV2 is fine: Firefox supports it long-term and AMO accepts it.
+- For a public store listing instead, swap `--channel=unlisted` → `--channel=listed` in the `sign:firefox` script and submit `dist/source.zip` (built by `pnpm build`) for the reviewer.
 
 ## End-to-end smoke test
 

@@ -3,7 +3,6 @@
   "name": "SoloMD Web Clipper",
   "version": "2.4.0",
   "description": "Save the current page, your selection, or just the link to your local SoloMD inbox. Local-only — never phones home.",
-  "default_locale": "en",
   "browser_specific_settings": {
     "gecko": {
       "id": "web-clipper@solomd.app",

@@ -10,6 +10,7 @@
     "build": "node scripts/build.mjs",
     "build:chrome": "TARGET=chrome node scripts/build.mjs",
     "build:firefox": "TARGET=firefox node scripts/build.mjs",
+    "sign:firefox": "pnpm build:firefox && npx --yes web-ext sign --channel=unlisted --source-dir=dist/firefox --artifacts-dir=web-ext-artifacts",
     "package": "node scripts/build.mjs && node scripts/package.mjs",
     "smoke": "bash scripts/smoke-test.sh",
     "test:markdown": "node scripts/test-markdown.mjs",
