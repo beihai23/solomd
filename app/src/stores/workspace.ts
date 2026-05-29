@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia';
+import { useTabsStore } from './tabs';
 
 const LS_KEY = 'solomd.workspace.v1';
 const MAX_RECENT = 12;
@@ -50,6 +51,7 @@ export const useWorkspaceStore = defineStore('workspace', {
      *  recent-folders MRU through it keeps both lists in sync without extra
      *  call sites. `null` (closed workspace) doesn't get pushed. */
     setFolder(folder: string | null) {
+      const prev = this.currentFolder;
       this.currentFolder = folder;
       if (folder) {
         this.recentFolders = [
@@ -57,7 +59,17 @@ export const useWorkspaceStore = defineStore('workspace', {
           ...this.recentFolders.filter((p) => p !== folder),
         ].slice(0, MAX_RECENT_FOLDERS);
       }
+      // Persist FIRST so the tabs store reads the new currentFolder when it
+      // writes the destination bucket below.
       this.persist();
+      // Per-workspace tab scoping: when the active folder actually changes,
+      // swap the visible tabs to that workspace's remembered set (carrying
+      // unsaved/untitled tabs across). No-op when scoping is disabled.
+      if (folder !== prev) {
+        try {
+          useTabsStore().onWorkspaceSwitched(prev, folder);
+        } catch {}
+      }
     },
     removeRecentFolder(path: string) {
       this.recentFolders = this.recentFolders.filter((p) => p !== path);

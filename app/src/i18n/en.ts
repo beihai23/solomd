@@ -208,6 +208,8 @@ export const en = {
     language: 'Language / 语言',
     restoreSession: 'Restore previous tabs and panes on startup',
     restoreSessionHint: 'Turn off to start with a blank window every time.',
+    perWorkspaceTabs: 'Scope tabs to the current folder',
+    perWorkspaceTabsHint: 'On (default): each folder remembers its own open tabs, so opening one folder never resurfaces another folder\'s accumulated tabs. Unsaved and untitled tabs always follow you across folders. Off: all tabs share one global list.',
 
     autoReloadExternalChanges: 'Auto-refresh files changed by other apps',
 

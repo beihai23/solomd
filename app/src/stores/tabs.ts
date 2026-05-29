@@ -5,7 +5,15 @@ import { useTilesStore } from './tiles';
 import { useWritingSessionStore } from './writingSession';
 import { stampGoalSetAtIfMissing } from '../composables/useWritingGoals';
 
+// Legacy / global key (used when per-workspace tabs is OFF, and as the
+// migration source on first upgrade).
 const LS_KEY = 'solomd.tabs.v1';
+// Per-workspace bucket prefix: `solomd.tabs.v1::<folder>`. Each workspace
+// remembers its own open tabs, so opening folder A never dumps folder B's
+// accumulated tabs, and two windows on different workspaces write distinct
+// keys instead of clobbering one global blob.
+const LS_BUCKET_PREFIX = 'solomd.tabs.v1::';
+const NO_WORKSPACE = '__none__';
 
 let nextId = 1;
 const newId = () => `tab-${Date.now()}-${nextId++}`;
@@ -34,17 +42,89 @@ function restoreSessionEnabled(): boolean {
   return true;
 }
 
-function loadPersisted(): PersistedState {
-  if (!restoreSessionEnabled()) return { tabs: [], activeId: '' };
+/** Per-workspace tab scoping. Default ON. Inlined from localStorage so it
+ *  works before the settings store hydrates (loadPersisted runs at store
+ *  creation). */
+function perWorkspaceTabsEnabled(): boolean {
   try {
-    const raw = localStorage.getItem(LS_KEY);
+    const raw = localStorage.getItem('solomd.settings.v1');
     if (raw) {
-      const data = JSON.parse(raw) as PersistedState;
-      if (Array.isArray(data.tabs)) {
-        return { tabs: data.tabs, activeId: data.activeId || '' };
-      }
+      const s = JSON.parse(raw);
+      if (s && typeof s.perWorkspaceTabs === 'boolean') return s.perWorkspaceTabs;
     }
   } catch {}
+  return true;
+}
+
+/** Current workspace folder, read straight from localStorage to avoid a
+ *  static import cycle with the workspace store and to work at init time. */
+function currentWorkspaceFolder(): string | null {
+  try {
+    const raw = localStorage.getItem('solomd.workspace.v1');
+    if (raw) {
+      const w = JSON.parse(raw);
+      if (w && typeof w.currentFolder === 'string') return w.currentFolder;
+    }
+  } catch {}
+  return null;
+}
+
+/** localStorage key for a workspace's tab bucket. Falls back to the single
+ *  global key when per-workspace scoping is off. */
+function bucketKey(folder: string | null): string {
+  if (!perWorkspaceTabsEnabled()) return LS_KEY;
+  return LS_BUCKET_PREFIX + (folder || NO_WORKSPACE);
+}
+
+function isDirty(t: Tab): boolean {
+  return t.content !== t.savedContent;
+}
+
+/** True when `filePath` lives inside `folder`. Separator- and (on Windows)
+ *  case-insensitive so OneDrive / drive-letter paths compare correctly. */
+function inFolder(filePath: string | undefined, folder: string | null): boolean {
+  if (!filePath || !folder) return false;
+  const norm = (s: string) => s.replace(/\\/g, '/').replace(/\/+$/, '');
+  const root = norm(folder);
+  const fp = norm(filePath);
+  const ci = /^[a-zA-Z]:\//.test(root);
+  const r = ci ? root.toLowerCase() : root;
+  const f = ci ? fp.toLowerCase() : fp;
+  return f === r || f.startsWith(r + '/');
+}
+
+function readBucket(key: string): PersistedState | null {
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw) {
+      const data = JSON.parse(raw) as PersistedState;
+      if (Array.isArray(data.tabs)) return { tabs: data.tabs, activeId: data.activeId || '' };
+    }
+  } catch {}
+  return null;
+}
+
+function loadPersisted(): PersistedState {
+  if (!restoreSessionEnabled()) return { tabs: [], activeId: '' };
+  // Per-workspace OFF → behave exactly like before (single global blob).
+  if (!perWorkspaceTabsEnabled()) {
+    return readBucket(LS_KEY) ?? { tabs: [], activeId: '' };
+  }
+  const folder = currentWorkspaceFolder();
+  const bucket = readBucket(bucketKey(folder));
+  if (bucket) return bucket;
+  // First launch after upgrade: no bucket yet for this workspace. Seed it
+  // by scoping the legacy global tab list to the current folder (plus any
+  // untitled or unsaved tabs), so an upgrading user with tabs accumulated
+  // across many folders doesn't get all of them dumped into this window.
+  const legacy = readBucket(LS_KEY);
+  if (legacy) {
+    const scoped = legacy.tabs.filter(
+      (t) => !t.filePath || inFolder(t.filePath, folder) || isDirty(t),
+    );
+    const activeKept = scoped.some((t) => t.id === legacy.activeId);
+    return { tabs: scoped, activeId: activeKept ? legacy.activeId : scoped[0]?.id ?? '' };
+  }
   return { tabs: [], activeId: '' };
 }
 
@@ -185,10 +265,74 @@ export const useTabsStore = defineStore('tabs', {
     persist() {
       try {
         localStorage.setItem(
-          LS_KEY,
+          bucketKey(currentWorkspaceFolder()),
           JSON.stringify({ tabs: this.tabs, activeId: this.activeId }),
         );
       } catch {}
+    },
+    /** Write the current view into a specific workspace's bucket (used when
+     *  leaving a workspace, so it's remembered when the user returns). */
+    persistToFolder(folder: string | null) {
+      if (!perWorkspaceTabsEnabled()) return this.persist();
+      try {
+        localStorage.setItem(
+          bucketKey(folder),
+          JSON.stringify({ tabs: this.tabs, activeId: this.activeId }),
+        );
+      } catch {}
+    },
+    /** Called by the workspace store when the active folder changes. Saves
+     *  the current view into the previous workspace's bucket, then swaps in
+     *  the new workspace's remembered tabs. Unsaved (dirty) and untitled
+     *  tabs are always carried across so no in-progress work is ever lost. */
+    onWorkspaceSwitched(prevFolder: string | null, newFolder: string | null) {
+      const settings = useSettingsStore();
+      if (!settings.perWorkspaceTabs) return;
+      // Remember what was open in the workspace we're leaving.
+      this.persistToFolder(prevFolder);
+      // Tabs that must follow the user regardless of workspace: anything
+      // with unsaved work. `isDirty` covers both dirty saved files AND
+      // untitled buffers that have content (their savedContent is empty, so
+      // any typed text makes them dirty). A blank untitled tab is disposable
+      // — not carried — so entering empty workspaces doesn't accumulate
+      // empty scratch tabs.
+      const carried = this.tabs.filter((t) => isDirty(t));
+      // The new workspace's remembered tabs (only when session restore is on;
+      // otherwise we just scope down to the carried set — a blank-ish slate).
+      const restored = settings.restoreSession
+        ? readBucket(bucketKey(newFolder)) ?? { tabs: [], activeId: '' }
+        : { tabs: [], activeId: '' };
+      const seen = new Set<string>();
+      const merged: Tab[] = [];
+      const push = (t: Tab) => {
+        if (t.filePath) {
+          if (seen.has(t.filePath)) return;
+          seen.add(t.filePath);
+        }
+        merged.push(t);
+      };
+      // Carried tabs win (they hold the live, possibly-unsaved content).
+      carried.forEach(push);
+      restored.tabs.forEach(push);
+      const removed = this.tabs.filter((t) => !merged.some((m) => m.id === t.id));
+      this.tabs = merged;
+      // Pick an active tab: prefer the restored bucket's active, else keep
+      // the current one if it survived, else the first tab.
+      const ids = new Set(merged.map((t) => t.id));
+      if (restored.activeId && ids.has(restored.activeId)) {
+        this.activeId = restored.activeId;
+      } else if (!ids.has(this.activeId)) {
+        this.activeId = merged[0]?.id ?? '';
+      }
+      // Drop split-pane references to tabs that are no longer open, then
+      // make sure at least one tab exists.
+      try {
+        const tiles = useTilesStore();
+        for (const t of removed) tiles.removePaneReferences(t.id);
+        tiles.validate(this.tabs);
+      } catch {}
+      if (this.tabs.length === 0) this.newTab();
+      this.persist();
     },
   },
 });

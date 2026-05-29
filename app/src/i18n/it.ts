@@ -210,6 +210,8 @@ export const it: I18n = {
     language: 'Lingua / Language',
     restoreSession: 'Ripristina schede e pannelli precedenti all\'avvio',
     restoreSessionHint: 'Disattiva per avviare con finestra vuota ogni volta.',
+    perWorkspaceTabs: 'Scope tabs to the current folder',
+    perWorkspaceTabsHint: 'On (default): each folder remembers its own open tabs, so opening one folder never resurfaces another folder\'s accumulated tabs. Unsaved and untitled tabs always follow you across folders. Off: all tabs share one global list.',
 
     autoReloadExternalChanges: 'Ricarica automatica dei file modificati da altre app',
 

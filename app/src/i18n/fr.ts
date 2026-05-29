@@ -210,6 +210,8 @@ export const fr: I18n = {
     language: 'Langue / Language',
     restoreSession: 'Restaurer les onglets et volets précédents au démarrage',
     restoreSessionHint: 'Désactiver pour démarrer avec une fenêtre vide à chaque fois.',
+    perWorkspaceTabs: 'Scope tabs to the current folder',
+    perWorkspaceTabsHint: 'On (default): each folder remembers its own open tabs, so opening one folder never resurfaces another folder\'s accumulated tabs. Unsaved and untitled tabs always follow you across folders. Off: all tabs share one global list.',
 
     autoReloadExternalChanges: 'Rafraîchir automatiquement les fichiers modifiés par d\'autres apps',
 

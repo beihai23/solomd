@@ -210,6 +210,8 @@ export const ja: I18n = {
     language: '言語 / Language',
     restoreSession: '起動時に前回のタブとペインを復元',
     restoreSessionHint: 'オフにすると、毎回空のウィンドウで起動します。',
+    perWorkspaceTabs: 'Scope tabs to the current folder',
+    perWorkspaceTabsHint: 'On (default): each folder remembers its own open tabs, so opening one folder never resurfaces another folder\'s accumulated tabs. Unsaved and untitled tabs always follow you across folders. Off: all tabs share one global list.',
 
     autoReloadExternalChanges: '他のアプリで変更されたファイルを自動再読み込み',
 

@@ -210,6 +210,8 @@ export const tr: I18n = {
     language: 'Dil / 语言',
     restoreSession: 'Başlangıçta önceki sekmeleri ve panelleri geri yükle',
     restoreSessionHint: 'Her seferinde boş bir pencereyle başlamak için kapatın.',
+    perWorkspaceTabs: 'Scope tabs to the current folder',
+    perWorkspaceTabsHint: 'On (default): each folder remembers its own open tabs, so opening one folder never resurfaces another folder\'s accumulated tabs. Unsaved and untitled tabs always follow you across folders. Off: all tabs share one global list.',
 
     autoReloadExternalChanges: 'Diğer uygulamalar tarafından değiştirilen dosyaları otomatik yenile',
 

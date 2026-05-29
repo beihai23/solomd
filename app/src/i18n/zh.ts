@@ -210,6 +210,8 @@ export const zh: I18n = {
     language: '语言 / Language',
     restoreSession: '启动时恢复上次的标签页和分屏',
     restoreSessionHint: '关闭后，每次启动都是空白，不会自动打开之前的文档。',
+    perWorkspaceTabs: '标签页按文件夹隔离',
+    perWorkspaceTabsHint: '开启（默认）：每个文件夹记住自己打开的标签页，打开某文件夹不会再把其他文件夹累积的标签页一并弹出来。未保存和未命名的标签页始终跟随你跨文件夹保留。关闭：所有标签页共用一个全局列表。',
 
     autoReloadExternalChanges: '自动刷新被外部修改的文件',
 

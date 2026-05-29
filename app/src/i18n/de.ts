@@ -210,6 +210,8 @@ export const de: I18n = {
     language: 'Sprache / Language',
     restoreSession: 'Vorherige Tabs und Bereiche beim Start wiederherstellen',
     restoreSessionHint: 'Ausschalten, um jedes Mal mit einem leeren Fenster zu starten.',
+    perWorkspaceTabs: 'Scope tabs to the current folder',
+    perWorkspaceTabsHint: 'On (default): each folder remembers its own open tabs, so opening one folder never resurfaces another folder\'s accumulated tabs. Unsaved and untitled tabs always follow you across folders. Off: all tabs share one global list.',
 
     autoReloadExternalChanges: 'Von anderen Apps geänderte Dateien automatisch neu laden',
 

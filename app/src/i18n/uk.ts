@@ -210,6 +210,8 @@ export const uk: I18n = {
     language: 'Мова / 语言',
     restoreSession: 'Відновлювати попередні вкладки та панелі при запуску',
     restoreSessionHint: 'Вимкніть, щоб щоразу починати з порожнього вікна.',
+    perWorkspaceTabs: 'Scope tabs to the current folder',
+    perWorkspaceTabsHint: 'On (default): each folder remembers its own open tabs, so opening one folder never resurfaces another folder\'s accumulated tabs. Unsaved and untitled tabs always follow you across folders. Off: all tabs share one global list.',
 
     autoReloadExternalChanges: 'Автоматично оновлювати файли, змінені іншими додатками',
 

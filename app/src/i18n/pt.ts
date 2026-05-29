@@ -212,6 +212,8 @@ export const pt: I18n = {
     language: 'Idioma / Language',
     restoreSession: 'Restaurar abas e painéis anteriores ao iniciar',
     restoreSessionHint: 'Desligue para iniciar com janela em branco a cada vez.',
+    perWorkspaceTabs: 'Scope tabs to the current folder',
+    perWorkspaceTabsHint: 'On (default): each folder remembers its own open tabs, so opening one folder never resurfaces another folder\'s accumulated tabs. Unsaved and untitled tabs always follow you across folders. Off: all tabs share one global list.',
 
     autoReloadExternalChanges: 'Recarregar automaticamente arquivos alterados por outros apps',
 

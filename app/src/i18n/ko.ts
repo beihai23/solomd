@@ -210,6 +210,8 @@ export const ko: I18n = {
     language: '언어 / Language',
     restoreSession: '시작 시 이전 탭과 패널 복원',
     restoreSessionHint: '꺼두면 매번 빈 창으로 시작합니다.',
+    perWorkspaceTabs: 'Scope tabs to the current folder',
+    perWorkspaceTabsHint: 'On (default): each folder remembers its own open tabs, so opening one folder never resurfaces another folder\'s accumulated tabs. Unsaved and untitled tabs always follow you across folders. Off: all tabs share one global list.',
 
     autoReloadExternalChanges: '다른 앱이 변경한 파일 자동 새로고침',
 

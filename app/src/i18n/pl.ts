@@ -210,6 +210,8 @@ export const pl: I18n = {
     language: 'Język / Language',
     restoreSession: 'Przywróć poprzednie karty i panele przy starcie',
     restoreSessionHint: 'Wyłącz, aby zawsze startować z pustym oknem.',
+    perWorkspaceTabs: 'Scope tabs to the current folder',
+    perWorkspaceTabsHint: 'On (default): each folder remembers its own open tabs, so opening one folder never resurfaces another folder\'s accumulated tabs. Unsaved and untitled tabs always follow you across folders. Off: all tabs share one global list.',
 
     autoReloadExternalChanges: 'Automatyczne odświeżanie plików zmienionych przez inne aplikacje',
 

@@ -64,6 +64,12 @@ interface Settings {
   telemetryNoticeAck: boolean;
   // Restore previously-open tabs + pane layout at startup (default: true).
   restoreSession: boolean;
+  // Scope open tabs to the active workspace folder (default: true). Each
+  // folder remembers its own tabs, so opening folder A never resurfaces
+  // folder B's accumulated tabs, and multiple windows on different folders
+  // don't clobber one shared tab blob. Unsaved + untitled tabs always follow
+  // the user across workspaces so no in-progress work is lost.
+  perWorkspaceTabs: boolean;
   // When a file watched by SoloMD is modified by another program (other
   // editor, git checkout, sync client), reload the buffer automatically
   // if the tab has no unsaved changes. Default on. Dirty tabs always
@@ -315,6 +321,7 @@ function defaults(): Settings {
     telemetryEnabled: true,
     telemetryNoticeAck: false,
     restoreSession: true,
+    perWorkspaceTabs: true,
     autoReloadExternalChanges: true,
     autoSaveOnBlur: false,
     openFileInNewWindow: false,
@@ -617,6 +624,10 @@ export const useSettingsStore = defineStore('settings', {
     },
     toggleRestoreSession() {
       this.restoreSession = !this.restoreSession;
+      this.persist();
+    },
+    togglePerWorkspaceTabs() {
+      this.perWorkspaceTabs = !this.perWorkspaceTabs;
       this.persist();
     },
     toggleAutoReloadExternalChanges() {

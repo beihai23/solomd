@@ -210,6 +210,8 @@ export const nl: I18n = {
     language: 'Taal / 语言',
     restoreSession: 'Vorige tabbladen en panelen herstellen bij opstarten',
     restoreSessionHint: 'Schakel uit om elke keer met een leeg venster te starten.',
+    perWorkspaceTabs: 'Scope tabs to the current folder',
+    perWorkspaceTabsHint: 'On (default): each folder remembers its own open tabs, so opening one folder never resurfaces another folder\'s accumulated tabs. Unsaved and untitled tabs always follow you across folders. Off: all tabs share one global list.',
 
     autoReloadExternalChanges: 'Door andere apps gewijzigde bestanden automatisch herladen',
 
