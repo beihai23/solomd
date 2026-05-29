@@ -26,7 +26,7 @@ import { useSettingsStore, buildEditorFontStack } from '../stores/settings';
 import type { Tab } from '../types';
 import { livePreviewExtension, richHighlightOnly } from '../lib/cm-live-preview';
 import { liveEditExtension } from '../lib/cm-live-render';
-import { liveBlocksPlugin, liveBlocksTheme, extractImageRoot } from '../lib/cm-live-blocks';
+import { liveBlocksExtension, liveBlocksTheme, extractImageRoot } from '../lib/cm-live-blocks';
 import { dragAwareExtension } from '../lib/cm-drag-aware';
 import { imagePasteExtension, insertImageFromPath as cmInsertImageFromPath } from '../lib/cm-image-paste';
 import { focusModeExtension, typewriterModeExtension } from '../lib/cm-focus-mode';
@@ -151,7 +151,7 @@ function richExtensionsFor(tab: Tab) {
     // Cursor enters → widget unmounts → source returns. Image paths
     // resolve via the same extractImageRoot used by Preview/Export.
     return liveEditExtension([
-      liveBlocksPlugin({
+      liveBlocksExtension({
         getImageRoot: () => extractImageRoot(tab.content || ''),
         getFilePath: () => tab.filePath,
       }),

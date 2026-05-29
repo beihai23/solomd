@@ -18,16 +18,23 @@
  * handles inline marker hiding.
  */
 
-import { RangeSetBuilder } from '@codemirror/state';
+import { RangeSetBuilder, StateField, StateEffect } from '@codemirror/state';
+import type { EditorState } from '@codemirror/state';
 import { isDragging, isDragEndTransaction } from './cm-drag-aware';
 import {
   Decoration,
   DecorationSet,
   EditorView,
   ViewPlugin,
-  ViewUpdate,
   WidgetType,
 } from '@codemirror/view';
+
+// Block decorations (Decoration.replace with `block: true`) MUST come from a
+// StateField — CM6 throws "Block decorations may not be specified via plugins"
+// if a ViewPlugin emits them. So this whole module is a state field, not a
+// view plugin. `relayoutEffect` lets the async Mermaid render (and any other
+// out-of-band trigger) ask the field to recompute.
+const relayoutEffect = StateEffect.define<null>();
 import { resolveImageSrc } from './image-resolve';
 import { renderMarkdown, extractImageRoot } from './markdown';
 import mermaid from 'mermaid';
@@ -173,7 +180,7 @@ class MathWidget extends WidgetType {
 // back to a "rendering…" placeholder, then dispatches `solomd:cm-relayout`
 // to ask the editor to rebuild decorations once the cache fills.
 class MermaidWidget extends WidgetType {
-  constructor(private readonly source: string, private readonly view: EditorView) {
+  constructor(private readonly source: string) {
     super();
   }
 
@@ -193,9 +200,12 @@ class MermaidWidget extends WidgetType {
     } else {
       wrap.textContent = '⌛ Rendering Mermaid…';
       ensureMermaidRendered(this.source).then(() => {
-        // Force CM to rebuild decorations now that the cache has the SVG.
+        // Ask the field to recompute now that the SVG cache is filled. We
+        // can't hold an EditorView here (block decorations live in a state
+        // field, built without a view), so signal via a window event that
+        // the companion relayout plugin turns into a `relayoutEffect`.
         try {
-          this.view.dispatch({});
+          window.dispatchEvent(new CustomEvent('solomd:cm-relayout'));
         } catch {}
       });
     }
@@ -214,51 +224,24 @@ interface BlockOptions {
   getFilePath?: () => string | undefined;
 }
 
-export function liveBlocksPlugin(opts: BlockOptions = {}) {
-  return ViewPlugin.fromClass(
-    class {
-      decorations: DecorationSet;
-
-      constructor(view: EditorView) {
-        this.decorations = this.build(view);
-      }
-
-      update(update: ViewUpdate) {
-        // See cm-drag-aware.ts — skip selection-driven rebuilds during a
-        // pointer drag (Windows WebView2 loses pointer capture if widgets
-        // remount mid-drag). One final rebuild fires on dragEndEffect.
-        const dragEnded = update.transactions.some(isDragEndTransaction);
-        if (update.docChanged || update.viewportChanged || dragEnded) {
-          this.decorations = this.build(update.view);
-          return;
-        }
-        if (update.selectionSet && !isDragging(update.state)) {
-          this.decorations = this.build(update.view);
-        }
-      }
-
-      build(view: EditorView): DecorationSet {
+function buildBlockDecorations(state: EditorState, opts: BlockOptions): DecorationSet {
         const builder = new RangeSetBuilder<Decoration>();
-        const sel = view.state.selection.main;
-        const cursorLine = view.state.doc.lineAt(sel.from).number;
-        const cursorLineEnd = view.state.doc.lineAt(sel.to).number;
+        const sel = state.selection.main;
+        const cursorLine = state.doc.lineAt(sel.from).number;
+        const cursorLineEnd = state.doc.lineAt(sel.to).number;
 
-        // Single pass over the visible doc — for each line, decide:
+        // Single pass over the whole doc — for each line, decide:
         //   * is it a standalone image line we should replace? (1 line)
         //   * is it the start of a table block we should collapse? (N lines)
-        // Tables are walked as ranges so we don't double-iterate.
-        const doc = view.state.doc;
+        // Tables are walked as ranges so we don't double-iterate. (We walk
+        // the full doc, not just the viewport: block decorations come from a
+        // state field, which has no viewport — and CM only renders the
+        // visible slice anyway, so this stays cheap.)
+        const doc = state.doc;
         const lastLine = doc.lines;
         let i = 1;
         while (i <= lastLine) {
           const line = doc.line(i);
-
-          // Skip lines outside the viewport — performance only; widgets must
-          // still build in the visible range.
-          if (!view.visibleRanges.some((r) => r.from <= line.to && r.to >= line.from)) {
-            i += 1;
-            continue;
-          }
 
           // Image line.
           const imgMatch = IMAGE_LINE_RE.exec(line.text);
@@ -360,7 +343,7 @@ export function liveBlocksPlugin(opts: BlockOptions = {}) {
                   blockFrom,
                   blockTo,
                   Decoration.replace({
-                    widget: new MermaidWidget(body, view),
+                    widget: new MermaidWidget(body),
                     block: true,
                   }),
                 );
@@ -410,10 +393,53 @@ export function liveBlocksPlugin(opts: BlockOptions = {}) {
         }
 
         return builder.finish();
+}
+
+/**
+ * Live-render of standalone images / tables / block-math / Mermaid in the
+ * WYSIWYG "live edit" mode. Returns a StateField (block decorations are not
+ * allowed from view plugins) plus a companion view plugin that turns the
+ * async-Mermaid `solomd:cm-relayout` window event into a field recompute.
+ */
+export function liveBlocksExtension(opts: BlockOptions = {}) {
+  const field = StateField.define<DecorationSet>({
+    create: (state) => buildBlockDecorations(state, opts),
+    update(deco, tr) {
+      // Rebuild on edits, on a relayout signal (Mermaid SVG ready), and on
+      // the drag-end flush. Selection moves rebuild too (cursor entering a
+      // block reveals its source), but not mid-drag — see cm-drag-aware.ts.
+      if (tr.docChanged) return buildBlockDecorations(tr.state, opts);
+      if (tr.effects.some((e) => e.is(relayoutEffect))) {
+        return buildBlockDecorations(tr.state, opts);
+      }
+      if (isDragEndTransaction(tr)) return buildBlockDecorations(tr.state, opts);
+      if (tr.selection && !isDragging(tr.state)) {
+        return buildBlockDecorations(tr.state, opts);
+      }
+      return deco.map(tr.changes);
+    },
+    provide: (f) => EditorView.decorations.from(f),
+  });
+
+  // Mermaid renders asynchronously; when its SVG cache fills, the widget
+  // fires `solomd:cm-relayout`. Translate that into a `relayoutEffect` so the
+  // field rebuilds and the widget remounts with the finished SVG.
+  const relayout = ViewPlugin.fromClass(
+    class {
+      private readonly onRelayout: () => void;
+      constructor(view: EditorView) {
+        this.onRelayout = () => {
+          view.dispatch({ effects: relayoutEffect.of(null) });
+        };
+        window.addEventListener('solomd:cm-relayout', this.onRelayout);
+      }
+      destroy() {
+        window.removeEventListener('solomd:cm-relayout', this.onRelayout);
       }
     },
-    { decorations: (v) => v.decorations },
   );
+
+  return [field, relayout];
 }
 
 /** Suggested CSS — pulled out so the editor's theme owns the rule set. */
