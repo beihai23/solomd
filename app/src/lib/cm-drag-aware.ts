@@ -36,6 +36,12 @@ const dragField = StateField.define<boolean>({
       if (e.is(dragStartEffect)) return true;
       if (e.is(dragEndEffect)) return false;
     }
+    // Any document edit means the user is typing, not drag-selecting. Clear
+    // the flag unconditionally so a stale "dragging" state can never outlive
+    // an edit and keep decoration rebuilds frozen (would look like the editor
+    // stopped updating / "can't input"). Cheap belt-and-suspenders on top of
+    // the pointer-based clearing below.
+    if (tr.docChanged && value) return false;
     return value;
   },
 });
@@ -45,28 +51,55 @@ const dragTracker = ViewPlugin.fromClass(
     cleanup: (() => void) | null = null;
 
     constructor(view: EditorView) {
-      const onDown = (e: PointerEvent) => {
-        // Touch drags don't reproduce the WebView2 capture loss and CM has
-        // its own touch handling; only guard mouse / pen.
-        if (e.pointerType === 'touch') return;
+      // A primary-button pointer is pressed inside the editor (a *potential*
+      // drag). We deliberately do NOT freeze rebuilds yet — a bare click must
+      // never freeze them, otherwise a click whose `pointerup` we never see
+      // (native text-drag, right-click menu, Windows WebView2 pointer-capture
+      // loss) would leave the editor frozen until the next click. That was
+      // the v4.3.x "can't type, then it fixes itself" report.
+      let pointerDown = false;
+
+      const start = () => {
         if (!view.state.field(dragField, false)) {
           view.dispatch({ effects: dragStartEffect.of(null) });
         }
       };
-      const onUp = () => {
+      const end = () => {
+        pointerDown = false;
         if (view.state.field(dragField, false)) {
           view.dispatch({ effects: dragEndEffect.of(null) });
         }
       };
+
+      const onDown = (e: PointerEvent) => {
+        // Touch drags don't reproduce the WebView2 capture loss and CM has
+        // its own touch handling; only guard mouse / pen, primary button.
+        if (e.pointerType === 'touch' || e.button !== 0) return;
+        pointerDown = true;
+      };
+      const onMove = (e: PointerEvent) => {
+        if (!pointerDown) return;
+        // Self-heal: a move with the primary button no longer held means the
+        // `pointerup` was missed — bail out of the (potential) drag now.
+        if ((e.buttons & 1) === 0) { end(); return; }
+        // Genuine button-held drag-select in progress → freeze rebuilds.
+        start();
+      };
+
       view.scrollDOM.addEventListener('pointerdown', onDown);
-      // `window` (not `document`) so we still see the release if the user
-      // dragged out of the editor onto the scrollbar / titlebar / menubar.
-      window.addEventListener('pointerup', onUp);
-      window.addEventListener('pointercancel', onUp);
+      // `window` (not `document`) so we still see movement / release even if
+      // the user dragged out onto the scrollbar / titlebar / menubar.
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', end);
+      window.addEventListener('pointercancel', end);
+      // Losing the window (app switch, Cmd-Tab) can swallow the pointerup.
+      window.addEventListener('blur', end);
       this.cleanup = () => {
         view.scrollDOM.removeEventListener('pointerdown', onDown);
-        window.removeEventListener('pointerup', onUp);
-        window.removeEventListener('pointercancel', onUp);
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', end);
+        window.removeEventListener('pointercancel', end);
+        window.removeEventListener('blur', end);
       };
     }
 
