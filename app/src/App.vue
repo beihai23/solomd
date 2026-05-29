@@ -749,9 +749,24 @@ onMounted(async () => {
   // Drag-drop file open
   try {
     const webview = getCurrentWebview();
+    const IMAGE_DROP_EXTS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'avif', 'tiff']);
     await webview.onDragDropEvent(async (event) => {
       if (event.payload.type === 'drop') {
         for (const path of event.payload.paths) {
+          const ext = (path.split('.').pop() || '').toLowerCase();
+          if (IMAGE_DROP_EXTS.has(ext)) {
+            // An image file dropped onto the editor should be inserted, not
+            // run through the markitdown document converter (png/jpg/etc are
+            // in useFiles' CONVERT_CLI set). Route it to the focused editor's
+            // insertImageFromPath, which copies it into the note's assets dir
+            // and inserts a Markdown image link.
+            window.dispatchEvent(
+              new CustomEvent('solomd:insert-image-path', {
+                detail: { path, paneId: tiles.focusedPaneId },
+              }),
+            );
+            continue;
+          }
           // Drop targets this window explicitly — bypass new-window routing.
           await files.openPath(path, { bypassNewWindow: true });
         }

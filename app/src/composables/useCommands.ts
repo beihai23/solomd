@@ -214,6 +214,28 @@ export function useCommands(): Command[] {
     },
 
     {
+      id: 'editor.insertImage',
+      title: 'Insert image…',
+      hint: 'Pick an image — it is copied into the note’s attachments folder and a Markdown image link is inserted',
+      run: async () => {
+        if (!tabs.activeTab) {
+          toasts.warning('No active document');
+          return;
+        }
+        const sel = await openFileDialog({
+          multiple: false,
+          filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'avif', 'tiff'] }],
+        });
+        if (typeof sel !== 'string') return;
+        window.dispatchEvent(
+          new CustomEvent('solomd:insert-image-path', {
+            detail: { path: sel, paneId: tiles.focusedPaneId },
+          }),
+        );
+      },
+    },
+
+    {
       id: 'format.markdown',
       title: 'Format Markdown (Prettier)',
       shortcut: 'Ctrl+Alt+L',

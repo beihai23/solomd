@@ -245,6 +245,7 @@ onMounted(() => {
   setTimeout(bindScrollSync, 300);
   window.addEventListener('solomd:outline-goto', onOutlineGotoEvent);
   window.addEventListener('solomd:insert-markdown', onInsertMarkdownEvent);
+  window.addEventListener('solomd:insert-image-path', onInsertImagePathEvent);
   window.addEventListener('solomd:preview-search', onPreviewSearchEvent);
 });
 
@@ -253,6 +254,7 @@ onBeforeUnmount(() => {
   syncPreviewScroll?.();
   window.removeEventListener('solomd:outline-goto', onOutlineGotoEvent);
   window.removeEventListener('solomd:insert-markdown', onInsertMarkdownEvent);
+  window.removeEventListener('solomd:insert-image-path', onInsertImagePathEvent);
   window.removeEventListener('solomd:preview-search', onPreviewSearchEvent);
 });
 
@@ -269,6 +271,13 @@ function onInsertMarkdownEvent(e: Event) {
   if (paneId !== props.paneId) return;
   const ed = editorRef.value as unknown as { insertMarkdown?: (s: string) => void } | null;
   ed?.insertMarkdown?.(snippet);
+}
+
+function onInsertImagePathEvent(e: Event) {
+  const { path, paneId } = (e as CustomEvent).detail;
+  if (paneId !== props.paneId) return;
+  const ed = editorRef.value as unknown as { insertImageFromPath?: (p: string) => void } | null;
+  ed?.insertImageFromPath?.(path);
 }
 
 function onPreviewSearchEvent(e: Event) {
