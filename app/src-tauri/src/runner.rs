@@ -542,7 +542,22 @@ fn fit_main_window_once(win: &tauri::WebviewWindow) {
 ///
 /// 40px is reserved at the top of the work area for the macOS menu bar.
 fn clamp_window_to_monitor(win: &tauri::WebviewWindow) {
+    // A maximized or fullscreen window is already sized to the monitor by the
+    // OS — clamping it would call set_size(), which un-maximizes and shrinks
+    // it. That's the Windows "restores maximized, then shrinks" bug (#56): the
+    // window-state plugin restored the maximized state, then this clamp fired
+    // on the restore's Resized event and undid it. Leave such windows alone.
+    if win.is_maximized().unwrap_or(false) || win.is_fullscreen().unwrap_or(false) {
+        return;
+    }
+
+    // The macOS global menu bar overlays the top of the screen, so reserve a
+    // strip for it. Windows / Linux have no such bar — reserving there made a
+    // legitimately near-full-height restored window get shrunk by 40px.
+    #[cfg(target_os = "macos")]
     const MENU_BAR_RESERVE: i32 = 40;
+    #[cfg(not(target_os = "macos"))]
+    const MENU_BAR_RESERVE: i32 = 0;
     const MIN_W: i32 = 480;
     const MIN_H: i32 = 360;
 
