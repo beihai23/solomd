@@ -79,7 +79,10 @@ function isSeparatorRow(line: string): boolean {
   // and at least one `-` per cell.
   return (
     isPipeRow(line) &&
-    /^\|[\s:-|]+\|$/.test(trimmed) &&
+    // `-` must be last in the class so it's a literal, not the range `:`..`|`
+    // (which excludes `-` at 0x2D and made every real separator row fail —
+    // tables never collapsed to a widget in live-edit).
+    /^\|[\s:|-]+\|$/.test(trimmed) &&
     /-{3,}/.test(trimmed)
   );
 }
