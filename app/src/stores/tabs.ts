@@ -302,13 +302,18 @@ export const useTabsStore = defineStore('tabs', {
       const restored = settings.restoreSession
         ? readBucket(bucketKey(newFolder)) ?? { tabs: [], activeId: '' }
         : { tabs: [], activeId: '' };
-      const seen = new Set<string>();
+      const seenPaths = new Set<string>();
+      const seenIds = new Set<string>();
       const merged: Tab[] = [];
       const push = (t: Tab) => {
-        if (t.filePath) {
-          if (seen.has(t.filePath)) return;
-          seen.add(t.filePath);
-        }
+        // Dedup by id AND by path. The id check matters for untitled tabs
+        // (no path): a carried untitled and its copy persisted in the new
+        // workspace's bucket share an id, so without this they'd both be
+        // added and untitled tabs would multiply on every workspace switch.
+        if (seenIds.has(t.id)) return;
+        if (t.filePath && seenPaths.has(t.filePath)) return;
+        seenIds.add(t.id);
+        if (t.filePath) seenPaths.add(t.filePath);
         merged.push(t);
       };
       // Carried tabs win (they hold the live, possibly-unsaved content).
