@@ -13,6 +13,7 @@ import { useToastsStore } from '../stores/toasts';
 import { cleanAIArtifacts } from '../lib/clean-ai';
 import { useI18n } from '../i18n';
 import { openPath } from '@tauri-apps/plugin-opener';
+import { open as openFileDialog } from '@tauri-apps/plugin-dialog';
 import { isIOS } from '../lib/platform';
 import { IS_APP_STORE_BUILD } from '../lib/app-build';
 
@@ -207,6 +208,22 @@ function dispatchInsert(snippet: string) {
     })
   );
   insertOpen.value = false;
+}
+
+async function pickAndInsertImage() {
+  insertOpen.value = false;
+  const sel = await openFileDialog({
+    multiple: false,
+    filters: [
+      { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'avif', 'tiff'] },
+    ],
+  });
+  if (typeof sel !== 'string') return;
+  window.dispatchEvent(
+    new CustomEvent('solomd:insert-image-path', {
+      detail: { path: sel, paneId: tiles.focusedPaneId },
+    }),
+  );
 }
 
 function shortPath(p: string) {
@@ -444,6 +461,9 @@ onBeforeUnmount(() => {
             <div class="dropdown__sep"></div>
             <button class="dropdown__item dropdown__item--single" @mousedown.prevent="dispatchInsert('[$|$](url)')">
               <span class="dropdown__name">{{ t('toolbar.insertLink') }}</span>
+            </button>
+            <button class="dropdown__item dropdown__item--single" @mousedown.prevent="pickAndInsertImage()">
+              <span class="dropdown__name">{{ t('toolbar.insertImage') }}</span>
             </button>
             <button class="dropdown__item dropdown__item--single" @mousedown.prevent="dispatchInsert('> $|$')">
               <span class="dropdown__name">{{ t('toolbar.insertQuote') }}</span>

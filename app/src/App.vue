@@ -621,6 +621,13 @@ function onWindowBlur() {
 }
 
 onMounted(async () => {
+  // #87(3) — if a startup view mode is pinned, force it now (overrides the
+  // persisted last-used `viewMode`). Empty/null = resume whatever the user
+  // left in, as before.
+  if (settings.startupViewMode && settings.startupViewMode !== settings.viewMode) {
+    settings.setViewMode(settings.startupViewMode);
+  }
+
   window.addEventListener('keydown', onEsc);
   window.addEventListener('blur', onWindowBlur);
   window.addEventListener('solomd:open-help', onOpenHelpEvent as EventListener);

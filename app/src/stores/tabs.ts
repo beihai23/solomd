@@ -253,6 +253,24 @@ export const useTabsStore = defineStore('tabs', {
     activate(id: string) {
       this.activeId = id;
     },
+    /** #86 — move tab `tabId` to `intendedIndex` (the position in the list
+     *  where the user wants it dropped). Handles the shift caused by removing
+     *  the source: dragging right (fromIdx < intended) decrements the target
+     *  by one after the splice. No-op when the tab is dropped onto itself or
+     *  doesn't exist. */
+    reorder(tabId: string, intendedIndex: number) {
+      const fromIdx = this.tabs.findIndex((t) => t.id === tabId);
+      if (fromIdx < 0) return;
+      // Adjust BEFORE the splice: removing the source shifts positions to the
+      // right of fromIdx down by one. So when intendedIndex (in the original
+      // list) is to the right of fromIdx, the actual target after removal is
+      // intendedIndex - 1.
+      const adjusted = fromIdx < intendedIndex ? intendedIndex - 1 : intendedIndex;
+      const [moved] = this.tabs.splice(fromIdx, 1);
+      const target = Math.max(0, Math.min(adjusted, this.tabs.length));
+      if (target === fromIdx) { this.tabs.splice(fromIdx, 0, moved); return; }
+      this.tabs.splice(target, 0, moved);
+    },
     toggleOutline(id: string) {
       const t = this.tabs.find((x) => x.id === id);
       if (t) t.showOutline = !t.showOutline;

@@ -27,6 +27,9 @@ export interface ImagePasteOptions {
    *  Defaults to `shared` if absent (back-compat for callers that haven't
    *  been updated yet). */
   getAttachmentMode?: () => 'shared' | 'per-file';
+  /** #88 — folder name for the `shared` attachment mode (default `_assets`).
+   *  `per-file` mode always uses `<stem>.assets/` regardless of this. */
+  getAssetsDirName?: () => string;
 }
 
 /** Minimal front-matter imageRoot parser (kept local to avoid import cycles). */
@@ -108,6 +111,7 @@ function resolveAssetsDir(
   filePath: string,
   sepCh: string,
   mode: 'shared' | 'per-file',
+  sharedDirName: string,
 ): { dir: string; urlPrefix: string } {
   const parent = dirnameOf(filePath, sepCh);
   if (mode === 'per-file') {
@@ -115,7 +119,7 @@ function resolveAssetsDir(
     const folder = `${stem}.assets`;
     return { dir: joinPath(parent, folder, sepCh), urlPrefix: folder };
   }
-  return { dir: joinPath(parent, '_assets', sepCh), urlPrefix: '_assets' };
+  return { dir: joinPath(parent, sharedDirName, sepCh), urlPrefix: sharedDirName };
 }
 
 function joinPath(a: string, b: string, sepCh: string): string {
@@ -170,14 +174,21 @@ async function saveAndInsert(
     insertText = `![](${filename})`;
   } else if (filePath) {
     const mode = opts.getAttachmentMode ? opts.getAttachmentMode() : 'shared';
-    const { dir: assetsDir, urlPrefix } = resolveAssetsDir(filePath, sepCh, mode);
+    const sharedDir = opts.getAssetsDirName ? (opts.getAssetsDirName() || '_assets') : '_assets';
+    const { dir: assetsDir, urlPrefix } = resolveAssetsDir(filePath, sepCh, mode, sharedDir);
     fullPath = joinPath(assetsDir, filename, sepCh);
     insertText = `![](${urlPrefix}/${filename})`;
   } else {
     const t = await resolveTempDir(opts.tempDir);
     const solomdDir = joinPath(t, 'solomd', sepCh);
     fullPath = joinPath(solomdDir, filename, sepCh);
-    insertText = `![](${fullPath})`;
+    // Use forward slashes in the markdown URL. On Windows the path is built
+    // with `\`, and markdown-it (used by the preview pane) treats `\` in URLs
+    // as escape characters — it silently strips them, leaving a mangled src
+    // that 404s. Live-edit's image regex captures the raw text untouched, so
+    // it loaded fine there; only preview broke. Backslash→slash makes both
+    // modes resolve the same absolute path. (No-op on macOS/Linux.)
+    insertText = `![](${fullPath.replace(/\\/g, '/')})`;
   }
 
   try {
@@ -288,14 +299,17 @@ export async function insertImageFromPath(
     insertText = `![](${filename})`;
   } else if (filePath) {
     const mode = opts.getAttachmentMode ? opts.getAttachmentMode() : 'shared';
-    const { dir: assetsDir, urlPrefix } = resolveAssetsDir(filePath, sepCh, mode);
+    const sharedDir = opts.getAssetsDirName ? (opts.getAssetsDirName() || '_assets') : '_assets';
+    const { dir: assetsDir, urlPrefix } = resolveAssetsDir(filePath, sepCh, mode, sharedDir);
     dstPath = joinPath(assetsDir, filename, sepCh);
     insertText = `![](${urlPrefix}/${filename})`;
   } else {
     const t = await resolveTempDir(opts.tempDir);
     const solomdDir = joinPath(t, 'solomd', sepCh);
     dstPath = joinPath(solomdDir, filename, sepCh);
-    insertText = `![](${dstPath})`;
+    // Forward slashes in the URL — see the saveAndInsert temp-dir branch
+    // comment above for why (markdown-it eats `\` as escapes on Windows).
+    insertText = `![](${dstPath.replace(/\\/g, '/')})`;
   }
 
   try {

@@ -113,6 +113,7 @@ watch(
         class="tab"
         :class="{ 'tab--active': tab.id === tabs.activeId }"
         @click="tabs.activate(tab.id)"
+        @mousedown.middle.prevent="files.closeTabSafe(tab.id)"
         @contextmenu="openMenu($event, tab.id)"
         :title="tab.filePath || tab.fileName"
       >

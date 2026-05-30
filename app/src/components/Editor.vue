@@ -214,6 +214,7 @@ function buildExtensions() {
       getFilePath: () => props.tab.filePath,
       getDocContent: () => props.tab.content,
       getAttachmentMode: () => settings.attachmentMode,
+      getAssetsDirName: () => settings.assetsDirName,
     }),
     ...(props.tab.language === 'markdown'
       ? [
@@ -461,6 +462,7 @@ async function insertImageFromPath(srcPath: string): Promise<void> {
     getFilePath: () => props.tab.filePath,
     getDocContent: () => props.tab.content,
     getAttachmentMode: () => settings.attachmentMode,
+    getAssetsDirName: () => settings.assetsDirName,
   });
 }
 

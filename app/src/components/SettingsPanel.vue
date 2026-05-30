@@ -744,6 +744,18 @@ function onSelectPdfFont(v: string) {
           <p class="setting-hint">{{ t('settings.attachmentModeHint') }}</p>
         </section>
 
+        <section data-cat="writing" v-if="settings.attachmentMode === 'shared'">
+          <label>{{ t('settings.assetsDirName') }}</label>
+          <input
+            type="text"
+            :value="settings.assetsDirName"
+            @change="settings.setAssetsDirName(($event.target as HTMLInputElement).value)"
+            placeholder="_assets"
+            style="padding: 6px 8px; border: 1px solid var(--border); background: var(--bg); color: var(--text); border-radius: 4px; font: inherit;"
+          />
+          <p class="setting-hint">{{ t('settings.assetsDirNameHint') }}</p>
+        </section>
+
         <section data-cat="advanced">
           <label>{{ t('settings.dailyNotesFolder') }}</label>
           <input
@@ -886,6 +898,22 @@ function onSelectPdfFont(v: string) {
           <div style="font-size: 11px; color: var(--text-faint); margin-top: 4px; line-height: 1.5;">
             {{ t('settings.restoreSessionHint') }}
           </div>
+        </section>
+
+        <section data-cat="advanced">
+          <label>{{ t('settings.startupViewMode') }}</label>
+          <select
+            :value="settings.startupViewMode ?? ''"
+            @change="settings.setStartupViewMode((($event.target as HTMLSelectElement).value || null) as any)"
+          >
+            <option value="">{{ t('settings.startupViewModeLastUsed') }}</option>
+            <option value="edit">Edit</option>
+            <option value="liveEdit">Live edit</option>
+            <option value="split">Split</option>
+            <option value="preview">Preview</option>
+            <option value="reading">Reading</option>
+          </select>
+          <p class="setting-hint">{{ t('settings.startupViewModeHint') }}</p>
         </section>
 
         <section data-cat="advanced">

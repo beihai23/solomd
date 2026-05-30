@@ -24,6 +24,10 @@ export function buildEditorFontStack(face: string): string {
 interface Settings {
   theme: Theme;
   viewMode: ViewMode;
+  // #87(3) — if set, this view mode is forced on every launch, overriding
+  // the persisted last-used `viewMode`. `null` (default) keeps the existing
+  // behavior of resuming whatever mode the user left in.
+  startupViewMode: ViewMode | null;
   fontSize: number;
   fontFamily: string;
   wordWrap: boolean;
@@ -215,6 +219,10 @@ interface Settings {
    *    tree if every note has images. Issue: user feedback 2026-05-26.
    */
   attachmentMode: 'shared' | 'per-file';
+  // #88 — folder name for `shared` attachment mode (default `_assets`). Used
+  // only when attachmentMode is 'shared'; per-file mode always uses
+  // `<stem>.assets/`. Empty string falls back to `_assets`.
+  assetsDirName: string;
   // v4.3.0 PR #75 (beihai23) — transient (not persisted) snapshot of the
   // right-sidebar pane visibility taken when the sidebar is hidden, so
   // toggling it back on can restore the exact previous layout instead of
@@ -277,6 +285,7 @@ function defaults(): Settings {
   return {
     theme: prefersDark ? 'dark' : 'light',
     viewMode: 'edit',
+    startupViewMode: null,
     fontSize: 14,
     fontFamily: 'JetBrains Mono',
     wordWrap: true,
@@ -375,6 +384,7 @@ function defaults(): Settings {
     rsPaneOrder: ['search', 'outline', 'backlinks', 'tags', 'history', 'agent'],
     previewFontSize: 15,
     attachmentMode: 'shared',
+    assetsDirName: '_assets',
     _rsPanesBeforeHide: null,
   };
 }
@@ -464,6 +474,10 @@ export const useSettingsStore = defineStore('settings', {
     },
     toggleTheme() {
       this.setTheme(this.theme === 'light' ? 'dark' : 'light');
+    },
+    setStartupViewMode(mode: ViewMode | null) {
+      this.startupViewMode = mode;
+      this.persist();
     },
     setViewMode(mode: ViewMode) {
       // Remember whatever non-reading mode we were in before — the
@@ -867,6 +881,15 @@ export const useSettingsStore = defineStore('settings', {
      *  (`<basename>.assets/`) attachment storage layouts. */
     setAttachmentMode(mode: 'shared' | 'per-file') {
       this.attachmentMode = mode === 'per-file' ? 'per-file' : 'shared';
+      this.persist();
+    },
+    setAssetsDirName(name: string) {
+      // Strip slashes/backslashes — the path is joined by the image-paste
+      // helper using the platform separator, so a name with separators would
+      // create nested folders or break URL prefixes. Trim whitespace; fall
+      // back to the default when empty.
+      const cleaned = (name || '').replace(/[\\/]/g, '').trim();
+      this.assetsDirName = cleaned || '_assets';
       this.persist();
     },
     /** v4.3.0 PR #74 — editor-only font size convenience wrappers. The

@@ -611,7 +611,32 @@ pub fn run_with(initial_file: Option<String>) {
     let saved_lang = read_saved_language();
     apply_macos_language(&saved_lang);
 
-    let builder = tauri::Builder::default()
+    let builder = tauri::Builder::default();
+
+    // #86/#87(1) — single-instance must register BEFORE any other plugin so
+    // its handler hooks into the OS' "another instance launching" signal
+    // before the rest of the app starts initialising. The second launch
+    // reactivates the existing main window and routes any file argument
+    // through the existing `solomd://opened-file` channel that App.vue
+    // already listens on (used by the OS file association too).
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_single_instance::init(
+        |app: &tauri::AppHandle, argv: Vec<String>, _cwd: String| {
+            use tauri::Emitter;
+            if let Some(win) = app.get_webview_window("main") {
+                let _ = win.unminimize();
+                let _ = win.show();
+                let _ = win.set_focus();
+            }
+            for arg in argv.iter().skip(1) {
+                if !arg.is_empty() && !arg.starts_with('-') {
+                    let _ = app.emit("solomd://opened-file", arg.clone());
+                }
+            }
+        },
+    ));
+
+    let builder = builder
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init());

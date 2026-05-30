@@ -108,11 +108,31 @@ async function onTabAction(action: 'close' | 'closeLeft' | 'closeRight' | 'close
   await closeMany(ids);
 }
 
-// ---- Drag to split ----
+// ---- Drag to split / reorder ----
 function onDragStart(e: DragEvent, tabId: string) {
   if (!e.dataTransfer) return;
   e.dataTransfer.setData('text/plain', tabId);
   e.dataTransfer.effectAllowed = 'move';
+}
+
+// #86 — drop on a tab reorders within this bar. Stop propagation so the
+// underlying PaneHost drop (drag-to-split) doesn't ALSO fire.
+function onTabDragOver(e: DragEvent) {
+  e.preventDefault();
+  if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+}
+function onTabDrop(e: DragEvent, targetTabId: string) {
+  e.preventDefault();
+  e.stopPropagation();
+  const srcTabId = e.dataTransfer?.getData('text/plain');
+  if (!srcTabId || srcTabId === targetTabId) return;
+  const targetIdx = tabs.tabs.findIndex((t) => t.id === targetTabId);
+  if (targetIdx < 0) return;
+  // Drop on the right half of the target tab inserts AFTER it; left half = before.
+  const el = e.currentTarget as HTMLElement;
+  const rect = el.getBoundingClientRect();
+  const intended = e.clientX > rect.left + rect.width / 2 ? targetIdx + 1 : targetIdx;
+  tabs.reorder(srcTabId, intended);
 }
 
 // Close context menu on click outside
@@ -135,9 +155,12 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick));
         class="tab"
         :class="{ 'tab--active': t.id === activeTabId }"
         @click="tiles.setActiveTab(paneId, t.id)"
+        @mousedown.middle.prevent="files.closeTabSafe(t.id)"
         @contextmenu="onContextMenu($event, t.id)"
         draggable="true"
         @dragstart="onDragStart($event, t.id)"
+        @dragover="onTabDragOver"
+        @drop="onTabDrop($event, t.id)"
         :title="t.filePath || t.fileName"
       >
         <span class="tab__name">{{ t.fileName }}</span>
