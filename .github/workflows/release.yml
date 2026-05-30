@@ -24,6 +24,12 @@ jobs:
           - platform: windows-latest
             args: ''
             rust_targets: ''
+          # Windows ARM64 — for Snapdragon X / Copilot+ PCs and Apple Silicon
+          # Macs running Windows 11 ARM in a VM. Native build avoids the x64
+          # emulation layer Windows-on-ARM would otherwise use.
+          - platform: windows-11-arm
+            args: ''
+            rust_targets: ''
           # Linux x64 (.deb / .AppImage / .rpm)
           - platform: ubuntu-22.04
             args: ''
@@ -180,11 +186,14 @@ jobs:
       # Also packs solomd-mcp.exe into a separate `.zip` for `install-mcp.sh`.
       # ----------------------------------------------------------------------
       - name: Build Windows portable .zip
-        if: matrix.platform == 'windows-latest'
+        if: matrix.platform == 'windows-latest' || matrix.platform == 'windows-11-arm'
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # Architecture suffix matches what tauri-action picks for installer
+          # names (x64 vs arm64). install-mcp.sh expects the matching mcp zip.
+          $arch = if ("${{ matrix.platform }}" -eq "windows-11-arm") { "arm64" } else { "x64" }
           $version = (Get-Content app/package.json -Raw | ConvertFrom-Json).version
           $exe = "app/src-tauri/target/release/SoloMD.exe"
           if (-Not (Test-Path $exe)) {
@@ -195,13 +204,13 @@ jobs:
           $mcpExe = Get-ChildItem -Path "mcp-server/target" -Recurse -Filter "solomd-mcp.exe" |
                     Where-Object { $_.FullName -match "\\release\\" } |
                     Select-Object -First 1
-          $stage = "SoloMD_${version}_x64-portable"
+          $stage = "SoloMD_${version}_${arch}-portable"
           New-Item -ItemType Directory -Force -Path $stage | Out-Null
           Copy-Item $exe -Destination "$stage/SoloMD.exe"
           if ($mcpExe) { Copy-Item $mcpExe.FullName -Destination "$stage/solomd-mcp.exe" }
           # Tiny README the user finds inside the zip.
           @"
-          SoloMD ${version} — portable build
+          SoloMD ${version} — portable build (${arch})
 
           Just run SoloMD.exe. No installation required.
           Settings + recents are stored in %APPDATA%\app.solomd as usual.
@@ -210,16 +219,16 @@ jobs:
           If launch fails with a WebView2 missing error, install from
           https://go.microsoft.com/fwlink/p/?LinkId=2124703
           "@ | Set-Content -Path "$stage/README.txt" -Encoding UTF8
-          $zip = "SoloMD_${version}_x64-portable.zip"
+          $zip = "SoloMD_${version}_${arch}-portable.zip"
           Compress-Archive -Path "$stage/*" -DestinationPath $zip -Force
           gh release upload "${{ github.ref_name }}" $zip --clobber
 
           # solomd-mcp standalone .zip (install-mcp.sh on Windows expects this).
           if ($mcpExe) {
-            $mcpStage = "solomd-mcp-win-x64"
+            $mcpStage = "solomd-mcp-win-${arch}"
             New-Item -ItemType Directory -Force -Path $mcpStage | Out-Null
             Copy-Item $mcpExe.FullName -Destination "$mcpStage/solomd-mcp.exe"
-            $mcpZip = "solomd-mcp-win-x64.zip"
+            $mcpZip = "solomd-mcp-win-${arch}.zip"
             Compress-Archive -Path "$mcpStage/*" -DestinationPath $mcpZip -Force
             gh release upload "${{ github.ref_name }}" $mcpZip --clobber
           }
