@@ -108,31 +108,116 @@ async function onTabAction(action: 'close' | 'closeLeft' | 'closeRight' | 'close
   await closeMany(ids);
 }
 
-// ---- Drag to split / reorder ----
-function onDragStart(e: DragEvent, tabId: string) {
-  if (!e.dataTransfer) return;
-  e.dataTransfer.setData('text/plain', tabId);
-  e.dataTransfer.effectAllowed = 'move';
+// ---- Pointer-based drag: reorder within the bar + drag-to-split across panes
+// ----
+// #86 — we deliberately do NOT use the HTML5 Drag and Drop API. On Windows,
+// Tauri's native drag-drop (`dragDropEnabled`, which the app relies on for
+// dropping files from Explorer into the editor — see App.vue onDragDropEvent)
+// makes WebView2 swallow every in-page `draggable` drag at the OS level: the
+// cursor shows 🚫 and tabs won't move. Pointer events bypass that interception
+// and behave identically on macOS, Windows, and Linux.
+const SPLIT_EDGE = 50; // px from a pane edge that arms drag-to-split
+const DRAG_THRESHOLD = 4; // px of movement before a press counts as a drag
+
+let pointerStart: { x: number; y: number; tabId: string } | null = null;
+let dragging = false;
+// Set briefly after a real drag so the trailing synthetic `click` doesn't
+// re-activate the tab the user just dropped.
+let suppressClick = false;
+
+function onTabPointerDown(e: PointerEvent, tabId: string) {
+  // Left button only — middle closes the tab, right opens the context menu.
+  if (e.button !== 0) return;
+  pointerStart = { x: e.clientX, y: e.clientY, tabId };
+  dragging = false;
+  window.addEventListener('pointermove', onPointerMove);
+  window.addEventListener('pointerup', onPointerUp);
+  window.addEventListener('pointercancel', onPointerCancel);
 }
 
-// #86 — drop on a tab reorders within this bar. Stop propagation so the
-// underlying PaneHost drop (drag-to-split) doesn't ALSO fire.
-function onTabDragOver(e: DragEvent) {
-  e.preventDefault();
-  if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+// Hit-test the element under the pointer for a drag-to-split target: a pane
+// edge that is NOT over the tab bar (positions over a tab bar are reorders).
+function paneSplitAt(x: number, y: number): { paneId: string; direction: SplitDirection } | null {
+  const el = document.elementFromPoint(x, y) as HTMLElement | null;
+  if (!el || el.closest('.pane-tabbar')) return null;
+  const pane = el.closest('[data-pane-id]') as HTMLElement | null;
+  const paneId = pane?.getAttribute('data-pane-id');
+  if (!pane || !paneId) return null;
+  const r = pane.getBoundingClientRect();
+  const lx = x - r.left;
+  const ly = y - r.top;
+  if (lx < SPLIT_EDGE || lx > r.width - SPLIT_EDGE) return { paneId, direction: 'horizontal' };
+  if (ly < SPLIT_EDGE || ly > r.height - SPLIT_EDGE) return { paneId, direction: 'vertical' };
+  return null;
 }
-function onTabDrop(e: DragEvent, targetTabId: string) {
-  e.preventDefault();
-  e.stopPropagation();
-  const srcTabId = e.dataTransfer?.getData('text/plain');
-  if (!srcTabId || srcTabId === targetTabId) return;
-  const targetIdx = tabs.tabs.findIndex((t) => t.id === targetTabId);
-  if (targetIdx < 0) return;
-  // Drop on the right half of the target tab inserts AFTER it; left half = before.
-  const el = e.currentTarget as HTMLElement;
-  const rect = el.getBoundingClientRect();
-  const intended = e.clientX > rect.left + rect.width / 2 ? targetIdx + 1 : targetIdx;
-  tabs.reorder(srcTabId, intended);
+
+function tabIdAt(x: number, y: number): string | null {
+  const el = document.elementFromPoint(x, y) as HTMLElement | null;
+  return (el?.closest('[data-tab-id]') as HTMLElement | null)?.getAttribute('data-tab-id') ?? null;
+}
+
+function onPointerMove(e: PointerEvent) {
+  if (!pointerStart) return;
+  if (!dragging) {
+    const moved = Math.abs(e.clientX - pointerStart.x) + Math.abs(e.clientY - pointerStart.y);
+    if (moved < DRAG_THRESHOLD) return;
+    dragging = true;
+    tiles.beginTabDrag(pointerStart.tabId);
+  }
+  tiles.setDragSplit(paneSplitAt(e.clientX, e.clientY));
+}
+
+function teardownPointer() {
+  window.removeEventListener('pointermove', onPointerMove);
+  window.removeEventListener('pointerup', onPointerUp);
+  window.removeEventListener('pointercancel', onPointerCancel);
+}
+
+function onPointerCancel() {
+  teardownPointer();
+  pointerStart = null;
+  dragging = false;
+  tiles.endTabDrag();
+}
+
+function onPointerUp(e: PointerEvent) {
+  teardownPointer();
+  const start = pointerStart;
+  pointerStart = null;
+  if (!dragging || !start) {
+    dragging = false;
+    return;
+  }
+  dragging = false;
+  suppressClick = true;
+
+  const split = paneSplitAt(e.clientX, e.clientY);
+  if (split) {
+    tiles.splitPane(split.paneId, split.direction, start.tabId);
+  } else {
+    // Reorder: insert relative to the tab under the pointer. Right half of the
+    // target inserts AFTER it, left half BEFORE — same rule as before.
+    const overId = tabIdAt(e.clientX, e.clientY);
+    if (overId && overId !== start.tabId) {
+      const targetIdx = tabs.tabs.findIndex((t) => t.id === overId);
+      if (targetIdx >= 0) {
+        const overEl = tabsEl.value?.querySelector<HTMLElement>(`[data-tab-id="${overId}"]`);
+        const rect = overEl?.getBoundingClientRect();
+        const after = rect ? e.clientX > rect.left + rect.width / 2 : false;
+        tabs.reorder(start.tabId, after ? targetIdx + 1 : targetIdx);
+      }
+    }
+  }
+  tiles.endTabDrag();
+}
+
+function onTabClick(tabId: string) {
+  // Swallow the click that immediately follows a drag-drop.
+  if (suppressClick) {
+    suppressClick = false;
+    return;
+  }
+  tiles.setActiveTab(props.paneId, tabId);
 }
 
 // Close context menu on click outside
@@ -142,7 +227,11 @@ function onDocClick() {
 
 import { onMounted, onBeforeUnmount } from 'vue';
 onMounted(() => document.addEventListener('click', onDocClick));
-onBeforeUnmount(() => document.removeEventListener('click', onDocClick));
+onBeforeUnmount(() => {
+  document.removeEventListener('click', onDocClick);
+  // Drop any drag listeners still attached if the bar unmounts mid-drag.
+  teardownPointer();
+});
 </script>
 
 <template>
@@ -153,14 +242,11 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick));
         :key="t.id"
         :data-tab-id="t.id"
         class="tab"
-        :class="{ 'tab--active': t.id === activeTabId }"
-        @click="tiles.setActiveTab(paneId, t.id)"
+        :class="{ 'tab--active': t.id === activeTabId, 'tab--dragging': tiles.dragTabId === t.id }"
+        @click="onTabClick(t.id)"
+        @pointerdown="onTabPointerDown($event, t.id)"
         @mousedown.middle.prevent="files.closeTabSafe(t.id)"
         @contextmenu="onContextMenu($event, t.id)"
-        draggable="true"
-        @dragstart="onDragStart($event, t.id)"
-        @dragover="onTabDragOver"
-        @drop="onTabDrop($event, t.id)"
         :title="t.filePath || t.fileName"
       >
         <span class="tab__name">{{ t.fileName }}</span>
@@ -240,9 +326,15 @@ onBeforeUnmount(() => document.removeEventListener('click', onDocClick));
   color: var(--text-muted);
   white-space: nowrap;
   position: relative;
+  /* Pointer-based drag (#86): keep touch gestures from scrolling/zooming the
+     bar mid-drag, and don't let the OS start a text selection. */
+  touch-action: none;
 }
 .tab:hover {
   background: var(--bg-hover);
+}
+.tab--dragging {
+  opacity: 0.5;
 }
 .tab--active {
   background: var(--bg);

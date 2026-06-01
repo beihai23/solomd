@@ -23,51 +23,13 @@ const tiles = useTilesStore();
 const activeTab = computed(() => tabs.tabs.find((t) => t.id === props.activeTabId));
 const paneContentRef = ref<InstanceType<typeof PaneContent> | null>(null);
 
-// ---- Drop zone for drag-to-split ----
-const dropZone = ref<SplitDirection | null>(null);
-
-function onDragOver(e: DragEvent) {
-  if (!e.dataTransfer) return;
-  e.preventDefault();
-  e.dataTransfer.dropEffect = 'move';
-
-  const target = e.currentTarget as HTMLElement;
-  const rect = target.getBoundingClientRect();
-  const x = e.clientX - rect.left;
-  const y = e.clientY - rect.top;
-  const threshold = 50;
-
-  if (x < threshold) dropZone.value = 'horizontal';
-  else if (x > rect.width - threshold) dropZone.value = 'horizontal';
-  else if (y < threshold) dropZone.value = 'vertical';
-  else if (y > rect.height - threshold) dropZone.value = 'vertical';
-  else dropZone.value = null;
-}
-
-function onDragLeave() {
-  dropZone.value = null;
-}
-
-function onDrop(e: DragEvent) {
-  dropZone.value = null;
-  if (!e.dataTransfer) return;
-  const tabId = e.dataTransfer.getData('text/plain');
-  if (!tabId) return;
-
-  const target = e.currentTarget as HTMLElement;
-  const rect = target.getBoundingClientRect();
-  const x = e.clientX - rect.left;
-  const y = e.clientY - rect.top;
-  const threshold = 50;
-
-  let direction: SplitDirection | null = null;
-  if (x < threshold || x > rect.width - threshold) direction = 'horizontal';
-  else if (y < threshold || y > rect.height - threshold) direction = 'vertical';
-
-  if (direction) {
-    tiles.splitPane(props.paneId, direction, tabId);
-  }
-}
+// ---- Drop-zone overlay for drag-to-split ----
+// The drag itself is driven by PaneTabBar using pointer events (HTML5 DnD is
+// unusable on Windows, see #86). It publishes the hovered pane + edge to the
+// tiles store; we just reflect that here for THIS pane.
+const dropZone = computed<SplitDirection | null>(() =>
+  tiles.dragSplit && tiles.dragSplit.paneId === props.paneId ? tiles.dragSplit.direction : null,
+);
 
 function onFocusIn() {
   tiles.setFocusedPane(props.paneId);
@@ -89,9 +51,6 @@ function onSelection(text: string) {
     :class="{ 'pane-host--focused': tiles.focusedPaneId === paneId }"
     @focusin="onFocusIn"
     @click="tiles.setFocusedPane(paneId)"
-    @dragover="onDragOver"
-    @dragleave="onDragLeave"
-    @drop="onDrop"
   >
     <PaneTabBar :pane-id="paneId" :active-tab-id="activeTabId" />
     <PaneContent

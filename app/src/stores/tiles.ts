@@ -13,6 +13,17 @@ interface PersistedState {
   focusedPaneId: string;
 }
 
+// Transient (never persisted) state for the pointer-based tab drag. Lives in
+// the store so PaneHost can reactively show the split drop-zone overlay while
+// PaneTabBar drives the drag. See PaneTabBar.vue for why we use pointer events
+// instead of the HTML5 Drag and Drop API (#86, Windows WebView2).
+interface DragState {
+  /** Tab currently being dragged, or null when no drag is in progress. */
+  dragTabId: string | null;
+  /** Pane + edge the pointer is hovering for a drag-to-split, or null. */
+  dragSplit: { paneId: string; direction: SplitDirection } | null;
+}
+
 function restoreSessionEnabled(): boolean {
   try {
     const raw = localStorage.getItem('solomd.settings.v1');
@@ -83,12 +94,12 @@ function firstLeaf(node: TileNode): TileLeaf {
 }
 
 export const useTilesStore = defineStore('tiles', {
-  state: (): PersistedState => {
+  state: (): PersistedState & DragState => {
     const saved = loadPersisted();
-    if (saved) return saved;
+    if (saved) return { ...saved, dragTabId: null, dragSplit: null };
     // Default: single leaf with empty activeTabId (will be set on init)
     const defaultLeaf: TileLeaf = { type: 'leaf', id: newPaneId(), activeTabId: '' };
-    return { root: defaultLeaf, focusedPaneId: defaultLeaf.id };
+    return { root: defaultLeaf, focusedPaneId: defaultLeaf.id, dragTabId: null, dragSplit: null };
   },
 
   getters: {
@@ -228,6 +239,19 @@ export const useTilesStore = defineStore('tiles', {
       const prev = leaves[(idx - 1 + leaves.length) % leaves.length];
       this.focusedPaneId = prev.id;
       this.syncActiveTab();
+    },
+
+    // ---- Pointer-based tab drag (transient; see PaneTabBar.vue) ----
+    beginTabDrag(tabId: string) {
+      this.dragTabId = tabId;
+      this.dragSplit = null;
+    },
+    setDragSplit(target: { paneId: string; direction: SplitDirection } | null) {
+      this.dragSplit = target;
+    },
+    endTabDrag() {
+      this.dragTabId = null;
+      this.dragSplit = null;
     },
 
     persist() {
