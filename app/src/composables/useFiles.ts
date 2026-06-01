@@ -82,6 +82,25 @@ export function useFiles() {
     // Native open: text files, markdown, code, etc.
     try {
       const result = await invoke<FileReadResult>('read_file', { path });
+
+      // Reveal the file's folder in the sidebar BEFORE adding the tab.
+      // Order matters: `workspace.setFolder` switches the per-workspace tab
+      // session (tabs.onWorkspaceSwitched), and that swap only *carries* DIRTY
+      // tabs across a folder change. A freshly opened CLEAN file added BEFORE
+      // the switch would be discarded — the editor kept showing the previously
+      // open document (or a blank Untitled) while the tree revealed the new
+      // folder, and only a close+reopen "fixed" it (by then the folder was
+      // already current). That was the real "double-click opens nothing" bug.
+      // Switching first means `openFromDisk` below adds the tab into the
+      // already-settled workspace, so it survives and becomes active.
+      if (settings.revealInFileTreeOnOpen) {
+        const parent = path.replace(/[\\/][^\\/]+$/, '');
+        if (parent && parent !== path) {
+          workspace.setFolder(parent);
+          if (!settings.showFileTree) settings.toggleFileTree();
+        }
+      }
+
       tabs.openFromDisk({
         filePath: path,
         content: result.content,
@@ -91,14 +110,6 @@ export function useFiles() {
       });
       workspace.pushRecent(path);
       const fileName = path.split(/[\\/]/).pop() ?? path;
-      // Optionally reveal the file in the file-tree sidebar.
-      if (settings.revealInFileTreeOnOpen) {
-        const parent = path.replace(/[\\/][^\\/]+$/, '');
-        if (parent && parent !== path) {
-          workspace.setFolder(parent);
-          if (!settings.showFileTree) settings.toggleFileTree();
-        }
-      }
       toasts.success(`Opened ${fileName}`);
     } catch (e) {
       console.error('open failed', e);
