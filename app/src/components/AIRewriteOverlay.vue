@@ -355,7 +355,15 @@ onBeforeUnmount(() => {
       </div>
 
       <!-- Action picker ------------------------------------------------ -->
-      <div v-else-if="!action || (action.custom && !customPrompt && !proposed)" class="ai-overlay__picker">
+      <!-- #95 fix: previously this used `!customPrompt` in the condition,
+           which flipped to false the moment the user typed the FIRST
+           character into the textarea, hiding the picker (and the
+           textarea with it) and snapping straight to the streaming
+           view — so the rewrite kicked off with a one-character prompt
+           on every first keypress. The textarea only needs to disappear
+           once the rewrite has actually produced a `proposed` block to
+           display; until then keep the picker. -->
+      <div v-else-if="!action || (action.custom && !proposed)" class="ai-overlay__picker">
         <button
           v-for="a in ACTIONS"
           :key="a.id"

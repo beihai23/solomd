@@ -87,7 +87,17 @@ function onAIRewrite() {
   // would either replace the whole doc on accept (data loss surprise) or
   // splice the translation at the cursor (also surprising). Force explicit
   // selection.
-  const cm = document.querySelector('.cm-editor.cm-focused') as HTMLElement | null;
+  //
+  // #95 fix: don't require .cm-focused. The user's complaint was that
+  // after closing the rewrite overlay and clicking the toolbar button
+  // again, "Select some text first" fired even though the selection
+  // box was clearly still visible. The overlay's close path returns
+  // focus to the editor on the next tick, so by the time the button
+  // click event reaches this handler the .cm-focused class is briefly
+  // absent — but the DOM Selection is unchanged. Accept any .cm-editor
+  // on the page; the selection check below is what matters.
+  const cm = document.querySelector('.cm-editor.cm-focused')
+    ?? document.querySelector('.cm-editor');
   const sel = window.getSelection();
   if (!cm || !sel || sel.rangeCount === 0 || sel.isCollapsed) {
     toasts.info('Select some text first, then click AI rewrite (or press ⌘J).');

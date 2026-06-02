@@ -16,6 +16,11 @@ export function isIOS(): boolean {
   return false;
 }
 
+export function isAndroid(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  return /Android/i.test(navigator.userAgent || '');
+}
+
 export function isMobile(): boolean {
   if (typeof navigator === 'undefined') return false;
   const ua = navigator.userAgent || '';

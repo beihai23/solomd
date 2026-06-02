@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount, watch, computed } from 'vue';
 import { EditorState, Compartment } from '@codemirror/state';
-import { EditorView, keymap, lineNumbers, highlightActiveLine, drawSelection } from '@codemirror/view';
+import { EditorView, keymap, lineNumbers, highlightActiveLine, drawSelection, rectangularSelection, crosshairCursor } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { searchKeymap, highlightSelectionMatches, search } from '@codemirror/search';
 import { syntaxHighlighting, defaultHighlightStyle, indentOnInput, bracketMatching } from '@codemirror/language';
@@ -193,6 +193,13 @@ function buildExtensions() {
     dragAwareExtension(),
     history(),
     drawSelection(),
+    // #90 — column/rectangular selection: hold Alt (Option on macOS) and
+    // drag to select a vertical block. `crosshairCursor` swaps the I-beam
+    // for a crosshair while Alt is held so the user knows the mode is
+    // armed. CM6 already turns multiple selections on by default; no
+    // need to flip `EditorState.allowMultipleSelections`.
+    rectangularSelection(),
+    crosshairCursor(),
     indentOnInput(),
     bracketMatching(),
     highlightActiveLine(),

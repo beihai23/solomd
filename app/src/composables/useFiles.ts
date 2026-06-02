@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { documentDir, join } from '@tauri-apps/api/path';
-import { isIOS } from '../lib/platform';
+import { isIOS, isAndroid } from '../lib/platform';
 import { useTabsStore } from '../stores/tabs';
 import { useWorkspaceStore } from '../stores/workspace';
 import { useSettingsStore } from '../stores/settings';
@@ -155,6 +155,26 @@ export function useFiles() {
     // OS-level last-used directory, which is unrelated to SoloMD state
     // and surprised users with a "why isn't my last folder remembered"
     // bug. We persist `currentFolder` already; this just feeds it back.
+    //
+    // #96 fix: on Android, `openDialog({ directory: true })` resolves to
+    // `null` silently — Tauri's dialog plugin doesn't surface SAF's
+    // directory-tree picker on Android, so the button looked dead. Mirror
+    // iOS behaviour and pin the workspace to the app's Documents dir.
+    // The user can drop .md files into that folder via the Files app
+    // ("On My Device > SoloMD"); SoloMD reads them back on next open.
+    if (isAndroid()) {
+      try {
+        const dir = await documentDir();
+        workspace.setFolder(dir);
+        if (!settings.showFileTree) settings.toggleFileTree();
+        toasts.info(
+          `Workspace pinned to On My Device › SoloMD. Drop .md files there via Files / a file manager and they'll show up here.`,
+        );
+      } catch (e) {
+        toasts.error(String(e));
+      }
+      return;
+    }
     const selected = await openDialog({
       directory: true,
       multiple: false,
