@@ -110,6 +110,19 @@ mod cookbook;
 #[path = "integrations.rs"]
 mod integrations;
 
+// v2.3 RAG / semantic search. Same dual-declaration pattern — surfaced
+// as bug #94 ("Command rag_reindex not found"): the rag::* commands
+// were only in lib.rs, so the desktop Settings → Integrations →
+// "Re-index now" button always hit a "command not found" wall.
+#[path = "rag.rs"]
+mod rag;
+
+// v4.1 — About-dialog build-info command. Same dual-declaration gap as
+// rag — registered in lib.rs only, missing from the desktop runner,
+// so the About panel's build details fell back silently on desktop.
+#[path = "app_build.rs"]
+mod app_build;
+
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use tauri::menu::{
@@ -787,6 +800,14 @@ pub fn run_with(initial_file: Option<String>) {
             integrations::detect_ai_clients,
             integrations::inject_mcp,
             integrations::remove_mcp,
+            // #94 — desktop was missing rag::* (registered only in lib.rs).
+            rag::rag_set_enabled,
+            rag::rag_index_status,
+            rag::rag_reindex,
+            rag::rag_search,
+            rag::rag_reindex_file,
+            // about-dialog build info (was lib.rs-only too).
+            app_build::app_build_info,
             recipe_runner::recipes_list,
             recipe_runner::recipes_get,
             recipe_runner::recipes_save,
