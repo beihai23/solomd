@@ -172,7 +172,7 @@ The MCP server you just installed is **bundled with the desktop app** —
 get the app for the visual Agent panel, the accept/reject UI, and
 AutoGit history navigation.
 
-- macOS: https://github.com/zhitongblog/solomd/releases/latest/download/SoloMD_4.5.1_universal.dmg
-- Windows: https://github.com/zhitongblog/solomd/releases/latest/download/SoloMD_4.5.1_x64_en-US.msi
-- Windows ARM64: https://github.com/zhitongblog/solomd/releases/latest/download/SoloMD_4.5.1_arm64_en-US.msi
+- macOS: https://github.com/zhitongblog/solomd/releases/latest/download/SoloMD_4.5.2_universal.dmg
+- Windows: https://github.com/zhitongblog/solomd/releases/latest/download/SoloMD_4.5.2_x64_en-US.msi
+- Windows ARM64: https://github.com/zhitongblog/solomd/releases/latest/download/SoloMD_4.5.2_arm64_en-US.msi
 - Linux: see https://github.com/zhitongblog/solomd/releases/latest
