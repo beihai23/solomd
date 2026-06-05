@@ -105,7 +105,7 @@ Or download platform-specific installers from https://github.com/zhitongblog/sol
 - [vs Typora](https://solomd.app/compare/vs-typora/): comparison with the paid WYSIWYG Markdown editor.
 - [vs Obsidian](https://solomd.app/compare/vs-obsidian/): comparison with the plugin-based knowledge tool.
 - [vs MarkText](https://solomd.app/compare/vs-marktext/): comparison with the dormant MIT alternative.
-- [vs Tolaria](https://solomd.app/compare/vs-tolaria/): comparison with the lightweight Mac-only editor.
+- [vs Tolaria](https://solomd.app/compare/vs-tolaria/): comparison with the desktop Notion-style block editor (BlockNote + tldraw whiteboards).
 - [Docs / shortcuts](https://solomd.app/docs/shortcuts/): keyboard shortcuts reference.
 - [Docs / CLI](https://solomd.app/docs/cli/): `solomd` command-line driver (`open / new / list / search / cat / export`).
 - [Docs / MCP](https://solomd.app/docs/mcp/): MCP server setup for Claude Desktop / Cursor / Codex CLI.

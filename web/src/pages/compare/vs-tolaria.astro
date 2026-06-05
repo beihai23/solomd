@@ -8,7 +8,7 @@ const lang = 'en' as const;
 
 <Layout
   title="SoloMD vs Tolaria — Tauri Markdown Editors Compared (2026)"
-  description="Two Tauri-based open-source Markdown editors. SoloMD: cross-platform, 14 AI providers, Pandoc export, CJK encoding, plus MCP server + AutoGit + semantic search shipped. Tolaria: Mac/Linux-only Notion-style block editor. Detailed comparison."
+  description="Two Tauri-based open-source Markdown editors. SoloMD: iPad + mobile, 14 AI providers, CJK encoding, Pandoc/citation export, semantic search, scheduled agent recipes + AutoGit sandbox. Tolaria: desktop Notion-style block editor with tldraw whiteboards and built-in AI. Detailed comparison."
   lang={lang}
 >
   <Header lang={lang} />
@@ -20,84 +20,100 @@ const lang = 'en' as const;
 
       <h1>SoloMD vs Tolaria: Two Tauri-Based Markdown Editors</h1>
       <p class="lead">
-        Quick answer: <strong>SoloMD</strong> if you need Windows or iPad,
-        write in Chinese (GBK / Big5 auto-detect), want 14 AI providers in
-        one BYOK panel, or rely on Pandoc / academic citation export.
-        <strong>Tolaria</strong> if you live on macOS, route everything
-        through Claude Code / MCP-compatible agents, and want a Notion-style
-        block editor with type-driven nav.
+        Quick answer: <strong>SoloMD</strong> if you want it on iPad / iOS /
+        Android, write in Chinese / Japanese (GBK / Big5 / Shift-JIS
+        auto-detect), need Pandoc / academic-citation export or file import,
+        or want the agent-workflow layer (scheduled recipes, AutoGit
+        accept/reject sandbox, replayable traces). <strong>Tolaria</strong> if
+        you're on desktop and prefer a Notion-style block editor with
+        type-driven nav and tldraw Markdown whiteboards.
+      </p>
+      <p class="lead" style="font-size:0.95rem;">
+        Both have since converged on a lot: as of mid-2026 Tolaria added
+        <strong>Windows</strong>, <strong>built-in AI providers</strong>,
+        <strong>multi-vault</strong>, and <strong>Traditional-Chinese UI</strong>,
+        so several older "SoloMD-only" lines no longer hold — this page reflects
+        the current state.
       </p>
 
       <h2>The 30-second verdict</h2>
       <table class="compare-detail">
         <thead>
-          <tr><th>&nbsp;</th><th>SoloMD v4.0</th><th>Tolaria</th></tr>
+          <tr><th>&nbsp;</th><th>SoloMD v4.5</th><th>Tolaria (mid-2026)</th></tr>
         </thead>
         <tbody>
-          <tr><th>Price</th><td><strong>Free</strong> (MIT)</td><td><strong>Free</strong> (open source)</td></tr>
-          <tr><th>Stack</th><td>Tauri 2 + Vue 3 + CodeMirror 6 + Rust</td><td>Tauri + React + TypeScript + Rust</td></tr>
-          <tr><th>Platforms</th><td>macOS · Windows · Linux x64/ARM64 · <strong>iPad</strong></td><td>macOS · Linux <em>(no Windows)</em></td></tr>
+          <tr><th>Price</th><td><strong>Free</strong> (MIT)</td><td><strong>Free</strong> (open source, AGPL)</td></tr>
+          <tr><th>Stack</th><td>Tauri 2 + Vue 3 + CodeMirror 6 + Rust</td><td>Tauri 2 + React + TypeScript + BlockNote + Rust</td></tr>
+          <tr><th>Platforms</th><td>macOS · Windows · Linux x64/ARM64 · <strong>iPad / iOS / Android</strong></td><td>macOS · Windows · Linux <em>(desktop only — no mobile)</em></td></tr>
           <tr><th>Installer size</th><td>~15 MB</td><td>~25 MB</td></tr>
           <tr><th>Editor model</th><td>CodeMirror source-mode + live preview + split</td><td>Block-based slash-command editor (Notion-style)</td></tr>
-          <tr><th>Inline Agent Panel (chat-with-vault)</th><td>✅ <strong>v4.0</strong> · streamed multi-turn · tool-call cards · [[wikilink]] citations · Insert / Copy</td><td>🟡 external MCP clients only (no in-app surface)</td></tr>
+          <tr><th>Built-in AI providers (BYOK)</th><td>✅ <code>⌘J</code> · <strong>14 providers</strong> · OS keychain · streaming diff overlay</td><td>✅ direct: OpenAI · Anthropic · Gemini · OpenRouter · Ollama · LM Studio · custom</td></tr>
+          <tr><th>Inline streamed chat-with-vault panel</th><td>✅ <strong>v4.0</strong> · multi-turn · tool-call cards · [[wikilink]] citations · Insert / Copy</td><td>🟡 agent integrations (Claude / Codex / Pi / OpenCode) + providers; no SoloMD-style inline panel</td></tr>
           <tr><th>Scheduled agent recipes</th><td>✅ <strong>v4.0</strong> · cron / on-save / on-commit / on-tag · 11-recipe cookbook</td><td>❌</td></tr>
           <tr><th>AutoGit branch sandbox + accept/reject for agent writes</th><td>✅ <strong>v4.0</strong> · per-run branch · write-cap (default 5) · refuses to start dirty</td><td>❌ (agent writes commit directly)</td></tr>
           <tr><th>Replayable agent trace</th><td>✅ <strong>v4.0</strong> · jsonl per step · replay-from-step</td><td>❌</td></tr>
-          <tr><th>Multi-workspace MCP federation</th><td>✅ <strong>v4.0</strong> · <code>--workspace</code> repeatable · MCP profiles UI</td><td>❌ single workspace</td></tr>
-          <tr><th>Ollama first-class</th><td>✅ <strong>v4.0</strong> · auto-detect · 3 model presets · <code>provider: local</code></td><td>🟡 BYOK manual</td></tr>
+          <tr><th>Multi-workspace</th><td>✅ <strong>v4.0</strong> · MCP federation · <code>--workspace</code> repeatable · profiles UI</td><td>✅ multi-vault (May 2026) · separate git boundaries (no MCP federation)</td></tr>
+          <tr><th>Ollama / local models</th><td>✅ <strong>v4.0</strong> · auto-detect · 3 model presets · <code>provider: local</code></td><td>✅ Ollama + LM Studio direct</td></tr>
           <tr><th>Multi-tab + split panes</th><td>✅ tabs + tile splitting</td><td>❌ single-pane</td></tr>
           <tr><th>Wikilinks <code>[[note]]</code></th><td>✅ auto-complete + backlinks panel</td><td>✅ auto-complete + backlinks</td></tr>
-          <tr><th>Local semantic search</th><td>✅ <strong>v2.3</strong> · ⌘⇧F · on-device, no model download</td><td>❌</td></tr>
-          <tr><th>WYSIWYG live edit mode</th><td>✅ <strong>v2.3</strong> · 4th view</td><td>✅ block editor</td></tr>
-          <tr><th>AI rewrite (in-app, BYOK)</th><td>✅ <code>⌘J</code> · 14 providers · streaming diff overlay</td><td>🟡 routes through external MCP agents</td></tr>
-          <tr><th>MCP server (vault as tool)</th><td>✅ <strong>v2.2</strong> · 1.5 MB binary · 8 read tools + 2 gated write tools</td><td>✅ built in</td></tr>
-          <tr><th>AutoGit per-note history</th><td>✅ <strong>v2.2</strong> · libgit2, never auto-pushed</td><td>✅ built in</td></tr>
-          <tr><th>Multi-encoding (GBK / Big5)</th><td>✅ auto-detect</td><td>❌ UTF-8 only</td></tr>
+          <tr><th>Local semantic search (RAG)</th><td>✅ <strong>v2.3</strong> · ⌘⇧F · on-device, no model download</td><td>❌</td></tr>
+          <tr><th>WYSIWYG / block editing</th><td>✅ <strong>v2.3</strong> · live-edit 4th view</td><td>✅ native block editor</td></tr>
+          <tr><th>Markdown whiteboards (tldraw)</th><td>❌</td><td>✅ tldraw boards saved as durable <code>.md</code></td></tr>
+          <tr><th>Editable math source panel</th><td>🟡 KaTeX render</td><td>✅ double-click formula → edit LaTeX source</td></tr>
+          <tr><th>MCP server (vault as tool)</th><td>✅ <strong>v2.2</strong> · 1.5 MB binary · 8 read + 2 gated write tools</td><td>✅ built in</td></tr>
+          <tr><th>AutoGit per-note history</th><td>✅ <strong>v2.2</strong> · libgit2, never auto-pushed</td><td>✅ built in (every vault is a git repo)</td></tr>
+          <tr><th>Multi-encoding (GBK / Big5 / Shift-JIS)</th><td>✅ auto-detect</td><td>❌ UTF-8 only</td></tr>
           <tr><th>File import (DOCX / PDF / XLSX / PPTX)</th><td>✅ drag-in → Markdown</td><td>❌</td></tr>
-          <tr><th>Pandoc export (EPUB / ODT / LaTeX / RTF)</th><td>✅</td><td>❌</td></tr>
+          <tr><th>Pandoc export (EPUB / ODT / LaTeX / RTF)</th><td>✅</td><td>❌ (PDF export only, June 2026)</td></tr>
           <tr><th><code>@citekey</code> citations + .bib / CSL</th><td>✅</td><td>❌</td></tr>
           <tr><th>Slideshow / presentation mode</th><td>✅ <code>⌘⌥P</code></td><td>❌</td></tr>
           <tr><th>Vim mode</th><td>✅</td><td>❌</td></tr>
-          <tr><th>Welcome tour (en + zh)</th><td>✅</td><td>❌</td></tr>
           <tr><th>Spell-check (Hunspell)</th><td>✅ opt-in</td><td>🟡 OS-level only</td></tr>
           <tr><th>Properties / table view</th><td>✅ Bases (YAML-driven)</td><td>✅ Types-as-lenses (drives nav)</td></tr>
           <tr><th>CLI tool</th><td>✅ <code>solomd</code></td><td>❌</td></tr>
-          <tr><th>Bilingual UI (en + zh)</th><td>✅</td><td>❌ English only</td></tr>
+          <tr><th>UI languages</th><td>✅ 14 languages (en · zh-Hans · ja · ko · …)</td><td>✅ en + zh-Hant · id · be · pl · vi</td></tr>
           <tr><th>Default file format</th><td>plain <code>.md</code></td><td>plain <code>.md</code></td></tr>
         </tbody>
       </table>
 
       <h2>When to pick SoloMD</h2>
       <ul>
-        <li>You're on <strong>Windows</strong> — Tolaria has no Windows build.</li>
-        <li>You write on an <strong>iPad</strong> — SoloMD ships on the App Store.</li>
+        <li>You write on <strong>iPad / iOS / Android</strong> — Tolaria is desktop-only.</li>
         <li>You write in <strong>Chinese / Japanese / Korean</strong> — SoloMD auto-detects GBK / Big5 / Shift-JIS encodings; Tolaria assumes UTF-8.</li>
-        <li>You want <strong>multiple AI providers</strong> at once — SoloMD has 14 (OpenAI · Claude · Gemini · DeepSeek · Qwen · GLM · Kimi · 火山方舟 · OpenRouter · Ollama · …) all using OS keychain. Tolaria leans on external MCP agents for AI.</li>
-        <li>You need <strong>Pandoc export</strong> (EPUB / ODT / LaTeX) or <strong>academic citations</strong> (<code>@citekey</code> + <code>.bib</code> / CSL) — Tolaria ships neither.</li>
-        <li>You want <strong>multi-tab + split panes</strong> — Tolaria is single-pane.</li>
+        <li>You want the <strong>agent-workflow layer</strong> — scheduled recipes (cron / on-save / on-commit), an AutoGit branch sandbox that lets you accept/reject agent writes, and replayable traces. Tolaria has built-in AI providers, but agent writes commit directly with no sandbox/replay.</li>
+        <li>You need <strong>Pandoc export</strong> (EPUB / ODT / LaTeX) or <strong>academic citations</strong> (<code>@citekey</code> + <code>.bib</code> / CSL) — Tolaria ships neither (it added PDF export in mid-2026).</li>
+        <li>You want <strong>local semantic search</strong> (on-device RAG) — Tolaria has none.</li>
         <li>You import from <strong>.docx / .pdf / .xlsx / .pptx</strong> — Tolaria has no file converter.</li>
-        <li>You want <strong>presentation mode</strong> for talks (<code>⌘⌥P</code> renders the doc as fullscreen slides).</li>
+        <li>You want <strong>multi-tab + split panes</strong>, <strong>presentation mode</strong> (<code>⌘⌥P</code>), or <strong>Vim mode</strong> — Tolaria has none of these.</li>
+        <li>You want <strong>14 AI providers</strong> in one keychain-backed panel (incl. DeepSeek · Qwen · GLM · Kimi · 火山方舟) — Tolaria's built-in list is shorter.</li>
       </ul>
 
       <h2>When to pick Tolaria</h2>
       <ul>
-        <li>You're <strong>macOS or Linux only</strong> and prefer a fresh Notion-style block editor.</li>
+        <li>You prefer a <strong>Notion-style block editor</strong> (BlockNote, slash commands) over CodeMirror source + preview.</li>
+        <li>You want <strong>tldraw Markdown whiteboards</strong> that live as durable <code>.md</code> in the vault — SoloMD has no whiteboard.</li>
+        <li>You like an <strong>editable math source panel</strong> (double-click a rendered formula to edit its LaTeX without de-rendering it).</li>
         <li>You like <strong>"types as lenses"</strong> — every note has a `type` (Project / Topic / etc.) with custom icons + columns that drives the whole sidebar. SoloMD has Bases (a property table view), but folders / tabs are still the primary nav.</li>
         <li>You want a <strong>Tiago-Forte-style Inbox workflow</strong> with explicit "organized" markers.</li>
       </ul>
       <p>
-        Note: MCP server and AutoGit version history both used to be Tolaria-only.
-        Both shipped in SoloMD as of v2.2 — and SoloMD's v2.3 added local
-        <strong>semantic search</strong>, which Tolaria still doesn't have.
+        The gap has narrowed: MCP server, AutoGit version history, multi-vault,
+        Windows, and built-in AI providers all now ship in <em>both</em>. SoloMD's
+        remaining edges are mobile, CJK encodings, Pandoc/citation export, file
+        import, on-device semantic search, and the agent-workflow layer
+        (recipes + sandbox + trace); Tolaria's are the block editor, tldraw
+        whiteboards, and type-driven nav.
       </p>
 
       <h2>Both editors share</h2>
       <ul>
-        <li>Tauri-based architecture (smaller / faster than Electron alternatives like Obsidian).</li>
-        <li>Open source, free forever, no accounts.</li>
+        <li>Tauri 2 architecture (smaller / faster than Electron alternatives like Obsidian).</li>
+        <li>Open source, free forever, no accounts; plain <code>.md</code> + YAML, local-first.</li>
+        <li>Windows · macOS · Linux desktop builds.</li>
+        <li>Built-in AI providers (BYOK) + a bundled MCP server.</li>
+        <li>Every vault is a git repo with built-in version history.</li>
         <li>Wikilinks <code>[[note]]</code> + backlinks panel.</li>
-        <li>Local-first — your <code>.md</code> files stay yours, no cloud round-trip.</li>
-        <li>Active maintenance (both projects shipped major releases in April 2026).</li>
+        <li>Active maintenance — both shipped releases through mid-2026.</li>
       </ul>
 
       <h2>Migration — Tolaria to SoloMD</h2>
@@ -131,15 +147,16 @@ const lang = 'en' as const;
         Discoverable by any MCP client — Claude Desktop, Cursor, Codex CLI,
         your own agent.</p>
 
-      <h3>Why no Windows for Tolaria?</h3>
-      <p>It's a small project (3 months old). Windows support is on their roadmap but not
-        prioritized. SoloMD has Windows from day one because Tauri's WebView2 + NSIS
-        installer + native menu bar are all wired in.</p>
+      <h3>Does Tolaria run on Windows / mobile?</h3>
+      <p>Windows — yes, as of April 2026 (x64). Mobile — no: Tolaria is
+        desktop-only (macOS · Windows · Linux). SoloMD additionally ships on
+        iPad / iOS (App Store) and Android, so it's the pick if you read or
+        edit on a tablet or phone.</p>
 
       <h3>Can I use both?</h3>
-      <p>Yes — they read the same <code>.md</code> files. A common combo is Tolaria on a
-        Mac at home + SoloMD on a Windows / Linux work laptop or iPad on the road, all
-        pointing at the same git-synced vault.</p>
+      <p>Yes — they read the same <code>.md</code> files and both treat the vault as a
+        git repo. A common combo is Tolaria on a desktop + SoloMD on an iPad / phone
+        on the road, all pointing at the same git-synced vault.</p>
 
       <div class="compare-cta">
         <a href="/#download" class="btn btn--primary">Download SoloMD</a>

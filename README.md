@@ -153,23 +153,24 @@ Full overview + submission status: [`marketplace/README.md`](marketplace/README.
 
 ## Compared
 
-| | SoloMD v4.0 | Obsidian | Typora | Tolaria |
+| | SoloMD v4.5 | Obsidian | Typora | Tolaria |
 |---|---|---|---|---|
 | License | **MIT** | proprietary (free) | paid ($14.99) | AGPL |
 | Stack | Tauri 2 (Rust + WebView) | Electron | Electron | Tauri 2 |
-| Platforms | macOS · Win · Linux · iPad | macOS · Win · Linux · iOS · Android | macOS · Win · Linux | macOS · Linux |
+| Platforms | macOS · Win · Linux · **iPad/iOS/Android** | macOS · Win · Linux · iOS · Android | macOS · Win · Linux | macOS · Win · Linux |
 | Installer | ~32 MB (mac) / ~10 MB (win) | ~120 MB | ~95 MB | ~25 MB |
-| **Inline Agent Panel** | **✅ v4.0** | 🟡 paid plugins (Smart Composer / Copilot) | ❌ | 🟡 external MCP only |
+| **Inline Agent Panel** | **✅ v4.0** | 🟡 paid plugins (Smart Composer / Copilot) | ❌ | 🟡 providers + agents, no inline panel |
 | **Scheduled agent recipes** | **✅ v4.0** | ❌ | ❌ | ❌ |
 | **AutoGit branch sandbox + accept/reject** | **✅ v4.0** | ❌ | ❌ | ❌ |
 | **Replayable agent trace** | **✅ v4.0** | ❌ | ❌ | ❌ |
-| **Multi-workspace MCP federation** | **✅ v4.0** | ❌ | ❌ | ❌ |
+| **Multi-workspace** | **✅ v4.0 MCP federation** | ❌ | ❌ | 🟡 multi-vault |
 | **MCP server bundled** | **✅ 13 tools, 5 SoloMD-only** | ❌ (community plugins) | ❌ | ✅ generic |
-| **Built-in AI rewrite** | **✅ 14 BYOK providers** | plugin only | ❌ | via external MCP |
+| **Built-in AI rewrite** | **✅ 14 BYOK providers** | plugin only | ❌ | ✅ built-in providers |
 | GitHub-backed sync | ✅ | ❌ (Obsidian Sync $96/yr) | ❌ | ❌ |
 | End-to-end encryption | ✅ on your repo | ✅ on Obsidian's servers | ❌ | ❌ |
 | Local RAG / semantic search | ✅ off by default | plugin only | ❌ | ❌ |
 | Version history per note | ✅ AutoGit | plugin only | ❌ | ✅ |
+| Markdown whiteboards (tldraw) | ❌ | 🟡 Canvas (own format) | ❌ | ✅ |
 | CJK encodings (GBK / Big5) | ✅ auto-detect | ❌ | ❌ | ❌ |
 
 Detailed breakdowns: [vs Obsidian](https://solomd.app/compare/vs-obsidian) · [vs Typora](https://solomd.app/compare/vs-typora) · [vs Tolaria](https://solomd.app/compare/vs-tolaria) · [vs Marktext](https://solomd.app/compare/vs-marktext).
