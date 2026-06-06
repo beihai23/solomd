@@ -20,7 +20,7 @@ const lang = 'zh' as const;
 
       <h1>SoloMD vs Typora：选哪个？</h1>
       <p class="lead">
-        对比基于 <strong>SoloMD v4.0</strong> 与 <strong>Typora 1.13</strong>（2026 年 5 月）。
+        对比基于 <strong>SoloMD v4.5</strong> 与 <strong>Typora 1.13</strong>（2026 年中）。
         想要一个开源编辑器、Agent 是一等公民（chat-with-vault 面板、定时 recipe、AutoGit
         分支沙箱使写入可审），SoloMD；想要最完整的<strong>单一 WYSIWYG</strong>
         体验、不需要 AI / 同步 / 版本历史 / agent 在核心，Typora 仍是好选择。
@@ -29,7 +29,7 @@ const lang = 'zh' as const;
       <h2>30 秒速览</h2>
       <table class="compare-detail">
         <thead>
-          <tr><th>&nbsp;</th><th>SoloMD v4.0</th><th>Typora 1.13</th></tr>
+          <tr><th>&nbsp;</th><th>SoloMD v4.5</th><th>Typora 1.13</th></tr>
         </thead>
         <tbody>
           <tr><th>价格</th><td><strong>免费</strong>（MIT）</td><td>$14.99 美元（买断，3 设备）</td></tr>
@@ -62,7 +62,7 @@ const lang = 'zh' as const;
           <tr><th>数学（KaTeX vs MathJax v4）</th><td>KaTeX ~280 KB</td><td>✅ <strong>MathJax v4</strong> · 更全（<code>\\</code> 换行、更多 TeX 包）</td></tr>
           <tr><th>Mermaid 版本</th><td>✅ <strong>11.14</strong>（更新）</td><td>11.13（刚加 Venn + Ishikawa）</td></tr>
           <tr><th>导出 PDF / DOCX / HTML / PNG</th><td>✅</td><td>✅</td></tr>
-          <tr><th>Pandoc 导出（EPUB / ODT / LaTeX）</th><td>✅</td><td>❌</td></tr>
+          <tr><th>Pandoc 导出（EPUB / ODT / LaTeX）</th><td>🟡 支持 —— 需 PATH 上装 Pandoc</td><td>🟡 支持 —— 需另装 Pandoc</td></tr>
           <tr><th>多编码（GBK / Big5 / Shift-JIS）</th><td>✅ 自动识别（chardetng）</td><td>⚠️ 仅 UTF-8</td></tr>
           <tr><th>中文标点校对</th><td>✅ <strong>v2.5</strong></td><td>❌</td></tr>
           <tr><th>Vim 模式</th><td>✅</td><td>❌</td></tr>

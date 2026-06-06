@@ -166,7 +166,7 @@ Full overview + submission status: [`marketplace/README.md`](marketplace/README.
 | **Multi-workspace** | **✅ v4.0 MCP federation** | ❌ | ❌ | 🟡 multi-vault |
 | **MCP server bundled** | **✅ 13 tools, 5 SoloMD-only** | ❌ (community plugins) | ❌ | ✅ generic |
 | **Built-in AI rewrite** | **✅ 14 BYOK providers** | plugin only | ❌ | ✅ built-in providers |
-| GitHub-backed sync | ✅ | ❌ (Obsidian Sync $96/yr) | ❌ | ❌ |
+| GitHub-backed sync | ✅ | ❌ (Obsidian Sync $5/mo) | ❌ | ❌ |
 | End-to-end encryption | ✅ on your repo | ✅ on Obsidian's servers | ❌ | ❌ |
 | Local RAG / semantic search | ✅ off by default | plugin only | ❌ | ❌ |
 | Version history per note | ✅ AutoGit | plugin only | ❌ | ✅ |

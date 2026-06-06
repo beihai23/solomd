@@ -144,7 +144,7 @@ winget install solomd
 | **多工作区** | **✅ v4.0 MCP Federation** | ❌ | ❌ | 🟡 多 vault |
 | **MCP server** | **✅ 内置 13 工具,5 个独家** | ❌(社区插件) | ❌ | ✅ 通用 |
 | **AI 改写内建** | **✅ 14 个 BYOK 服务** | 仅插件 | ❌ | ✅ 内置 provider |
-| GitHub 同步 | ✅ | ❌(Obsidian Sync $96/年) | ❌ | ❌ |
+| GitHub 同步 | ✅ | ❌(Obsidian Sync $5/月) | ❌ | ❌ |
 | 端到端加密 | ✅ 在你自己的库里 | ✅ 在 Obsidian 服务器上 | ❌ | ❌ |
 | 本地语义搜索 | ✅ 默认关 | 仅插件 | ❌ | ❌ |
 | 每篇笔记版本历史 | ✅ AutoGit | 仅插件 | ❌ | ✅ |

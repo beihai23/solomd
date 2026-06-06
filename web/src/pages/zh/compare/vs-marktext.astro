@@ -20,21 +20,21 @@ const lang = 'zh' as const;
 
       <h1>SoloMD vs MarkText：两款免费 Markdown 编辑器对比</h1>
       <p class="lead">
-        都是免费开源。<strong>SoloMD</strong> 更新、更小 (15 MB vs 90 MB)、2026 年活跃维护，
+        都是免费开源。<strong>SoloMD</strong> 更新、更小 (15 MB vs 90 MB)，
         内置多标签、分屏、CJK 编码识别、语义搜索、AutoGit 历史、MCP server、14 AI provider。
-        <strong>MarkText</strong> 历史更久，但近期 commit 稀疏。
+        <strong>MarkText</strong> 历史更久 —— 沉寂多年后于 2026 年 5 月恢复维护（原作者回归,并把社区 fork 合并回主仓库）。
       </p>
 
       <h2>30 秒速览</h2>
       <table class="compare-detail">
         <thead>
-          <tr><th>&nbsp;</th><th>SoloMD v4.0</th><th>MarkText</th></tr>
+          <tr><th>&nbsp;</th><th>SoloMD v4.5</th><th>MarkText</th></tr>
         </thead>
         <tbody>
           <tr><th>许可证</th><td>MIT</td><td>MIT</td></tr>
           <tr><th>安装包大小</th><td>~15 MB</td><td>~90 MB</td></tr>
           <tr><th>技术栈</th><td>Tauri 2 + Vue 3 + CodeMirror 6</td><td>Electron + Vue 2 + Muya</td></tr>
-          <tr><th>活跃度</th><td>✅ 2026 年频繁更新</td><td>⚠️ 上次发版 2022 年 10 月（停更）</td></tr>
+          <tr><th>活跃度</th><td>✅ 2026 年频繁更新</td><td>✅ 2026 年 5 月恢复维护（原作者回归;fork 已合并）—— 2022–2025 沉寂</td></tr>
           <tr><th>内置 Agent 面板（chat-with-vault）</th><td>✅ <strong>v4.0</strong></td><td>❌</td></tr>
           <tr><th>定时 Agent Recipe + AutoGit 分支沙箱</th><td>✅ <strong>v4.0</strong></td><td>❌</td></tr>
           <tr><th>可重放的 Agent Trace</th><td>✅ <strong>v4.0</strong></td><td>❌</td></tr>
@@ -59,7 +59,7 @@ const lang = 'zh' as const;
           <tr><th>Markdown 格式化 (Prettier)</th><td>✅ <code>⌘⌥L</code></td><td>❌</td></tr>
           <tr><th>欢迎教程</th><td>✅ 首次启动</td><td>❌</td></tr>
           <tr><th>命令面板</th><td>✅ ⌘⇧K</td><td>❌</td></tr>
-          <tr><th>iPad / iOS</th><td>🟡 已提交,审核中</td><td>❌</td></tr>
+          <tr><th>iPad / iOS / 安卓</th><td>✅ App Store (iPad/iOS) + Android</td><td>❌</td></tr>
           <tr><th>清除 AI 格式</th><td>✅ 一键去引用 / 弯引号 / 零宽字符</td><td>❌</td></tr>
         </tbody>
       </table>
@@ -81,8 +81,7 @@ const lang = 'zh' as const;
         <li>已经在用,不想迁主题 / 设置。</li>
       </ul>
       <p>
-        说明:截至 2026 年初,MarkText 的 GitHub 仓库 release 间隔较长。
-        SoloMD 频繁迭代、积极响应 issue —— 如果你看重 bug 修复速度,这是个差别。
+        说明:MarkText 在 2022 年底至 2025 年间沉寂,但 2026 年 5 月恢复维护（原作者回归,社区 fork 合并回主仓库）。两个项目在 2026 年中都在活跃维护 —— 按功能选,而不是按"是否还活着"选。
       </p>
 
       <h2>为什么 SoloMD 更小</h2>

@@ -21,21 +21,22 @@ const lang = 'en' as const;
       <h1>SoloMD vs MarkText: Two Free Markdown Editors Compared</h1>
       <p class="lead">
         Both are free and open source. <strong>SoloMD</strong> is newer, smaller (15 MB vs 90 MB),
-        actively maintained in 2026, and includes features like multi-tab, split view, and CJK
-        encoding auto-detect. <strong>MarkText</strong> has a larger history but limited recent
-        commits.
+        and adds multi-tab, split view, CJK encoding auto-detect, and a built-in
+        AI / MCP / AutoGit stack. <strong>MarkText</strong> — after a long dormant
+        stretch — returned to active maintenance in May 2026 (the original author
+        came back and merged the community fork upstream).
       </p>
 
       <h2>At a glance</h2>
       <table class="compare-detail">
         <thead>
-          <tr><th>&nbsp;</th><th>SoloMD v4.0</th><th>MarkText</th></tr>
+          <tr><th>&nbsp;</th><th>SoloMD v4.5</th><th>MarkText</th></tr>
         </thead>
         <tbody>
           <tr><th>License</th><td>MIT</td><td>MIT</td></tr>
           <tr><th>Installer size</th><td>~15 MB</td><td>~90 MB</td></tr>
           <tr><th>Built on</th><td>Tauri 2 + Vue 3 + CodeMirror 6</td><td>Electron + Vue 2 + Muya</td></tr>
-          <tr><th>Active development</th><td>✅ weekly releases (2026)</td><td>⚠️ last release Oct 2022 (dormant)</td></tr>
+          <tr><th>Active development</th><td>✅ frequent releases (2026)</td><td>✅ revived May 2026 (orig. author back; fork merged upstream) — dormant 2022–2025</td></tr>
           <tr><th>Inline Agent Panel (chat-with-vault)</th><td>✅ <strong>v4.0</strong></td><td>❌</td></tr>
           <tr><th>Scheduled agent recipes + AutoGit branch sandbox</th><td>✅ <strong>v4.0</strong></td><td>❌</td></tr>
           <tr><th>Replayable agent trace</th><td>✅ <strong>v4.0</strong></td><td>❌</td></tr>
@@ -60,7 +61,7 @@ const lang = 'en' as const;
           <tr><th>Format Markdown (Prettier)</th><td>✅ <code>⌘⌥L</code></td><td>❌</td></tr>
           <tr><th>Welcome tour</th><td>✅ on first launch</td><td>❌</td></tr>
           <tr><th>Command palette</th><td>✅ Ctrl+Shift+K</td><td>❌</td></tr>
-          <tr><th>iPad / iOS</th><td>🟡 submitted, in review</td><td>❌</td></tr>
+          <tr><th>iPad / iOS / Android</th><td>✅ App Store (iPad/iOS) + Android</td><td>❌</td></tr>
           <tr><th>Clean-AI button</th><td>✅ strips citations / curly quotes / zero-width</td><td>❌</td></tr>
         </tbody>
       </table>
@@ -81,9 +82,10 @@ const lang = 'en' as const;
         <li>You already use it and don't want to migrate settings / themes.</li>
       </ul>
       <p>
-        Note: as of early 2026, MarkText's GitHub repo shows long periods between releases.
-        SoloMD ships frequent patches and actively responds to issues — something to weigh
-        if bug fixes matter to you.
+        Note: MarkText was dormant from late 2022 through 2025, but returned to
+        active maintenance in May 2026 (original author back, community fork merged
+        upstream). Both projects are maintained again as of mid-2026 — pick on
+        features, not liveness.
       </p>
 
       <h2>Why SoloMD is smaller</h2>
