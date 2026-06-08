@@ -315,24 +315,26 @@ const liveEditTheme = EditorView.theme({
   },
   // Heading lines — use line-decoration to size whole line so layout
   // doesn't jump when markers are revealed/hidden.
+  // Note: do NOT set a custom lineHeight here. Heading visual height is
+  // achieved through fontSize + padding alone. Overriding lineHeight per
+  // line breaks CodeMirror's posAtCoords math (it caches line-box metrics
+  // measured against the base lineHeight), making click-to-position land
+  // on the wrong line. Keep line-height uniform at the .cm-scroller base.
   '.cm-md-heading-line-1': {
     fontSize: '1.85em',
     fontWeight: '700',
-    lineHeight: '1.25',
     paddingTop: '0.4em',
     paddingBottom: '0.15em',
   },
   '.cm-md-heading-line-2': {
     fontSize: '1.5em',
     fontWeight: '700',
-    lineHeight: '1.3',
     paddingTop: '0.3em',
     paddingBottom: '0.1em',
   },
   '.cm-md-heading-line-3': {
     fontSize: '1.22em',
     fontWeight: '700',
-    lineHeight: '1.35',
   },
   '.cm-md-heading-line-4': { fontSize: '1.1em', fontWeight: '700' },
   '.cm-md-heading-line-5': { fontWeight: '700' },
