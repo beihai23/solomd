@@ -1,5 +1,5 @@
 import { inject } from 'vue';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke, convertFileSrc } from '@tauri-apps/api/core';
 import { open as openDialog, save as saveDialog } from '@tauri-apps/plugin-dialog';
 import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { documentDir, join } from '@tauri-apps/api/path';
@@ -9,6 +9,9 @@ import { useWorkspaceStore } from '../stores/workspace';
 import { useSettingsStore } from '../stores/settings';
 import { useToastsStore } from '../stores/toasts';
 import { useRecentEditsStore } from '../stores/recentEdits';
+import { useWindowsStore } from '../stores/windows';
+import { openImageOverlay, type OverlayStrings } from '../lib/image-overlay';
+import { useI18n } from '../i18n';
 import type { FileReadResult, Tab } from '../types';
 
 // Save dialogs only — opening uses no filter so any file is selectable.
@@ -25,6 +28,26 @@ export function useFiles() {
   const settings = useSettingsStore();
   const toasts = useToastsStore();
   const recentEdits = useRecentEditsStore();
+  const windowsStore = useWindowsStore();
+  const { t } = useI18n();
+
+  // #103 — spawn an auxiliary window with a *stable* label (`solomd-window-N`)
+  // instead of a timestamp, and record it in the shared windows registry so
+  // (a) tauri-plugin-window-state can restore its geometry by label and
+  // (b) the main window re-spawns it on the next launch. Returns the label,
+  // or null when window creation failed (caller falls back to in-tab open).
+  function spawnAuxWindow(path: string): string | null {
+    try {
+      const label = windowsStore.nextAuxLabel();
+      const url = `/?path=${encodeURIComponent(path)}`;
+      new WebviewWindow(label, { url, title: 'SoloMD', width: 1000, height: 700 });
+      windowsStore.register(label, { path, folder: workspace.currentFolder });
+      return label;
+    } catch (e) {
+      console.warn('aux-window spawn failed', e);
+      return null;
+    }
+  }
 
   async function newFile() {
     tabs.newTab();
@@ -47,12 +70,62 @@ export function useFiles() {
   const CONVERT_BUILTIN = new Set(['docx', 'csv', 'xlsx', 'xls', 'html', 'htm']);
 
   // Extensions that need markitdown CLI (Python).
+  // #98 — image extensions were removed from here: clicking an image in the
+  // FileTree used to run it through the markitdown OCR converter (which fails
+  // and toasts an error). Images now open in the fullscreen viewer instead.
   const CONVERT_CLI = new Set([
-    'pdf', 'pptx', 'epub', 'jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp',
+    'pdf', 'pptx', 'epub',
     'mp3', 'wav', 'm4a', 'ogg', 'flac',
   ]);
 
+  // #98 — image files open in the fullscreen image overlay (same viewer the
+  // preview pane uses), not the document converter.
+  const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp']);
+
+  function overlayStrings(): OverlayStrings {
+    return {
+      close: t('overlay.close'),
+      zoomIn: t('overlay.zoomIn'),
+      zoomOut: t('overlay.zoomOut'),
+      resetZoom: t('overlay.resetZoom'),
+      image: t('overlay.image'),
+      diagram: t('overlay.diagram'),
+    };
+  }
+
+  // #98 — open an image file in the fullscreen overlay viewer. Mirrors the
+  // click-to-zoom flow in Preview.vue: build an <img> from an asset:// URL
+  // and hand it to openImageOverlay(). We wait for the image to load so the
+  // overlay's fit-to-screen sees real natural dimensions.
+  async function openImageFile(path: string) {
+    const fileName = path.split(/[\\/]/).pop() ?? path;
+    try {
+      const img = new Image();
+      img.src = convertFileSrc(path);
+      img.alt = fileName;
+      await new Promise<void>((resolve, reject) => {
+        if (img.complete && img.naturalWidth > 0) return resolve();
+        img.onload = () => resolve();
+        img.onerror = () => reject(new Error('image failed to load'));
+      });
+      openImageOverlay({ source: img, title: fileName, strings: overlayStrings() });
+      workspace.pushRecent(path);
+      toasts.success(`Opened ${fileName}`);
+    } catch (e) {
+      console.error('open image failed', e);
+      toasts.error(`Failed to open image: ${e}`);
+    }
+  }
+
   async function openPath(path: string, opts: { bypassNewWindow?: boolean } = {}) {
+    // #98 — image files open in the fullscreen overlay viewer, never as a
+    // tab and never in a new window (an overlay isn't document content, so
+    // routing it through the markitdown converter just toasts an error).
+    const imgExt = (path.split('.').pop() || '').toLowerCase();
+    if (IMAGE_EXTENSIONS.has(imgExt)) {
+      return openImageFile(path);
+    }
+
     // Spawn a new Tauri window with the path in the query string when the
     // user has opted in. Only applies when the current window already has
     // at least one tab (fresh-launch first file should stay in this window).
@@ -61,15 +134,8 @@ export function useFiles() {
       !opts.bypassNewWindow &&
       tabs.tabs.length > 0
     ) {
-      try {
-        const label = `solomd-${Date.now()}`;
-        const url = `/?path=${encodeURIComponent(path)}`;
-        new WebviewWindow(label, { url, title: 'SoloMD', width: 1000, height: 700 });
-        return;
-      } catch (e) {
-        // Fall back to in-tab open if window creation fails.
-        console.warn('new-window open failed, falling back to tab', e);
-      }
+      if (spawnAuxWindow(path)) return;
+      // Window creation failed — fall through to in-tab open.
     }
 
     const ext = (path.split('.').pop() || '').toLowerCase();
@@ -343,5 +409,6 @@ export function useFiles() {
     saveActiveAs,
     autoSaveDirtyTabs,
     closeTabSafe,
+    spawnAuxWindow,
   };
 }

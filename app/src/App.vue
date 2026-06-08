@@ -2,6 +2,7 @@
 import { onMounted, onBeforeUnmount, ref, watch, watchEffect, computed, provide, nextTick } from 'vue';
 import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { WebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { invoke } from '@tauri-apps/api/core';
 import { openPath } from '@tauri-apps/plugin-opener';
@@ -38,6 +39,7 @@ import FileChangedDialog from './components/FileChangedDialog.vue';
 import Toast from './components/Toast.vue';
 import { useTabsStore } from './stores/tabs';
 import { useSettingsStore } from './stores/settings';
+import { useWindowsStore, isAuxLabel } from './stores/windows';
 import { useTilesStore } from './stores/tiles';
 import { usePomodoroStore } from './stores/pomodoro';
 import { useFiles } from './composables/useFiles';
@@ -56,6 +58,7 @@ import { IS_APP_STORE_BUILD } from './lib/app-build';
 
 const tabs = useTabsStore();
 const settings = useSettingsStore();
+const windowsStore = useWindowsStore();
 const tiles = useTilesStore();
 const files = useFiles();
 const exporter = useExport();
@@ -518,6 +521,7 @@ function onFilterTag(tag: string) {
 
 let unlistenOpened: UnlistenFn | null = null;
 let unlistenMenu: UnlistenFn | null = null;
+let unlistenWindowDestroyed: UnlistenFn | null = null;
 
 async function openExternalFile() {
   const filePath = tabs.activeTab?.filePath;
@@ -712,13 +716,63 @@ onMounted(async () => {
 
   // New-window launched via `?path=<encoded>` (used by the "open in new
   // window" setting). Same reasoning as above — bypass the setting.
+  let initialPath: string | null = null;
   try {
     const params = new URLSearchParams(window.location.search);
-    const initialPath = params.get('path');
+    initialPath = params.get('path');
     if (initialPath) {
       await files.openPath(initialPath, { bypassNewWindow: true });
     }
   } catch {}
+
+  // #103 — auxiliary-window persistence.
+  //
+  // The "Open file in new window" feature spawns extra windows with stable
+  // `solomd-window-N` labels (useFiles.spawnAuxWindow). For those windows to
+  // survive an app restart we maintain a shared registry (windows store) that
+  // the main window reads on startup to re-spawn them.
+  try {
+    const myLabel = getCurrentWindow().label;
+    if (isAuxLabel(myLabel)) {
+      // This IS an auxiliary window. Make sure it's recorded in the registry
+      // (it normally is — registered at spawn time — but re-asserting here
+      // covers windows restored by tauri-plugin-window-state without going
+      // through spawnAuxWindow). Then track its close so the user explicitly
+      // closing it removes the entry and it doesn't resurrect next launch.
+      if (initialPath) {
+        windowsStore.register(myLabel, {
+          path: initialPath,
+          folder: workspace.currentFolder,
+        });
+      }
+      try {
+        await getCurrentWindow().onCloseRequested(() => {
+          windowsStore.unregister(myLabel);
+        });
+      } catch (err) {
+        console.warn('aux-window close tracking unavailable', err);
+      }
+    } else {
+      // This is the MAIN window. Re-spawn every registered auxiliary window
+      // that isn't already open. We compare against the live window list so
+      // a window the plugin already restored isn't duplicated.
+      windowsStore.reload();
+      const open = new Set((await WebviewWindow.getAll()).map((w) => w.label));
+      for (const label of windowsStore.auxLabels) {
+        if (open.has(label)) continue;
+        const entry = windowsStore.registry[label];
+        if (!entry) continue;
+        try {
+          const url = `/?path=${encodeURIComponent(entry.path)}`;
+          new WebviewWindow(label, { url, title: 'SoloMD', width: 1000, height: 700 });
+        } catch (err) {
+          console.warn('failed to restore aux window', label, err);
+        }
+      }
+    }
+  } catch (err) {
+    console.warn('aux-window registry handling failed', err);
+  }
 
   // First-launch welcome tour: only when there are no tabs at all (fresh
   // install or user has cleared session) and we haven't shown it before.
@@ -761,6 +815,19 @@ onMounted(async () => {
     });
   } catch (err) {
     console.warn('close-requested listener failed', err);
+  }
+
+  // #103 — backstop registry cleanup. The destroyed window normally
+  // unregisters itself via onCloseRequested, but a webview teardown that
+  // skips CloseRequested would leave a stale entry that resurrects on the
+  // next launch. Rust emits `solomd://window-destroyed` with the label so
+  // any surviving window drops it from the registry.
+  try {
+    unlistenWindowDestroyed = await listen<string>('solomd://window-destroyed', (e) => {
+      if (e.payload && isAuxLabel(e.payload)) windowsStore.unregister(e.payload);
+    });
+  } catch (err) {
+    console.warn('window-destroyed listener not available', err);
   }
 
   // Native menu bar
@@ -888,6 +955,10 @@ onBeforeUnmount(() => {
   if (unlistenMenu) {
     unlistenMenu();
     unlistenMenu = null;
+  }
+  if (unlistenWindowDestroyed) {
+    unlistenWindowDestroyed();
+    unlistenWindowDestroyed = null;
   }
 });
 

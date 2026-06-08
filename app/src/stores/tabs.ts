@@ -3,6 +3,7 @@ import type { Language, Tab } from '../types';
 import { useSettingsStore } from './settings';
 import { useTilesStore } from './tiles';
 import { useWritingSessionStore } from './writingSession';
+import { useWindowsStore } from './windows';
 import { stampGoalSetAtIfMissing } from '../composables/useWritingGoals';
 
 // Legacy / global key (used when per-workspace tabs is OFF, and as the
@@ -14,6 +15,33 @@ const LS_KEY = 'solomd.tabs.v1';
 // keys instead of clobbering one global blob.
 const LS_BUCKET_PREFIX = 'solomd.tabs.v1::';
 const NO_WORKSPACE = '__none__';
+
+// #103 — auxiliary windows ("Open file in new window") get their own tab
+// bucket so multiple windows on the same folder don't clobber each other's
+// open tabs. The main window keeps the un-suffixed keys above (backward
+// compatible — existing sessions restore unchanged); auxiliary windows
+// append `::win::<label>`. Labels are the stable `solomd-window-N` ids the
+// windows store hands out.
+const AUX_LABEL_PREFIX = 'solomd-window-';
+
+/** The current Tauri window's label, or 'main' outside Tauri (Vitest, the
+ *  marketing site preview, etc.). Read lazily and defensively because tabs.ts
+ *  initializes before the Tauri API is guaranteed ready. */
+function currentWindowLabel(): string {
+  try {
+    const internals = (window as any).__TAURI_INTERNALS__;
+    const label = internals?.metadata?.currentWindow?.label;
+    if (typeof label === 'string' && label) return label;
+  } catch {}
+  return 'main';
+}
+
+/** Per-window scope suffix appended to a bucket key. Empty for the main
+ *  window (preserves legacy keys); `::win::<label>` for auxiliary windows. */
+function windowScopeSuffix(): string {
+  const label = currentWindowLabel();
+  return label.startsWith(AUX_LABEL_PREFIX) ? `::win::${label}` : '';
+}
 
 let nextId = 1;
 const newId = () => `tab-${Date.now()}-${nextId++}`;
@@ -70,10 +98,12 @@ function currentWorkspaceFolder(): string | null {
 }
 
 /** localStorage key for a workspace's tab bucket. Falls back to the single
- *  global key when per-workspace scoping is off. */
+ *  global key when per-workspace scoping is off. Auxiliary windows (#103)
+ *  get a per-window suffix so they don't share a bucket with the main window
+ *  or each other; the main window's keys are unchanged. */
 function bucketKey(folder: string | null): string {
-  if (!perWorkspaceTabsEnabled()) return LS_KEY;
-  return LS_BUCKET_PREFIX + (folder || NO_WORKSPACE);
+  if (!perWorkspaceTabsEnabled()) return LS_KEY + windowScopeSuffix();
+  return LS_BUCKET_PREFIX + (folder || NO_WORKSPACE) + windowScopeSuffix();
 }
 
 function isDirty(t: Tab): boolean {
@@ -108,11 +138,16 @@ function loadPersisted(): PersistedState {
   if (!restoreSessionEnabled()) return { tabs: [], activeId: '' };
   // Per-workspace OFF → behave exactly like before (single global blob).
   if (!perWorkspaceTabsEnabled()) {
-    return readBucket(LS_KEY) ?? { tabs: [], activeId: '' };
+    return readBucket(bucketKey(null)) ?? { tabs: [], activeId: '' };
   }
   const folder = currentWorkspaceFolder();
   const bucket = readBucket(bucketKey(folder));
   if (bucket) return bucket;
+  // #103 — auxiliary windows never inherit the main window's legacy global
+  // tab blob; they start from their own (possibly empty) bucket and get
+  // their document via the `?path=` query param. Only the main window runs
+  // the upgrade migration below.
+  if (windowScopeSuffix()) return { tabs: [], activeId: '' };
   // First launch after upgrade: no bucket yet for this workspace. Seed it
   // by scoping the legacy global tab list to the current folder (plus any
   // untitled or unsaved tabs), so an upgrading user with tabs accumulated
@@ -206,6 +241,20 @@ export const useTabsStore = defineStore('tabs', {
       const t = this.tabs.find((x) => x.id === id);
       if (t) t.content = content;
     },
+    /** #91 — repoint a tab at a new path WITHOUT touching `savedContent`.
+     *  Used when a file is renamed while it has unsaved edits: the on-disk
+     *  file (now at `filePath`) still holds the old, last-saved bytes, which
+     *  are exactly this tab's `savedContent`, so the tab must stay dirty
+     *  (content !== savedContent) — otherwise the unsaved-dot vanishes and
+     *  closing the tab silently drops the edits. markSaved() is wrong here
+     *  because it sets savedContent = content (marks the tab clean). */
+    renamePath(id: string, filePath: string) {
+      const t = this.tabs.find((x) => x.id === id);
+      if (!t) return;
+      t.filePath = filePath;
+      t.fileName = filePath.split(/[\\/]/).pop() ?? t.fileName;
+      t.language = inferLanguage(t.fileName);
+    },
     markSaved(id: string, filePath: string) {
       const t = this.tabs.find((x) => x.id === id);
       if (!t) return;
@@ -286,6 +335,21 @@ export const useTabsStore = defineStore('tabs', {
           bucketKey(currentWorkspaceFolder()),
           JSON.stringify({ tabs: this.tabs, activeId: this.activeId }),
         );
+      } catch {}
+    },
+    /** #103 — when this is an auxiliary window, record it in the shared
+     *  windows registry so the main window re-spawns it on the next launch.
+     *  `path` is the document the window was opened to show; it's stored as
+     *  the window's restore anchor. No-op in the main window. */
+    registerAuxWindow(path: string) {
+      const suffix = windowScopeSuffix();
+      if (!suffix) return; // main window — nothing to register
+      const label = currentWindowLabel();
+      try {
+        useWindowsStore().register(label, {
+          path,
+          folder: currentWorkspaceFolder(),
+        });
       } catch {}
     },
     /** Write the current view into a specific workspace's bucket (used when

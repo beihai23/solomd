@@ -294,11 +294,18 @@ async function commitEdit() {
         const tab = tabs.tabs.find((t: { filePath?: string }) => t.filePath === e.original);
         if (tab) {
           const wasClean = tab.savedContent === tab.content;
-          tabs.markSaved(tab.id, target);
           if (wasClean) {
+            // Clean tab: safe to repoint + reload from disk (picks up any
+            // per-file `.assets/` link rewrite the rename triggered).
+            tabs.markSaved(tab.id, target);
             const fr = await invoke<{ content: string }>('read_file', { path: target });
             tabs.setContent(tab.id, fr.content);
             tabs.markSaved(tab.id, target);
+          } else {
+            // Dirty tab: repoint to the new path but KEEP the unsaved edits
+            // AND the dirty flag. markSaved() here would clear savedContent
+            // and silently lose the edits when the tab is later closed (#91).
+            tabs.renamePath(tab.id, target);
           }
         }
       } catch (err) {
