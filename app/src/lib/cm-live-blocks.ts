@@ -484,8 +484,12 @@ function buildBlockDecorations(state: EditorState, opts: BlockOptions): Decorati
           // v4.5.5 — inline math `$…$` on an otherwise-plain line. Render each
           // span while the caret is off this line (same reveal model as the
           // block widgets above: move the caret onto the line to edit source).
+          // Cheap pre-check: only the (rare) lines that actually contain a `$`
+          // pay for the inline-math regex + code-span mask. Plain prose lines
+          // — the overwhelming majority in a large doc — short-circuit here, so
+          // this whole-doc pass doesn't get measurably slower (#5 perf).
           const inlineCursorHere = i >= cursorLine && i <= cursorLineEnd;
-          if (!inlineCursorHere) {
+          if (!inlineCursorHere && line.text.indexOf('$') !== -1) {
             for (const span of inlineMathSpans(line.text)) {
               builder.add(
                 line.from + span.start,
