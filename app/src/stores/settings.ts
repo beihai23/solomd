@@ -105,6 +105,9 @@ interface Settings {
   dailyNotesFormat: string;
   dailyNotesTemplate: string;
   showTagsPanel: boolean;
+  // v4.6 F2: Types sidebar pane (types-as-lenses). Notes with `type:<Name>`
+  // grouped into collapsible first-class sidebar sections.
+  showTypesPanel: boolean;
   // v4.0 pillar 1: Inline Agent Panel — chat-with-vault sidebar.
   showAgentPanel: boolean;
   // v4.0 release migration marker: set on first launch after upgrading
@@ -235,6 +238,7 @@ interface Settings {
   _rsPanesBeforeHide: {
     showBacklinks: boolean;
     showTagsPanel: boolean;
+    showTypesPanel: boolean;
     showHistoryPanel: boolean;
     showAgentPanel: boolean;
   } | null;
@@ -348,6 +352,7 @@ function defaults(): Settings {
     dailyNotesFormat: 'YYYY-MM-DD.md',
     dailyNotesTemplate: '',
     showTagsPanel: true,
+    showTypesPanel: false,
     showAgentPanel: true,
     // True for fresh installs (defaults are already v4.0). Existing
     // localStorage blobs from v3.6.x / v4-beta won't have this key, so
@@ -386,7 +391,7 @@ function defaults(): Settings {
     imageExportBranding: true,
     globalZoom: 1,
     codeBlockLineNumbers: false,
-    rsPaneOrder: ['search', 'outline', 'backlinks', 'tags', 'history', 'agent'],
+    rsPaneOrder: ['search', 'outline', 'backlinks', 'tags', 'types', 'history', 'agent'],
     previewFontSize: 15,
     attachmentMode: 'shared',
     assetsDirName: '_assets',
@@ -569,6 +574,7 @@ export const useSettingsStore = defineStore('settings', {
         this._rsPanesBeforeHide = {
           showBacklinks: this.showBacklinks,
           showTagsPanel: this.showTagsPanel,
+          showTypesPanel: this.showTypesPanel,
           showHistoryPanel: this.showHistoryPanel,
           showAgentPanel: this.showAgentPanel,
         };
@@ -579,11 +585,12 @@ export const useSettingsStore = defineStore('settings', {
         if (saved) {
           this.showBacklinks = saved.showBacklinks;
           this.showTagsPanel = saved.showTagsPanel;
+          this.showTypesPanel = saved.showTypesPanel;
           this.showHistoryPanel = saved.showHistoryPanel;
           this.showAgentPanel = saved.showAgentPanel;
           this._rsPanesBeforeHide = null;
         }
-        if (!this.showBacklinks && !this.showTagsPanel && !this.showHistoryPanel && !this.showAgentPanel) {
+        if (!this.showBacklinks && !this.showTagsPanel && !this.showTypesPanel && !this.showHistoryPanel && !this.showAgentPanel) {
           this.showBacklinks = true;
           this.showTagsPanel = true;
         }
@@ -596,6 +603,7 @@ export const useSettingsStore = defineStore('settings', {
     hideRightSidebarFromPane(paneBeforeToggle: {
       showBacklinks: boolean;
       showTagsPanel: boolean;
+      showTypesPanel: boolean;
       showHistoryPanel: boolean;
       showAgentPanel: boolean;
     }) {
@@ -688,6 +696,11 @@ export const useSettingsStore = defineStore('settings', {
     },
     toggleTagsPanel() {
       this.showTagsPanel = !this.showTagsPanel;
+      this.persist();
+    },
+    // v4.6 F2 — toggle the Types (types-as-lenses) sidebar pane.
+    toggleTypesPanel() {
+      this.showTypesPanel = !this.showTypesPanel;
       this.persist();
     },
     toggleAgentPanel() {

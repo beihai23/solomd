@@ -14,6 +14,7 @@ import QuickSwitcher from './components/QuickSwitcher.vue';
 import Outline from './components/Outline.vue';
 import BacklinksPanel from './components/BacklinksPanel.vue';
 import TagsPanel from './components/TagsPanel.vue';
+import TypesPanel from './components/TypesPanel.vue';
 import HistoryPanel from './components/HistoryPanel.vue';
 import AgentPanel from './components/AgentPanel.vue';
 import RsSplitter from './components/RsSplitter.vue';
@@ -124,6 +125,7 @@ function rsPaneSnapshot() {
   return {
     showBacklinks: settings.showBacklinks,
     showTagsPanel: settings.showTagsPanel,
+    showTypesPanel: settings.showTypesPanel,
     showHistoryPanel: settings.showHistoryPanel,
     showAgentPanel: settings.showAgentPanel,
   };
@@ -138,6 +140,7 @@ function ctxToggle(toggleFn: () => void) {
     !showOutlinePane.value &&
     !settings.showBacklinks &&
     !settings.showTagsPanel &&
+    !settings.showTypesPanel &&
     !settings.showHistoryPanel &&
     (IS_APP_STORE_BUILD || !settings.showAgentPanel);
   if (noPanesVisible) {
@@ -949,6 +952,10 @@ const showBacklinksPane = computed(
 const showTagsPane = computed(
   () => settings.showTagsPanel && !!workspace.currentFolder,
 );
+// v4.6 F2 — Types pane (types-as-lenses). Workspace-scoped like Tags.
+const showTypesPane = computed(
+  () => settings.showTypesPanel && !!workspace.currentFolder,
+);
 const showHistoryPane = computed(
   // v4.0.2 — decoupled from autoGitEnabled (#55). Hiding the pane via
   // its × button no longer disables git sync; users can keep snapshots
@@ -977,6 +984,7 @@ const showRightSidebar = computed(() => {
     showOutlinePane.value ||
     showBacklinksPane.value ||
     showTagsPane.value ||
+    showTypesPane.value ||
     showHistoryPane.value ||
     showAgentPane.value
   );
@@ -990,15 +998,16 @@ const visibleRsPanes = computed(() => {
   // v4.3.0 issue #57b — order driven by settings.rsPaneOrder so users can
   // drag-reorder. Unknown ids (newly-shipped future panes) get appended at
   // the end so a SoloMD update doesn't blow away an existing user layout.
-  const all: Record<'search' | 'outline' | 'backlinks' | 'tags' | 'history' | 'agent', boolean> = {
+  const all: Record<'search' | 'outline' | 'backlinks' | 'tags' | 'types' | 'history' | 'agent', boolean> = {
     search: showSearchPane.value,
     outline: showOutlinePane.value,
     backlinks: showBacklinksPane.value,
     tags: showTagsPane.value,
+    types: showTypesPane.value,
     history: showHistoryPane.value,
     agent: showAgentPane.value,
   };
-  const known = ['search', 'outline', 'backlinks', 'tags', 'history', 'agent'] as const;
+  const known = ['search', 'outline', 'backlinks', 'tags', 'types', 'history', 'agent'] as const;
   const ordered: string[] = [];
   for (const id of settings.rsPaneOrder || []) {
     if (id in all && !ordered.includes(id)) ordered.push(id);
@@ -1008,7 +1017,7 @@ const visibleRsPanes = computed(() => {
   }
   return ordered
     .filter((id) => all[id as keyof typeof all])
-    .map((id) => ({ id: id as 'search' | 'outline' | 'backlinks' | 'tags' | 'history' | 'agent' }));
+    .map((id) => ({ id: id as 'search' | 'outline' | 'backlinks' | 'tags' | 'types' | 'history' | 'agent' }));
 });
 
 // v4.3.0 issue #57b — HTML5 drag state for right-sidebar pane reordering.
@@ -1182,6 +1191,10 @@ watchEffect(() => { void settings.aiEnabled; void settings.aiProvider; refreshAi
                 @close="ctxToggle(() => settings.toggleTagsPanel())"
                 @filter-tag="onFilterTag"
               />
+              <TypesPanel
+                v-if="p.id === 'types'"
+                @close="ctxToggle(() => settings.toggleTypesPanel())"
+              />
               <HistoryPanel v-if="p.id === 'history'" @close="ctxToggle(() => settings.toggleHistoryPanel())" />
               <AgentPanel
                 v-if="p.id === 'agent'"
@@ -1236,6 +1249,10 @@ watchEffect(() => { void settings.aiEnabled; void settings.aiProvider; refreshAi
                 @close="ctxToggle(() => settings.toggleTagsPanel())"
                 @filter-tag="onFilterTag"
               />
+              <TypesPanel
+                v-if="p.id === 'types'"
+                @close="ctxToggle(() => settings.toggleTypesPanel())"
+              />
               <HistoryPanel v-if="p.id === 'history'" @close="ctxToggle(() => settings.toggleHistoryPanel())" />
               <AgentPanel
                 v-if="p.id === 'agent'"
@@ -1270,6 +1287,10 @@ watchEffect(() => { void settings.aiEnabled; void settings.aiProvider; refreshAi
           <label class="sidebar-ctx__item" @click="ctxToggle(() => { settings.toggleTagsPanel() })">
             <span class="sidebar-ctx__check">{{ settings.showTagsPanel ? '✓' : '' }}</span>
             {{ t('rsPane.tags') }}
+          </label>
+          <label class="sidebar-ctx__item" @click="ctxToggle(() => { settings.toggleTypesPanel() })">
+            <span class="sidebar-ctx__check">{{ settings.showTypesPanel ? '✓' : '' }}</span>
+            {{ t('rsPane.types') }}
           </label>
           <label class="sidebar-ctx__item" @click="ctxToggle(() => { settings.toggleHistoryPanel() })">
             <span class="sidebar-ctx__check">{{ settings.showHistoryPanel ? '✓' : '' }}</span>
