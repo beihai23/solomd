@@ -19,6 +19,7 @@ import { openPath } from '@tauri-apps/plugin-opener';
 import { useDailyNotes } from './useDailyNotes';
 import { usePandocExport } from './usePandocExport';
 import { useBasesView } from './useBasesView';
+import { useSavedViews } from './useSavedViews';
 import { useAutoCommit } from './useAutoCommit';
 import { useWorkspaceIndexStore } from '../stores/workspaceIndex';
 import { useGitHistoryStore } from '../stores/gitHistory';
@@ -45,6 +46,7 @@ export function useCommands(): Command[] {
   const daily = useDailyNotes();
   const pandoc = usePandocExport();
   const bases = useBasesView();
+  const savedViews = useSavedViews();
   const auto = useAutoCommit();
   const gh = useGitHistoryStore();
   const ws = useWorkspaceStore();
@@ -321,6 +323,18 @@ export function useCommands(): Command[] {
       title: 'Workspace: Properties Table (Bases)',
       hint: 'Browse all notes as a sortable / filterable table',
       run: () => bases.openBases(),
+    },
+    {
+      id: 'views.toggle',
+      title: 'View: Toggle Saved Views Panel',
+      hint: 'Show / hide the Saved Views section in the left sidebar',
+      run: () => settings.toggleViewsPanel(),
+    },
+    {
+      id: 'views.create',
+      title: 'View: Create Saved View…',
+      hint: 'Define a persistent filtered note list (saved to .solomd/views/)',
+      run: () => savedViews.newView(),
     },
     {
       id: 'history.initWorkspace',
