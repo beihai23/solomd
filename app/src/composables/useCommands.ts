@@ -130,6 +130,7 @@ export function useCommands(): Command[] {
     { id: 'view.toggleRightSidebar', title: 'View: Toggle Right Sidebar', hint: 'Hide / show the Outline / Backlinks / Tags / History / Agent strip without losing per-pane preferences', shortcut: 'Ctrl+Alt+B', run: () => settings.toggleRightSidebar() },
     { id: 'view.toggleAgentPanel', title: 'View: Toggle Agent Panel', hint: 'Right-side chat-with-vault panel — streamed multi-turn AI with tool-call cards, persisted run history, and trace replay', run: () => settings.toggleAgentPanel() },
     { id: 'view.toggleBacklinks', title: 'View: Toggle Backlinks Pane', run: () => settings.toggleBacklinks() },
+    { id: 'view.relationships', title: 'View: Toggle Relationships Pane', hint: 'Typed relationships — forward edges authored in YAML front matter plus computed inverses (Referenced by)', run: () => settings.toggleRelationships() },
     { id: 'view.toggleTagsPanel', title: 'View: Toggle Tags Pane', run: () => settings.toggleTagsPanel() },
     { id: 'view.toggleNeighborhood', title: 'View: Toggle Neighborhood Pane', hint: 'Per-note relationship explorer — frontmatter wikilink groups, inverse relationships, and backlinks; click to open, ⌘/Ctrl-click to pivot', run: () => settings.toggleNeighborhood() },
     { id: 'view.toggleHistoryPanel', title: 'View: Toggle History Pane', hint: 'Show / hide the per-note version history pane (does not disable Auto-Git)', run: () => settings.toggleHistoryPanel() },

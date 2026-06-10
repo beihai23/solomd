@@ -14,6 +14,7 @@ import QuickSwitcher from './components/QuickSwitcher.vue';
 import Outline from './components/Outline.vue';
 import BacklinksPanel from './components/BacklinksPanel.vue';
 import NeighborhoodPanel from './components/NeighborhoodPanel.vue';
+import RelationshipsPanel from './components/RelationshipsPanel.vue';
 import TagsPanel from './components/TagsPanel.vue';
 import HistoryPanel from './components/HistoryPanel.vue';
 import AgentPanel from './components/AgentPanel.vue';
@@ -132,6 +133,7 @@ function closeSidebarCtx() { sidebarCtx.value = null; }
 function rsPaneSnapshot() {
   return {
     showBacklinks: settings.showBacklinks,
+    showRelationships: settings.showRelationships,
     showTagsPanel: settings.showTagsPanel,
     showNeighborhood: settings.showNeighborhood,
     showHistoryPanel: settings.showHistoryPanel,
@@ -147,6 +149,7 @@ function ctxToggle(toggleFn: () => void) {
     !searchOpen.value &&
     !showOutlinePane.value &&
     !settings.showBacklinks &&
+    !settings.showRelationships &&
     !settings.showTagsPanel &&
     !showNeighborhoodPane.value &&
     !settings.showHistoryPanel &&
@@ -963,6 +966,12 @@ const showBacklinksPane = computed(
     tabs.activeTab?.language === 'markdown' &&
     !!workspace.currentFolder,
 );
+const showRelationshipsPane = computed(
+  () =>
+    settings.showRelationships &&
+    tabs.activeTab?.language === 'markdown' &&
+    !!workspace.currentFolder,
+);
 const showTagsPane = computed(
   () => settings.showTagsPanel && !!workspace.currentFolder,
 );
@@ -1001,6 +1010,7 @@ const showRightSidebar = computed(() => {
     showSearchPane.value ||
     showOutlinePane.value ||
     showBacklinksPane.value ||
+    showRelationshipsPane.value ||
     showTagsPane.value ||
     showNeighborhoodPane.value ||
     showHistoryPane.value ||
@@ -1016,16 +1026,17 @@ const visibleRsPanes = computed(() => {
   // v4.3.0 issue #57b — order driven by settings.rsPaneOrder so users can
   // drag-reorder. Unknown ids (newly-shipped future panes) get appended at
   // the end so a SoloMD update doesn't blow away an existing user layout.
-  const all: Record<'search' | 'outline' | 'backlinks' | 'tags' | 'neighborhood' | 'history' | 'agent', boolean> = {
+  const all: Record<'search' | 'outline' | 'backlinks' | 'relationships' | 'tags' | 'neighborhood' | 'history' | 'agent', boolean> = {
     search: showSearchPane.value,
     outline: showOutlinePane.value,
     backlinks: showBacklinksPane.value,
+    relationships: showRelationshipsPane.value,
     tags: showTagsPane.value,
     neighborhood: showNeighborhoodPane.value,
     history: showHistoryPane.value,
     agent: showAgentPane.value,
   };
-  const known = ['search', 'outline', 'backlinks', 'tags', 'neighborhood', 'history', 'agent'] as const;
+  const known = ['search', 'outline', 'backlinks', 'relationships', 'tags', 'neighborhood', 'history', 'agent'] as const;
   const ordered: string[] = [];
   for (const id of settings.rsPaneOrder || []) {
     if (id in all && !ordered.includes(id)) ordered.push(id);
@@ -1035,7 +1046,7 @@ const visibleRsPanes = computed(() => {
   }
   return ordered
     .filter((id) => all[id as keyof typeof all])
-    .map((id) => ({ id: id as 'search' | 'outline' | 'backlinks' | 'tags' | 'neighborhood' | 'history' | 'agent' }));
+    .map((id) => ({ id: id as 'search' | 'outline' | 'backlinks' | 'relationships' | 'tags' | 'neighborhood' | 'history' | 'agent' }));
 });
 
 // v4.3.0 issue #57b — HTML5 drag state for right-sidebar pane reordering.
@@ -1206,6 +1217,7 @@ watchEffect(() => { void settings.aiEnabled; void settings.aiProvider; refreshAi
               />
               <Outline v-if="p.id === 'outline'" :cursor-line="cursorLine" @goto="onOutlineGoto" />
               <BacklinksPanel v-if="p.id === 'backlinks'" @close="ctxToggle(() => settings.toggleBacklinks())" />
+              <RelationshipsPanel v-if="p.id === 'relationships'" @close="ctxToggle(() => settings.toggleRelationships())" />
               <TagsPanel
                 v-if="p.id === 'tags'"
                 @close="ctxToggle(() => settings.toggleTagsPanel())"
@@ -1265,6 +1277,7 @@ watchEffect(() => { void settings.aiEnabled; void settings.aiProvider; refreshAi
               />
               <Outline v-if="p.id === 'outline'" :cursor-line="cursorLine" @goto="onOutlineGoto" />
               <BacklinksPanel v-if="p.id === 'backlinks'" @close="ctxToggle(() => settings.toggleBacklinks())" />
+              <RelationshipsPanel v-if="p.id === 'relationships'" @close="ctxToggle(() => settings.toggleRelationships())" />
               <TagsPanel
                 v-if="p.id === 'tags'"
                 @close="ctxToggle(() => settings.toggleTagsPanel())"
@@ -1304,6 +1317,10 @@ watchEffect(() => { void settings.aiEnabled; void settings.aiProvider; refreshAi
           <label class="sidebar-ctx__item" @click="ctxToggle(() => { settings.toggleBacklinks() })">
             <span class="sidebar-ctx__check">{{ settings.showBacklinks ? '✓' : '' }}</span>
             {{ t('rsPane.backlinks') }}
+          </label>
+          <label class="sidebar-ctx__item" @click="ctxToggle(() => { settings.toggleRelationships() })">
+            <span class="sidebar-ctx__check">{{ settings.showRelationships ? '✓' : '' }}</span>
+            {{ t('rsPane.relationships') }}
           </label>
           <label class="sidebar-ctx__item" @click="ctxToggle(() => { settings.toggleTagsPanel() })">
             <span class="sidebar-ctx__check">{{ settings.showTagsPanel ? '✓' : '' }}</span>
@@ -1513,6 +1530,10 @@ watchEffect(() => { void settings.aiEnabled; void settings.aiProvider; refreshAi
   border-right: 0;
 }
 .rs-pane-host :deep(.backlinks) {
+  border-left: 0;
+  border-right: 0;
+}
+.rs-pane-host :deep(.rel) {
   border-left: 0;
   border-right: 0;
 }
