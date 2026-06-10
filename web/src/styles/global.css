@@ -6,15 +6,18 @@
   --bg: #f8f8f6;
   --bg-elev: #ffffff;
   --bg-soft: #efeee9;
-  --text: #121212;
-  --text-muted: #5b5852;
+  /* v4.6 — warm the text to match the app's design-system ink (#37352f),
+     so the marketing site and the product read as one warm-neutral family
+     instead of the old cooler near-black (#121212). */
+  --text: #37352f;
+  --text-muted: #787774;
   --text-faint: #9c9890;
-  --border: #e3e0d8;
+  --border: #e9e9e7;
   --accent: #ff9f40;
   --accent-soft: #ffe7cc;
   --accent-deep: #c97a20;
-  --ink: #121212;
-  --ink-soft: #2a2826;
+  --ink: #2a2824;
+  --ink-soft: #44413a;
 
   /* Headings get a display serif (Source Serif 4 from Google Fonts,
      loaded in Layout.astro). Falls through to system serifs on slow
@@ -33,13 +36,14 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0e0e0c;
-    --bg-elev: #1a1a17;
-    --bg-soft: #232320;
-    --text: #f0f0ed;
-    --text-muted: #a8a8a0;
-    --text-faint: #5a5a55;
-    --border: #2a2a26;
+    /* v4.6 — warm dark surfaces to match the app (#1f1e1b / #23221f / #e6e1d8). */
+    --bg: #1f1e1b;
+    --bg-elev: #23221f;
+    --bg-soft: #2a2925;
+    --text: #e6e1d8;
+    --text-muted: #b8b1a6;
+    --text-faint: #7f776d;
+    --border: #34322d;
     --accent: #ff9f40;
     --accent-soft: rgba(255, 159, 64, 0.18);
     --accent-deep: #ffb874;
