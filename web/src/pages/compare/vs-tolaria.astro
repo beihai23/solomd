@@ -18,7 +18,7 @@ const featureGroups: { title: string; rows: [string, string, string][] }[] = [
       ['Wikilinks <code>[[note]]</code> + autocomplete', '✅', '✅'],
       ['Inline / block math (KaTeX)', '✅', '✅ + editable source (v4.5.3)'],
       ['Mermaid diagrams', '✅', '✅ Mermaid 11'],
-      ['Markdown-backed whiteboards (tldraw)', '✅', '❌ <em>roadmap</em>'],
+      ['Markdown-backed whiteboards (tldraw)', '✅', '✅ <strong>v4.6</strong> · tldraw <code>```tldraw</code> fence, durable <code>.md</code>, Tolaria-compatible on disk'],
       ['Tables with in-editor navigation', '✅', '✅ GFM tables'],
       ['Table-of-contents / outline panel', '✅', '✅ outline with line-jump'],
       ['Note width: normal / wide', '✅', '✅ preview fit-to-width'],
@@ -37,12 +37,12 @@ const featureGroups: { title: string; rows: [string, string, string][] }[] = [
       ['Plain <code>.md</code> + YAML frontmatter, files-first', '✅', '✅'],
       ['Multiple vaults / workspaces', '✅', '✅ + MCP federation'],
       ['Unified cross-vault graph + wikilink aliases', '✅', '🟡 federation via MCP, not a unified UI graph'],
-      ['Type system — <code>type:</code> drives sidebar sections', '✅', '🟡 Bases table view; folders/tabs are primary nav'],
-      ['Typed relationships (<code>belongs_to</code>/<code>related_to</code>/<code>has</code> + inverses)', '✅', '🟡 wikilinks + backlinks'],
-      ['Relationship graph ("Neighborhood")', '✅', '❌ <em>roadmap</em>'],
-      ['Properties inspector (date / relationship pickers)', '✅', '🟡 raw YAML + Bases columns'],
-      ['Saved filtered views in the sidebar', '✅', '🟡 Bases query view'],
-      ['Inbox workflow + mark-organized (<code>⌘E</code>)', '✅', '❌ <em>roadmap</em>'],
+      ['Type system — <code>type:</code> drives sidebar sections', '✅', '✅ <strong>v4.6</strong> · <code>type:&lt;Name&gt;</code> notes become first-class collapsible sections (icon/color/order/pinned-props)'],
+      ['Typed relationships (<code>belongs_to</code>/<code>related_to</code>/<code>has</code> + inverses)', '✅', '✅ <strong>v4.6</strong> · belongs_to/related_to/has + automatic inverses'],
+      ['Relationship graph ("Neighborhood")', '✅', '✅ <strong>v4.6</strong> · per-note outgoing + inverse explorer'],
+      ['Properties inspector (date / relationship pickers)', '✅', '✅ <strong>v4.6</strong> · <code>⌘⇧I</code> frontmatter editor (date/relation/status/tags pickers)'],
+      ['Saved filtered views in the sidebar', '✅', '✅ <strong>v4.6</strong> · persistent <code>.solomd/views/*.yml</code> (type/status/date/regex)'],
+      ['Inbox workflow + mark-organized (<code>⌘E</code>)', '✅', '✅ <strong>v4.6</strong> · <code>⌘E</code> + auto-advance + inbox-zero'],
       ['Favorites / pin (<code>⌘D</code>)', '✅', '🟡 quick switcher pins'],
       ['Folders, nested', '✅', '✅ file-tree sidebar'],
       ['Tags panel', '🟡 frontmatter only', '✅ <code>#tag</code> aggregation panel'],
@@ -116,7 +116,7 @@ const settingsRows: [string, string][] = [
   ['Appearance — editor zoom (0.8–1.5)', '✅ global zoom 0.75–2.5× + separate editor/preview font sizes'],
   ['<strong>Content</strong> — note width (normal/wide)', '✅ preview fit-to-width'],
   ['Content — date display format (us / eu / iso / friendly)', '🟡 locale-driven'],
-  ['Content — sidebar type pluralization', 'n/a (no type sidebar yet — <em>roadmap</em>)'],
+  ['Content — sidebar type pluralization', '✅ <strong>v4.6</strong> · type-driven sidebar sections with per-type label/icon/color/order'],
   ['Content — auto-rename file on first H1', '🟡 manual rename'],
   ['Content — hide git-ignored files', '🟡 file-tree respects ignore rules'],
   ['Content — show images / PDFs / unsupported in All-Notes', '✅ file-tree shows all; preview on open'],
@@ -127,7 +127,7 @@ const settingsRows: [string, string][] = [
   ['AI — default agent (Claude Code / Codex / …)', '✅ provider + model selectors (14 providers)'],
   ['AI — provider API keys', '✅ stored in OS keychain (not a settings file)'],
   ['AI — permission mode (safe / power-user)', '🟡 read-only default + agent write-cap sandbox'],
-  ['<strong>Workflow</strong> — inbox enabled + auto-advance', '❌ <em>roadmap</em> (no inbox yet)'],
+  ['<strong>Workflow</strong> — inbox enabled + auto-advance', '✅ <strong>v4.6</strong> · Inbox + <code>⌘E</code> mark-organized + auto-advance + inbox-zero'],
   ['Workflow — release channel (stable / beta)', '✅ auto-update channel'],
   ['<strong>Privacy</strong> — telemetry', '✅ opt-out telemetry'],
   ['<em>SoloMD adds beyond Tolaria:</em>', 'Vim mode · slideshow · Pomodoro · daily-notes · RAG toggle · attachment modes · PDF export presets · bibliography/CSL · custom CSS · scheduled recipes · sidebar pane order/height · image-export branding — none of which Tolaria exposes.'],
@@ -136,7 +136,7 @@ const settingsRows: [string, string][] = [
 
 <Layout
   title="SoloMD vs Tolaria — Tauri Markdown Editors Compared (2026)"
-  description="Two Tauri-based open-source Markdown editors, with Tolaria's complete feature & settings reference. SoloMD: iPad + mobile, 14 AI providers, CJK encoding, Pandoc/citation export, semantic search, scheduled agent recipes + AutoGit sandbox. Tolaria: desktop Notion-style block editor with tldraw whiteboards, type-driven sidebar, relationship graph, and 6 built-in CLI agents. Line-by-line comparison."
+  description="Two Tauri-based open-source Markdown editors, with Tolaria's complete feature & settings reference. As of v4.6 SoloMD matches Tolaria's whole knowledge-graph layer — properties inspector, type-driven sidebar, typed relationships, relationship graph, saved views, Inbox workflow, and tldraw whiteboards — and keeps its own edges: iPad + mobile, 14 AI providers, CJK encoding, Pandoc/citation export, file import, on-device RAG, scheduled agent recipes + AutoGit sandbox. Tolaria's remaining edge is its BlockNote block editor. Line-by-line comparison."
   lang={lang}
 >
   <Header lang={lang} />
@@ -148,26 +148,36 @@ const settingsRows: [string, string][] = [
 
       <h1>SoloMD vs Tolaria: Two Tauri-Based Markdown Editors</h1>
       <p class="lead">
-        Quick answer: <strong>SoloMD</strong> if you want it on iPad / iOS /
-        Android, write in Chinese / Japanese (GBK / Big5 / Shift-JIS
-        auto-detect), need Pandoc / academic-citation export or file import,
-        or want the agent-workflow layer (scheduled recipes, AutoGit
-        accept/reject sandbox, replayable traces). <strong>Tolaria</strong> if
-        you're on desktop and prefer a Notion-style block editor with
-        type-driven nav and tldraw Markdown whiteboards.
+        Quick answer: as of <strong>v4.6</strong> SoloMD has built the whole
+        knowledge-graph layer it used to lack — properties inspector,
+        type-driven sidebar, typed relationships, a relationship graph, saved
+        views, the Inbox workflow, and tldraw whiteboards — so the choice is no
+        longer "structure vs. everything else." Pick <strong>SoloMD</strong> if
+        you also want it on iPad / iOS / Android, write in Chinese / Japanese
+        (GBK / Big5 / Shift-JIS auto-detect), need Pandoc / academic-citation
+        export or file import, or want the agent-workflow layer (scheduled
+        recipes, AutoGit accept/reject sandbox, replayable traces). Pick
+        <strong>Tolaria</strong> if its <strong>BlockNote block editor</strong>
+        is the thing you write in — that's its one remaining edge.
       </p>
       <p class="lead" style="font-size:0.95rem;">
-        Both have since converged on a lot: as of mid-2026 Tolaria added
-        <strong>Windows</strong>, <strong>built-in AI providers</strong>,
-        <strong>multi-vault</strong>, and <strong>Traditional-Chinese UI</strong>,
-        so several older "SoloMD-only" lines no longer hold — this page reflects
-        the current state.
+        Both have converged hard: Tolaria earlier added <strong>Windows</strong>,
+        <strong>built-in AI providers</strong>, <strong>multi-vault</strong>, and
+        <strong>Traditional-Chinese UI</strong>; and the <strong>v4.6</strong>
+        update closes the gap from the other side — SoloMD now ships the seven
+        structural features that were Tolaria-only through mid-2026. This page
+        reflects the current state.
       </p>
+
+      <div class="callout-new">
+        <strong>New in 4.6 — SoloMD now does everything Tolaria's knowledge-graph layer does.</strong>
+        <span>Properties inspector (<code>⌘⇧I</code>) · type-driven sidebar (types-as-lenses) · typed relationships (belongs_to / related_to / has + inverses) · relationship graph ("Neighborhood") · saved filtered views · Inbox workflow (<code>⌘E</code>) · tldraw whiteboards — all built, all on disk as plain <code>.md</code> / YAML.</span>
+      </div>
 
       <h2>The 30-second verdict</h2>
       <table class="compare-detail">
         <thead>
-          <tr><th>&nbsp;</th><th>SoloMD v4.5</th><th>Tolaria (mid-2026)</th></tr>
+          <tr><th>&nbsp;</th><th>SoloMD v4.6</th><th>Tolaria (mid-2026)</th></tr>
         </thead>
         <tbody>
           <tr><th>Price</th><td><strong>Free</strong> (MIT)</td><td><strong>Free</strong> (open source, AGPL)</td></tr>
@@ -187,7 +197,7 @@ const settingsRows: [string, string][] = [
           <tr><th>Wikilinks <code>[[note]]</code></th><td>✅ auto-complete + backlinks panel</td><td>✅ auto-complete + backlinks</td></tr>
           <tr><th>Local semantic search (RAG)</th><td>✅ <strong>v2.3</strong> · ⌘⇧F · on-device, no model download</td><td>❌</td></tr>
           <tr><th>WYSIWYG / block editing</th><td>✅ <strong>v2.3</strong> · live-edit 4th view</td><td>✅ native block editor</td></tr>
-          <tr><th>Markdown whiteboards (tldraw)</th><td>❌</td><td>✅ tldraw boards saved as durable <code>.md</code></td></tr>
+          <tr><th>Markdown whiteboards (tldraw)</th><td>✅ <strong>v4.6</strong> · <code>```tldraw</code> fence → durable <code>.md</code>, cross-compatible with Tolaria's on-disk format</td><td>✅ tldraw boards saved as durable <code>.md</code></td></tr>
           <tr><th>Editable math source panel</th><td>✅ v4.5.3 · double-click a preview formula → edit LaTeX</td><td>✅ double-click formula → edit LaTeX source</td></tr>
           <tr><th>MCP server (vault as tool)</th><td>✅ <strong>v2.2</strong> · 1.5 MB binary · 8 read + 2 gated write tools</td><td>✅ built in</td></tr>
           <tr><th>AutoGit per-note history</th><td>✅ <strong>v2.2</strong> · libgit2, never auto-pushed</td><td>✅ built in (every vault is a git repo)</td></tr>
@@ -199,12 +209,12 @@ const settingsRows: [string, string][] = [
           <tr><th>Vim mode</th><td>✅</td><td>❌</td></tr>
           <tr><th>Spell-check (Hunspell)</th><td>✅ opt-in</td><td>🟡 OS-level only</td></tr>
           <tr><th>Properties / table view</th><td>✅ Bases (YAML-driven)</td><td>✅ Types-as-lenses (drives nav)</td></tr>
-          <tr><th>Type-driven sidebar (custom icon / colour / columns per note type)</th><td>🟡 Bases gives a table view; folders / tabs are the primary nav</td><td>✅ <code>type:</code> notes become first-class sidebar sections</td></tr>
-          <tr><th>Typed relationships (<code>belongs_to</code> / <code>related_to</code> / <code>has</code> with inverses)</th><td>🟡 wikilinks + backlinks panel only</td><td>✅ first-class relationship fields with automatic inverses</td></tr>
-          <tr><th>Relationship graph ("Neighborhood" view)</th><td>❌</td><td>✅ per-note graph of outgoing + inverse links</td></tr>
-          <tr><th>Properties panel (rich frontmatter editor — date / relationship pickers)</th><td>🟡 raw YAML + Bases columns</td><td>✅ dedicated inspector (<code>⌘⇧I</code>)</td></tr>
-          <tr><th>Saved filtered views in the sidebar</th><td>🟡 Bases query view</td><td>✅ persistent views (type / status / date / regex filters)</td></tr>
-          <tr><th>Inbox workflow (mark-organized, inbox-zero)</th><td>❌</td><td>✅ <code>⌘E</code> + auto-advance</td></tr>
+          <tr><th>Type-driven sidebar (custom icon / colour / columns per note type)</th><td>✅ <strong>v4.6</strong> · <code>type:&lt;Name&gt;</code> notes become first-class sidebar sections (custom icon / color / order / pinned props)</td><td>✅ <code>type:</code> notes become first-class sidebar sections</td></tr>
+          <tr><th>Typed relationships (<code>belongs_to</code> / <code>related_to</code> / <code>has</code> with inverses)</th><td>✅ <strong>v4.6</strong> · first-class relationship fields with automatic inverses</td><td>✅ first-class relationship fields with automatic inverses</td></tr>
+          <tr><th>Relationship graph ("Neighborhood" view)</th><td>✅ <strong>v4.6</strong> · per-note outgoing + inverse explorer</td><td>✅ per-note graph of outgoing + inverse links</td></tr>
+          <tr><th>Properties panel (rich frontmatter editor — date / relationship pickers)</th><td>✅ <strong>v4.6</strong> · dedicated inspector (<code>⌘⇧I</code>) · date / relation / status / tags pickers</td><td>✅ dedicated inspector (<code>⌘⇧I</code>)</td></tr>
+          <tr><th>Saved filtered views in the sidebar</th><td>✅ <strong>v4.6</strong> · persistent <code>.solomd/views/*.yml</code> (type / status / date / regex filters)</td><td>✅ persistent views (type / status / date / regex filters)</td></tr>
+          <tr><th>Inbox workflow (mark-organized, inbox-zero)</th><td>✅ <strong>v4.6</strong> · <code>⌘E</code> + auto-advance + inbox-zero</td><td>✅ <code>⌘E</code> + auto-advance</td></tr>
           <tr><th>Git conflict resolver UI (side-by-side merge)</th><td>🟡 AutoGit is local-only; conflicts handled in your own git client</td><td>✅ in-app conflict resolver</td></tr>
           <tr><th>Git activity feed ("Pulse")</th><td>🟡 History panel (per-note log + diff)</td><td>✅ chronological vault-wide commit feed</td></tr>
           <tr><th>End-to-end-encrypted sync</th><td>✅ Argon2id + XChaCha20-Poly1305, fail-closed</td><td>❌ (plain git remotes)</td></tr>
@@ -223,8 +233,9 @@ const settingsRows: [string, string][] = [
         clicked through every menu, command, setting and panel, and read the
         source. Here is its <strong>complete</strong> feature &amp; settings
         surface, grouped by area, with an honest ✅ / 🟡 / ❌ for SoloMD on every
-        line. Nothing hidden — if Tolaria does something we don't, it's marked
-        ❌ and on our roadmap.
+        line. Nothing hidden — and as of the <strong>4.6</strong> update the
+        once Tolaria-only structural rows (properties, types, relationships,
+        graph, views, Inbox, whiteboards) now read ✅ here too.
       </p>
 
       {featureGroups.map((group) => (
@@ -274,22 +285,29 @@ const settingsRows: [string, string][] = [
       </ul>
 
       <h2>When to pick Tolaria</h2>
+      <p>
+        As of SoloMD 4.6 the list is short. The features that used to be
+        Tolaria-only — type-driven sidebar, typed relationships, the
+        relationship graph, the properties inspector, saved views, the Inbox
+        workflow, and tldraw whiteboards — now ship in <em>both</em>. What's
+        genuinely left:
+      </p>
       <ul>
-        <li>You prefer a <strong>Notion-style block editor</strong> (BlockNote, slash commands) over CodeMirror source + preview.</li>
-        <li>You want <strong>tldraw Markdown whiteboards</strong> that live as durable <code>.md</code> in the vault — SoloMD has no whiteboard.</li>
-        <li>You like <strong>"types as lenses"</strong> — every note has a `type` (Project / Topic / etc.) with custom icons + columns that drives the whole sidebar. SoloMD has Bases (a property table view), but folders / tabs are still the primary nav.</li>
-        <li>You want a <strong>Tiago-Forte-style Inbox workflow</strong> with explicit "organized" markers.</li>
+        <li>You want to write inside a <strong>Notion-style block editor</strong> (BlockNote, slash commands). SoloMD stays CodeMirror source + four view modes (including a WYSIWYG live-edit view), so if a true block editor is the surface you compose in, Tolaria is still the one.</li>
+        <li>You want Tolaria's <strong>6 in-app CLI coding agents</strong> (Claude Code · Codex · OpenCode · Pi · Gemini · Kiro) docked in the app, rather than SoloMD's <code>solomd agent</code> handoff.</li>
       </ul>
       <p>
-        The gap has narrowed: MCP server, AutoGit version history, multi-vault,
-        Windows, a docked AI chat panel, and built-in AI providers all now ship
-        in <em>both</em>. SoloMD's remaining edges are mobile, CJK encodings,
-        Pandoc/citation export, file import, on-device semantic search, and the
-        agent-workflow layer (recipes + sandbox + trace). Tolaria's are the
-        polished block editor, tldraw whiteboards, type-driven sidebar, typed
-        relationships with a graph view, the Inbox workflow, and in-app CLI
-        agents — the structural / knowledge-graph half of the product, which is
-        exactly where our roadmap is now pointed.
+        The gap is essentially closed. MCP server, AutoGit history, multi-vault,
+        Windows, a docked AI chat panel, built-in AI providers — and now the
+        whole knowledge-graph layer (properties, types, typed relationships,
+        the Neighborhood graph, saved views, Inbox, whiteboards) — ship in
+        <em>both</em>. With 4.6, SoloMD matches Tolaria's structural half while
+        keeping its own large edges: iPad / iOS / Android, CJK encodings (GBK /
+        Big5 / Shift-JIS), Pandoc / citation export, file import, on-device RAG,
+        multi-tab + split panes, Vim, presentation mode, 14 AI providers,
+        scheduled agent recipes + AutoGit accept/reject sandbox + replayable
+        trace, E2EE sync, public share links, and a CLI. Tolaria's remaining
+        edge is the BlockNote block editor (and its in-app CLI agents).
       </p>
 
       <h2>Both editors share</h2>
@@ -310,14 +328,18 @@ const settingsRows: [string, string][] = [
         Caveats:
       </p>
       <ul>
-        <li>Tolaria's <strong>type metadata</strong> (e.g. `type: Project`) lives in
-          front-matter — SoloMD's Bases view picks it up automatically as a column.
-          You won't get the icon / color customization, but the data is preserved.</li>
+        <li>Tolaria's <strong>type metadata</strong> (e.g. <code>type: Project</code>) lives in
+          front-matter — SoloMD 4.6 reads it the same way and turns each type into a
+          first-class sidebar section, with its own icon / color / order / pinned props.</li>
+        <li>Your <strong>typed relationships</strong> (<code>belongs_to</code> / <code>related_to</code> /
+          <code>has</code>) carry over unchanged — SoloMD 4.6 resolves them and their automatic
+          inverses, and surfaces them in the Neighborhood graph.</li>
         <li>If you used Tolaria's <strong>AutoGit</strong>, your vault is already a git repo —
           SoloMD's AutoGit (v2.2+) is compatible with the same convention. Both use libgit2 and
           a local-only <code>.git</code> inside the workspace.</li>
-        <li>The <strong>Inbox flag</strong> doesn't translate directly; you can keep using
-          a YAML field (<code>status: inbox</code>) and filter via Bases.</li>
+        <li>The <strong>Inbox flag</strong> carries over too — SoloMD 4.6 ships the same
+          Inbox workflow (<code>⌘E</code> mark-organized + auto-advance + inbox-zero).
+          tldraw whiteboards open directly: SoloMD reads the same <code>.md</code> board format.</li>
       </ul>
 
       <h2>FAQ</h2>
@@ -377,4 +399,15 @@ const settingsRows: [string, string][] = [
   .compare-article li { margin: 6px 0; line-height: 1.6; }
   .compare-article p { line-height: 1.7; margin: 12px 0; }
   .compare-article code { background: #f5f5f0; padding: 1px 6px; border-radius: 4px; font-size: 0.92em; }
+  .callout-new {
+    margin: 28px 0 8px;
+    padding: 16px 20px;
+    border: 1px solid #ffd9a8;
+    border-left: 4px solid #ff9f40;
+    border-radius: 8px;
+    background: #fff8f0;
+    line-height: 1.6;
+  }
+  .callout-new strong { display: block; font-size: 1.05rem; margin-bottom: 6px; }
+  .callout-new span { font-size: 0.92rem; color: #555; }
 </style>
