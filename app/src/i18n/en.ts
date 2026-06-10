@@ -1327,9 +1327,13 @@ export const en = {
     filters: 'Filters',
     save: 'Save',
     cancel: 'Cancel',
+    sortDefault: 'Default (modified, newest first)',
+    liveMatch: '{n} match',
+    liveMatchTitle: 'Notes currently matching this filter',
     // Filter builder
     matchAll: 'Match all',
     matchAny: 'Match any',
+    combinator: 'Combine conditions',
     addCondition: '+ Condition',
     addGroup: '+ Group',
     removeRow: 'Remove',
@@ -1337,12 +1341,19 @@ export const en = {
     operator: 'Operator',
     value: 'Value',
     valuePlaceholder: 'value',
+    listPlaceholder: 'comma, separated, values',
+    datePlaceholder: 'YYYY-MM-DD or @7d',
+    regexPlaceholder: 'regular expression',
+    pickDate: 'Relative…',
+    emptyGroup: 'No conditions — matches all notes.',
+    dragToReorder: 'Drag to reorder',
     relativeDate: 'Relative date',
+    regexToggle: 'Toggle regular-expression matching',
     regexInvalid: 'Invalid or unsafe pattern',
   },
 };
 
-// `views` (v4.6 F5) is typed OPTIONAL so the 13 non-English locale files don't
-// have to ship the section the same day — the runtime `t()` lookup already
-// falls back to English for any missing key. Translations land in a later minor.
-export type I18n = Omit<typeof en, 'views'> & { views?: typeof en['views'] };
+// `views` (v4.6 F5) is now a REQUIRED section: all 14 locales ship a full
+// translation (v4.6.1). The runtime `t()` lookup still falls back to English
+// for any individual key that a locale happens to miss.
+export type I18n = typeof en;
