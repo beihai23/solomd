@@ -31,6 +31,9 @@ import BasesView from './components/BasesView.vue';
 import { BASES_OPEN_EVENT, BASES_CLOSE_EVENT } from './composables/useBasesView';
 import InboxView from './components/InboxView.vue';
 import { INBOX_OPEN_EVENT, INBOX_CLOSE_EVENT } from './composables/useInboxView';
+// v4.6.1 F2 — Type lens (center-pane filtered view of one type's members).
+import TypeLensView from './components/TypeLensView.vue';
+import { TYPE_LENS_OPEN_EVENT, TYPE_LENS_CLOSE_EVENT } from './composables/useTypeLens';
 import FileTree from './components/FileTree.vue';
 // v4.6 F5 — Saved filtered views (sidebar panel + filtered list + editor).
 import ViewsPanel from './components/ViewsPanel.vue';
@@ -899,12 +902,26 @@ function onAIRewriteAccept(e: Event) {
 function onAIRewriteCancel() {
   // No-op for now; AIRewriteOverlay self-closes.
 }
-function onOpenBases() { basesOpen.value = true; viewOpen.value = false; }
+function onOpenBases() { basesOpen.value = true; viewOpen.value = false; typeLensOpen.value = false; }
 function onCloseBases() { basesOpen.value = false; }
-function onOpenInbox() { inboxViewOpen.value = true; }
+function onOpenInbox() { inboxViewOpen.value = true; typeLensOpen.value = false; }
 function onCloseInbox() { inboxViewOpen.value = false; }
+// v4.6.1 F2 — type lens content swap. Mutually exclusive with the other
+// center-pane overlays (mirrors basesOpen / inboxViewOpen). The open event
+// carries which type to focus; we pass it down as a prop so the view is
+// ready on mount (the event fired before the component existed).
+function onOpenTypeLens(e: Event) {
+  const name = (e as CustomEvent).detail?.typeName;
+  if (typeof name !== 'string' || !name) return;
+  typeLensName.value = name;
+  typeLensOpen.value = true;
+  basesOpen.value = false;
+  inboxViewOpen.value = false;
+  viewOpen.value = false;
+}
+function onCloseTypeLens() { typeLensOpen.value = false; }
 // v4.6 F5 — saved-view content swap.
-function onOpenView() { viewOpen.value = true; basesOpen.value = false; }
+function onOpenView() { viewOpen.value = true; basesOpen.value = false; typeLensOpen.value = false; }
 function onCloseView() { viewOpen.value = false; }
 
 async function onWikiOpen(e: Event) {
@@ -939,6 +956,8 @@ window.addEventListener(BASES_OPEN_EVENT, onOpenBases as EventListener);
 window.addEventListener(BASES_CLOSE_EVENT, onCloseBases as EventListener);
 window.addEventListener(INBOX_OPEN_EVENT, onOpenInbox as EventListener);
 window.addEventListener(INBOX_CLOSE_EVENT, onCloseInbox as EventListener);
+window.addEventListener(TYPE_LENS_OPEN_EVENT, onOpenTypeLens as EventListener);
+window.addEventListener(TYPE_LENS_CLOSE_EVENT, onCloseTypeLens as EventListener);
 window.addEventListener(VIEW_OPEN_EVENT, onOpenView as EventListener);
 window.addEventListener(VIEW_CLOSE_EVENT, onCloseView as EventListener);
 window.addEventListener('solomd:open-settings', onOpenSettingsEvent as EventListener);
@@ -956,6 +975,8 @@ onBeforeUnmount(() => {
   window.removeEventListener(BASES_CLOSE_EVENT, onCloseBases as EventListener);
   window.removeEventListener(INBOX_OPEN_EVENT, onOpenInbox as EventListener);
   window.removeEventListener(INBOX_CLOSE_EVENT, onCloseInbox as EventListener);
+  window.removeEventListener(TYPE_LENS_OPEN_EVENT, onOpenTypeLens as EventListener);
+  window.removeEventListener(TYPE_LENS_CLOSE_EVENT, onCloseTypeLens as EventListener);
   window.removeEventListener(VIEW_OPEN_EVENT, onOpenView as EventListener);
   window.removeEventListener(VIEW_CLOSE_EVENT, onCloseView as EventListener);
   window.removeEventListener('solomd:open-settings', onOpenSettingsEvent as EventListener);
@@ -1181,6 +1202,9 @@ function onSidebarResize(side: 'left' | 'right', ev: MouseEvent) {
 }
 const basesOpen = ref(false);
 const inboxViewOpen = ref(false);
+// v4.6.1 F2 — type lens (full-pane filtered list of one type's members).
+const typeLensOpen = ref(false);
+const typeLensName = ref('');
 // v4.6 F5 — when a saved view is opened from the sidebar, the content area
 // swaps to ViewNoteList (mirrors the basesOpen pattern).
 const viewOpen = ref(false);
@@ -1284,6 +1308,7 @@ watchEffect(() => { void settings.aiEnabled; void settings.aiProvider; refreshAi
         <div class="content">
           <BasesView v-if="basesOpen" />
           <InboxView v-else-if="inboxViewOpen" />
+          <TypeLensView v-else-if="typeLensOpen" :type-name="typeLensName" />
           <ViewNoteList v-else-if="viewOpen" />
           <TileRoot v-else :node="tiles.root" @cursor="onCursor" @selection="onSelection" />
         </div>
