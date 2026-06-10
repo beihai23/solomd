@@ -317,10 +317,9 @@ pub fn run() {
             cookbook::cookbook_list,
             cookbook::cookbook_get,
             cookbook::cookbook_install,
-            // F3 (v4.6) typed relationships — inverse resolution over the
-            // in-memory index. Kept on its own line at the end of the list to
-            // keep the expected merge conflict with F1 trivial to resolve.
             workspace_index::workspace_index_referenced_by,
+            commands::update_frontmatter_property,
+            commands::delete_frontmatter_property,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -148,6 +148,9 @@ interface Settings {
    *  during conflict resolution). Defaults to true so existing AutoGit
    *  users see no behavior change. */
   showHistoryPanel: boolean;
+  /** v4.6 F1 — show the Properties inspector pane (frontmatter editor) in the
+   *  right sidebar. Toggled via ⌘⇧I / command palette. */
+  showInspector: boolean;
   /** v4.0.2 — per-pane heights in the right sidebar (issue #6 / #52 / #55).
    *  Map of pane id → flex-basis pixels. Panes without an entry use
    *  proportional flex grow (legacy behavior). Once the user drags a
@@ -385,6 +388,7 @@ function defaults(): Settings {
     autoGitEnabled: false,
     autoGitDebounceSeconds: 30,
     showHistoryPanel: true,
+    showInspector: false,
     rightSidebarPaneHeights: {},
     ragEnabled: false,
     readingByDefaultOnMobile: (() => {
@@ -405,7 +409,7 @@ function defaults(): Settings {
     imageExportBranding: true,
     globalZoom: 1,
     codeBlockLineNumbers: false,
-    rsPaneOrder: ['search', 'outline', 'backlinks', 'relationships', 'tags', 'neighborhood', 'history', 'agent'],
+    rsPaneOrder: ['search', 'outline', 'backlinks', 'relationships', 'tags', 'neighborhood', 'history', 'inspector', 'agent'],
     previewFontSize: 15,
     attachmentMode: 'shared',
     assetsDirName: '_assets',
@@ -793,6 +797,11 @@ export const useSettingsStore = defineStore('settings', {
       this.showHistoryPanel = !this.showHistoryPanel;
       this.persist();
     },
+    /** v4.6 F1 — toggle the Properties inspector pane (⌘⇧I). */
+    toggleInspector() {
+      this.showInspector = !this.showInspector;
+      this.persist();
+    },
     setRightSidebarPaneHeight(paneId: string, px: number) {
       const clean = Math.max(80, Math.min(2000, Math.round(px) || 0));
       // Allocate a fresh object so Vue reactivity picks up the mutation
@@ -906,7 +915,7 @@ export const useSettingsStore = defineStore('settings', {
       this.persist();
     },
     resetRsPaneOrder() {
-      this.rsPaneOrder = ['search', 'outline', 'backlinks', 'relationships', 'tags', 'neighborhood', 'history', 'agent'];
+      this.rsPaneOrder = ['search', 'outline', 'backlinks', 'relationships', 'tags', 'neighborhood', 'history', 'inspector', 'agent'];
       this.persist();
     },
     /** v4.3.0 PR #74 — preview-only font size. Editor font is the existing
