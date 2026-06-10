@@ -734,10 +734,14 @@ export const en = {
     periodMonth: 'Month',
     periodAll: 'All',
     linkCount: '{n} links',
+    organizeAction: 'Mark organized & advance',
     organizeHint: 'Press ⌘E to mark the active note organized and advance to the next.',
     zero: 'Inbox zero — nothing left to organize',
     zeroTitle: 'Inbox zero',
     zeroSub: 'Nothing left to organize. New captures will show up here.',
+    periodEmptyTitle: 'Nothing in this window',
+    periodEmptySub: 'No inbox notes captured in this period. {n} waiting under All.',
+    showAll: 'Show all',
     // Settings (Editor) — inbox workflow toggles.
     workflowSetting: 'Inbox workflow',
     workflowSettingHint:
