@@ -463,12 +463,14 @@ onBeforeUnmount(() => {
       <div class="ftree__root-wrap">
         <button
           class="ftree__root ftree__root--btn"
-          :title="root.path"
+          :class="{ 'ftree__root--open': switcherOpen }"
+          :title="(t('explorer.switchWorkspace') || 'Switch workspace') + ' · ' + root.path"
           @click.stop="toggleSwitcher"
           @contextmenu.prevent="openCtx($event, root)"
         >
+          <span class="ftree__root-vicon" aria-hidden="true">🗂</span>
           <span class="ftree__root-name">{{ root.name }}</span>
-          <span class="ftree__root-caret" aria-hidden="true">{{ switcherOpen ? '▾' : '▸' }}</span>
+          <span class="ftree__root-caret" aria-hidden="true">▾</span>
         </button>
         <div v-if="switcherOpen" class="ftree__switcher" @click.stop>
           <div class="ftree__switcher-label">{{ t('explorer.recentFolders') }}</div>
@@ -730,23 +732,45 @@ export const FileTreeNode = defineComponent({
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
+/* v4.6 — workspace switcher reads as an obviously-clickable control
+   (distinct pill + folder glyph + caret), not a static section label. */
 .ftree__root--btn {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-  width: 100%;
-  background: transparent;
-  border: 0;
+  gap: 7px;
+  width: calc(100% - 16px);
+  margin: 6px 8px 4px;
+  padding: 7px 10px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md, 8px);
   text-align: left;
   cursor: pointer;
   font: inherit;
-  color: inherit;
-  text-transform: inherit;
-  letter-spacing: inherit;
+  color: var(--text);
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: 12.5px;
+  font-weight: 600;
+  transition: background var(--dur-fast, 120ms) var(--ease),
+    border-color var(--dur-fast, 120ms) var(--ease);
 }
 .ftree__root--btn:hover {
   background: var(--bg-hover);
+  border-color: var(--accent);
+}
+.ftree__root--btn:focus-visible {
+  outline: none;
+  box-shadow: var(--ring);
+}
+.ftree__root--open {
+  background: var(--accent-soft, rgba(255, 159, 64, 0.1));
+  border-color: var(--accent);
+}
+.ftree__root-vicon {
+  flex: 0 0 auto;
+  font-size: 13px;
+  line-height: 1;
 }
 .ftree__root-name {
   overflow: hidden;
@@ -755,9 +779,18 @@ export const FileTreeNode = defineComponent({
   flex: 1 1 auto;
 }
 .ftree__root-caret {
-  font-size: 9px;
-  color: var(--text-faint);
+  font-size: 11px;
+  color: var(--text-muted);
   flex: 0 0 auto;
+  transition: transform var(--dur-fast, 120ms) var(--ease),
+    color var(--dur-fast, 120ms) var(--ease);
+}
+.ftree__root--btn:hover .ftree__root-caret,
+.ftree__root--open .ftree__root-caret {
+  color: var(--accent);
+}
+.ftree__root--open .ftree__root-caret {
+  transform: rotate(180deg);
 }
 .ftree__switcher {
   position: absolute;
