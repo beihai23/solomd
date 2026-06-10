@@ -21,6 +21,7 @@ import { useAutoCommit } from './composables/useAutoCommit';
 import { useGithubSync } from './composables/useGithubSync';
 import { useSessionRestore } from './composables/useSessionRestore';
 import SessionRestoreDialog from './components/SessionRestoreDialog.vue';
+import WhiteboardOverlay from './components/WhiteboardOverlay.vue';
 import AIRewriteOverlay from './components/AIRewriteOverlay.vue';
 import BasesView from './components/BasesView.vue';
 import { BASES_OPEN_EVENT, BASES_CLOSE_EVENT } from './composables/useBasesView';
@@ -1319,6 +1320,7 @@ watchEffect(() => { void settings.aiEnabled; void settings.aiProvider; refreshAi
       @cancel="onUnsavedAction('cancel')"
     />
     <SessionRestoreDialog />
+    <WhiteboardOverlay />
     <FileChangedDialog
       :open="fileChangedOpen"
       :file-name="fileChangedFileName"
