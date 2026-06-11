@@ -578,7 +578,14 @@ onBeforeUnmount(() => {
     <div
       class="toolbar__spacer"
       :data-tauri-drag-region="macTitleBar ? '' : undefined"
-    ></div>
+    >
+      <span
+        v-if="tabs.activeTab?.fileName"
+        class="toolbar__doc-name"
+        :title="tabs.activeTab?.filePath || tabs.activeTab?.fileName"
+        :data-tauri-drag-region="macTitleBar ? '' : undefined"
+      >{{ tabs.activeTab.fileName }}</span>
+    </div>
 
     <div class="toolbar__group" v-if="isMarkdown">
       <button
@@ -908,7 +915,16 @@ onBeforeUnmount(() => {
   left: auto;
   min-width: 220px;
 }
-.toolbar__spacer { flex: 1 1 0; min-width: 0; }
+.toolbar__spacer { flex: 1 1 0; min-width: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.toolbar__doc-name {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  cursor: default;
+}
 .toolbar__divider {
   width: 1px;
   height: 16px;
