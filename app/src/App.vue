@@ -242,6 +242,18 @@ useShortcuts({
 
 useFileWatcher(showFileChangedDialog);
 
+// v4.6.2 — Ctrl/Cmd + mouse wheel zooms the whole app (Obsidian-style),
+// reusing the globalZoom axis so ⌘0 still resets it and it works in edit +
+// preview + split (window-level capture handler). Trackpad pinch also arrives
+// here (browsers set ctrlKey on pinch), so pinch-to-zoom works too. passive:false
+// lets us preventDefault so the page doesn't scroll while zooming.
+function onWheelZoom(e: WheelEvent): void {
+  if (!(e.ctrlKey || e.metaKey)) return;
+  e.preventDefault();
+  const dir = e.deltaY < 0 ? 1 : -1;
+  settings.setGlobalZoom((settings.globalZoom || 1) + dir * 0.1);
+}
+
 // Esc closes the topmost modal
 function onZoomShortcut(e: KeyboardEvent): boolean {
   // Three independent zoom axes (v4.3.0 issue #72 + PR #74 yzcj105):
@@ -687,6 +699,7 @@ onMounted(async () => {
   }
 
   window.addEventListener('keydown', onEsc);
+  window.addEventListener('wheel', onWheelZoom, { passive: false, capture: true });
   window.addEventListener('blur', onWindowBlur);
   window.addEventListener('solomd:open-help', onOpenHelpEvent as EventListener);
   window.addEventListener('solomd:open-global-search', onOpenSearchEvent as EventListener);
@@ -973,6 +986,7 @@ window.addEventListener('solomd:open-settings', onOpenSettingsEvent as EventList
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', onEsc);
+  window.removeEventListener('wheel', onWheelZoom, { capture: true } as EventListenerOptions);
   window.removeEventListener('blur', onWindowBlur);
   window.removeEventListener('solomd:open-help', onOpenHelpEvent as EventListener);
   window.removeEventListener('solomd:open-global-search', onOpenSearchEvent as EventListener);
