@@ -321,6 +321,13 @@ onBeforeUnmount(() => {
       <span class="brand__hash">#</span><span class="brand__md">MD</span>
     </div>
 
+    <span
+      v-if="tabs.activeTab?.fileName"
+      class="toolbar__title"
+      :title="tabs.activeTab?.filePath || tabs.activeTab?.fileName"
+      :data-tauri-drag-region="macTitleBar ? '' : undefined"
+    >{{ tabs.activeTab.fileName }}</span>
+
     <div class="toolbar__group">
       <div class="dropdown">
         <button
@@ -535,14 +542,7 @@ onBeforeUnmount(() => {
     <div
       class="toolbar__spacer"
       :data-tauri-drag-region="macTitleBar ? '' : undefined"
-    >
-      <span
-        v-if="tabs.activeTab?.fileName"
-        class="toolbar__doc-name"
-        :title="tabs.activeTab?.filePath || tabs.activeTab?.fileName"
-        :data-tauri-drag-region="macTitleBar ? '' : undefined"
-      >{{ tabs.activeTab.fileName }}</span>
-    </div>
+    ></div>
 
     <div class="toolbar__group" v-if="isMarkdown">
       <button
@@ -819,14 +819,23 @@ onBeforeUnmount(() => {
   display: inline-block;
 }
 
-.toolbar__spacer { flex: 1 1 0; min-width: 0; display: flex; align-items: center; justify-content: center; overflow: hidden; }
-.toolbar__doc-name {
-  font-size: 12px;
-  color: var(--text-muted);
+.toolbar__spacer { flex: 1 1 0; min-width: 0; }
+/* Document title sits right after the #MD brand, mirroring a native window
+   title (VSCode / macOS Notes style). min-width:0 + flex-shrink:1 lets it
+   ellipsis-shrink on narrow windows instead of pushing tool groups off the
+   right edge (overrides `.toolbar > * { flex-shrink: 0 }`). */
+.toolbar__title {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text);
+  margin-left: 4px;
+  padding-right: 8px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 100%;
+  max-width: 280px;
+  min-width: 0;
+  flex-shrink: 1;
   cursor: default;
 }
 .toolbar__divider {
