@@ -27,6 +27,8 @@
 //! for the contract that "running an agent never fails because the cost
 //! ledger broke."
 
+#[cfg(test)]
+use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -97,12 +99,31 @@ impl Default for CostMeter {
 
 static CONFIG_DIR: Lazy<Mutex<Option<PathBuf>>> = Lazy::new(|| Mutex::new(None));
 
+#[cfg(test)]
+thread_local! {
+    static TEST_CONFIG_DIR: RefCell<Option<PathBuf>> = const { RefCell::new(None) };
+}
+
 fn set_config_dir(p: PathBuf) {
-    let mut g = CONFIG_DIR.lock().unwrap();
-    *g = Some(p);
+    #[cfg(test)]
+    {
+        TEST_CONFIG_DIR.with(|d| {
+            *d.borrow_mut() = Some(p);
+        });
+        return;
+    }
+    #[cfg(not(test))]
+    {
+        let mut g = CONFIG_DIR.lock().unwrap();
+        *g = Some(p);
+    }
 }
 
 fn current_config_dir() -> Option<PathBuf> {
+    #[cfg(test)]
+    if let Some(p) = TEST_CONFIG_DIR.with(|d| d.borrow().clone()) {
+        return Some(p);
+    }
     if let Some(p) = CONFIG_DIR.lock().unwrap().clone() {
         return Some(p);
     }
@@ -115,15 +136,24 @@ fn current_config_dir() -> Option<PathBuf> {
     // a one-time migration kicks in below.
     let base = if cfg!(target_os = "macos") {
         std::env::var("HOME").ok().map(|h| {
-            PathBuf::from(h).join("Library").join("Application Support").join("solomd")
+            PathBuf::from(h)
+                .join("Library")
+                .join("Application Support")
+                .join("solomd")
         })
     } else if cfg!(target_os = "windows") {
-        std::env::var("APPDATA").ok().map(|h| PathBuf::from(h).join("solomd"))
+        std::env::var("APPDATA")
+            .ok()
+            .map(|h| PathBuf::from(h).join("solomd"))
     } else {
         std::env::var("XDG_CONFIG_HOME")
             .ok()
             .map(PathBuf::from)
-            .or_else(|| std::env::var("HOME").ok().map(|h| PathBuf::from(h).join(".config")))
+            .or_else(|| {
+                std::env::var("HOME")
+                    .ok()
+                    .map(|h| PathBuf::from(h).join(".config"))
+            })
             .map(|p| p.join("solomd"))
     };
     base
@@ -306,8 +336,15 @@ mod tests {
         let (_g, dir) = fresh();
         let mut m = read_meter();
         m.enabled = true;
-        m.providers
-            .insert("openai".into(), ProviderTotals { input: 1, output: 1, cost_usd: 0.5, runs: 1 });
+        m.providers.insert(
+            "openai".into(),
+            ProviderTotals {
+                input: 1,
+                output: 1,
+                cost_usd: 0.5,
+                runs: 1,
+            },
+        );
         write_meter(&m).unwrap();
         // reset() needs an AppHandle; emulate it by clearing manually then
         // re-reading so we exercise the same code path.

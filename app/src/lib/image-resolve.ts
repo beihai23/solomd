@@ -22,6 +22,9 @@ export function normalizePath(p: string): string {
   if (driveMatch) {
     prefix = driveMatch[1].toUpperCase() + ':/';
     body = driveMatch[2];
+  } else if (s.startsWith('//')) {
+    prefix = '//';
+    body = s.slice(2);
   } else if (s.startsWith('/')) {
     prefix = '/';
     body = s.slice(1);
@@ -38,6 +41,51 @@ export function normalizePath(p: string): string {
   return prefix + out.join('/');
 }
 
+const LOCAL_IMAGE_WITH_URL_SUFFIX =
+  /^(.*?\.(?:png|jpe?g|gif|webp|svg|bmp|tiff?|avif|heic|heif|ico))([?#].*)$/i;
+
+function decodeHtmlAttr(value: string): string {
+  return value
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>');
+}
+
+function decodeUriOnce(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    try {
+      return decodeURI(value);
+    } catch {
+      return value;
+    }
+  }
+}
+
+function stripLocalImageUrlSuffix(value: string): string {
+  const match = LOCAL_IMAGE_WITH_URL_SUFFIX.exec(value);
+  return match ? match[1] : value;
+}
+
+function fileUrlToPath(value: string): string {
+  if (!/^file:\/\//i.test(value)) return value;
+  const rest = value.slice('file://'.length);
+  if (/^[a-zA-Z]:[\\/]/.test(rest)) return rest;
+  if (rest.startsWith('/') && /^\/[a-zA-Z]:[\\/]/.test(rest)) return rest.slice(1);
+  if (/^localhost\//i.test(rest)) return rest.slice('localhost/'.length);
+  if (!rest.startsWith('/')) return `//${rest}`;
+  return rest;
+}
+
+function cleanLocalImageSrc(src: string): string {
+  const attr = decodeHtmlAttr(src.trim());
+  const withoutUrlSuffix = stripLocalImageUrlSuffix(attr);
+  return fileUrlToPath(decodeUriOnce(withoutUrlSuffix));
+}
+
 /**
  * Resolve a local image src to an absolute filesystem path.
  * Returns the original src unchanged for remote/data/blob/asset URLs.
@@ -50,11 +98,7 @@ export function resolveImagePath(
   if (!src) return src;
   if (/^(https?|data|blob|asset|tauri):/i.test(src)) return src;
 
-  let p = src;
-  if (/^file:\/\//i.test(p)) {
-    p = p.slice(7);
-    if (p.startsWith('/') && /^\/[a-zA-Z]:/.test(p)) p = p.slice(1);
-  }
+  let p = cleanLocalImageSrc(src);
 
   const isAbsolute = p.startsWith('/') || /^[a-zA-Z]:[\\/]/.test(p);
   if (!isAbsolute) {
@@ -116,9 +160,7 @@ export function rewriteImageUrls(
       if (!src || /^(https?|data|blob|asset|tauri):/i.test(src)) {
         return `${prefix}${q}${src}${q}`;
       }
-      let decoded: string;
-      try { decoded = decodeURI(src); } catch { decoded = src; }
-      return `${prefix}${q}${resolveImageSrc(decoded, imageRoot, filePath)}${q}`;
+      return `${prefix}${q}${resolveImageSrc(src, imageRoot, filePath)}${q}`;
     },
   );
 }

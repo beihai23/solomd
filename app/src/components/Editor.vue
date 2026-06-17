@@ -3,7 +3,7 @@ import { ref, onMounted, onBeforeUnmount, watch, computed } from 'vue';
 import { EditorState, Compartment } from '@codemirror/state';
 import { EditorView, keymap, lineNumbers, highlightActiveLine, drawSelection, rectangularSelection, crosshairCursor } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
-import { searchKeymap, highlightSelectionMatches, search } from '@codemirror/search';
+import { searchKeymap, search } from '@codemirror/search';
 import { syntaxHighlighting, defaultHighlightStyle, indentOnInput, bracketMatching } from '@codemirror/language';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import { LanguageDescription } from '@codemirror/language';
@@ -44,6 +44,7 @@ import { spellcheckTheme } from '../lib/cm-spellcheck-theme';
 import { usePandocExport } from '../composables/usePandocExport';
 import type { CitationEntry } from '../lib/citations';
 import { taskListExtension } from '../lib/cm-task-list';
+import { imeCompositionGuard } from '../lib/cm-ime-guard';
 import {
   sessionRestoreExtension,
   readSession,
@@ -101,6 +102,7 @@ watch(
 const host = ref<HTMLDivElement | null>(null);
 let view: EditorView | null = null;
 let cleanupRelayout: (() => void) | null = null;
+let contentSyncTimer: ReturnType<typeof setTimeout> | null = null;
 
 const themeCompartment = new Compartment();
 const langCompartment = new Compartment();
@@ -113,6 +115,97 @@ const focusCompartment = new Compartment();
 const typewriterCompartment = new Compartment();
 const vimCompartment = new Compartment();
 const slashCompartment = new Compartment();
+const isWindows = typeof navigator !== 'undefined' && /Win/i.test(navigator.platform);
+const usePlainWindowsEditor = isWindows;
+
+function syncEditorContentSoon(text: string) {
+  if (contentSyncTimer) clearTimeout(contentSyncTimer);
+  contentSyncTimer = setTimeout(() => {
+    contentSyncTimer = null;
+    tabs.setContent(props.tab.id, text);
+  }, 350);
+}
+
+const plainEditor = ref<HTMLTextAreaElement | null>(null);
+
+function plainLineHeightPx(): number {
+  if (!plainEditor.value) return 24;
+  const style = window.getComputedStyle(plainEditor.value);
+  const n = Number.parseFloat(style.lineHeight);
+  if (Number.isFinite(n) && n > 0) return n;
+  const fs = Number.parseFloat(style.fontSize);
+  return Number.isFinite(fs) && fs > 0 ? fs * 1.6 : 24;
+}
+
+function plainSelectionText(): string {
+  const el = plainEditor.value;
+  if (!el) return '';
+  const from = el.selectionStart ?? 0;
+  const to = el.selectionEnd ?? 0;
+  return from === to ? '' : el.value.slice(from, to);
+}
+
+function emitPlainCursorAndSelection() {
+  const el = plainEditor.value;
+  if (!el) return;
+  const head = el.selectionStart ?? 0;
+  const lines = el.value.slice(0, head).split('\n');
+  const line = lines.length;
+  const col = lines[lines.length - 1]?.length ?? 0;
+  emit('cursor', line, col + 1);
+  emit('selection', plainSelectionText());
+}
+
+function plainSetCaret(pos: number) {
+  const el = plainEditor.value;
+  if (!el) return;
+  const safe = Math.max(0, Math.min(pos, el.value.length));
+  el.focus();
+  el.setSelectionRange(safe, safe);
+  emitPlainCursorAndSelection();
+}
+
+function plainLineStartOffset(line: number): number {
+  const el = plainEditor.value;
+  if (!el) return 0;
+  const safeLine = Math.max(1, Math.min(line, el.value.split('\n').length));
+  if (safeLine <= 1) return 0;
+  let offset = 0;
+  let current = 1;
+  while (current < safeLine && offset < el.value.length) {
+    const next = el.value.indexOf('\n', offset);
+    if (next < 0) return el.value.length;
+    offset = next + 1;
+    current++;
+  }
+  return offset;
+}
+
+function plainScrollToLine(line: number) {
+  const el = plainEditor.value;
+  if (!el) return;
+  const safeLine = Math.max(1, line);
+  el.scrollTop = Math.max(0, (safeLine - 1) * plainLineHeightPx() - 40);
+}
+
+function plainInsertText(snippet: string) {
+  const el = plainEditor.value;
+  if (!el) return;
+  const start = el.selectionStart ?? 0;
+  const end = el.selectionEnd ?? 0;
+  const next = `${el.value.slice(0, start)}${snippet}${el.value.slice(end)}`;
+  el.value = next;
+  const caret = start + snippet.length;
+  el.setSelectionRange(caret, caret);
+  tabs.setContent(props.tab.id, next);
+  emitPlainCursorAndSelection();
+}
+
+function syncPlainEditorFromStore(text: string) {
+  const el = plainEditor.value;
+  if (!el) return;
+  if (el.value !== text) el.value = text;
+}
 
 function slashExt() {
   if (!settings.slashCommandsEnabled) return [];
@@ -142,6 +235,7 @@ function spellCheckExt(on: boolean) {
 
 function richExtensionsFor(tab: Tab) {
   if (tab.language !== 'markdown') return [];
+  if (isWindows) return [];
   // v2.3 live-edit takes precedence over the existing livePreview toggle —
   // the WYSIWYG bundle ALREADY includes rich highlighting + marker hiding,
   // and stacking livePreviewExtension on top would cause duplicate
@@ -207,28 +301,43 @@ const fontSizeTheme = (px: number, family: string) =>
   });
 
 function buildExtensions() {
+  if (usePlainWindowsEditor) return [];
+  const markdownSafeMode = isWindows;
+  const windowsImeSafeMode = isWindows;
   return [
-    dragAwareExtension(),
+    imeCompositionGuard(),
     history(),
-    drawSelection(),
-    // #90 — column/rectangular selection: hold Alt (Option on macOS) and
-    // drag to select a vertical block. `crosshairCursor` swaps the I-beam
-    // for a crosshair while Alt is held so the user knows the mode is
-    // armed. CM6 already turns multiple selections on by default; no
-    // need to flip `EditorState.allowMultipleSelections`.
-    rectangularSelection(),
-    crosshairCursor(),
-    indentOnInput(),
-    bracketMatching(),
-    highlightActiveLine(),
-    highlightSelectionMatches(),
-    search({ top: true }),
-    syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+    ...(windowsImeSafeMode
+      ? []
+      : [
+          dragAwareExtension(),
+          drawSelection(),
+          // #90 — column/rectangular selection: hold Alt (Option on macOS) and
+          // drag to select a vertical block. `crosshairCursor` swaps the I-beam
+          // for a crosshair while Alt is held so the user knows the mode is
+          // armed. CM6 already turns multiple selections on by default; no
+          // need to flip `EditorState.allowMultipleSelections`.
+          rectangularSelection(),
+          crosshairCursor(),
+          indentOnInput(),
+          bracketMatching(),
+          highlightActiveLine(),
+          search({ top: true }),
+          syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+        ]),
     keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap, indentWithTab]),
     lineNumCompartment.of(settings.showLineNumbers ? lineNumbers() : []),
     wrapCompartment.of(settings.wordWrap ? EditorView.lineWrapping : []),
-    langCompartment.of(props.tab.language === 'markdown' ? [markdownExt()] : []),
-    richCompartment.of(richExtensionsFor(props.tab)),
+    langCompartment.of(
+      windowsImeSafeMode
+        ? []
+        : props.tab.language === 'markdown'
+          ? [markdownExt()]
+          : [],
+    ),
+    richCompartment.of(
+      windowsImeSafeMode ? [] : richExtensionsFor(props.tab),
+    ),
     themeCompartment.of(cmThemeFor(settings.theme)),
     vimCompartment.of(settings.vimMode ? vim() : []),
     fontSizeCompartment.of(fontSizeTheme(settings.fontSize, settings.fontFamily)),
@@ -242,7 +351,7 @@ function buildExtensions() {
       getAssetsDirName: () => settings.assetsDirName,
       getCustomPath: () => settings.attachmentCustomPath,
     }),
-    ...(props.tab.language === 'markdown'
+    ...(!windowsImeSafeMode && props.tab.language === 'markdown' && !markdownSafeMode
       ? [
           wikilinkExtension(),
           tagAutocompleteExtension(),
@@ -257,7 +366,10 @@ function buildExtensions() {
               citationCompleteSource(() => cachedCitations),
             ],
             defaultKeymap: true,
-            activateOnTyping: true,
+            // Typing-triggered completion is the last remaining source of
+            // IME-hostile churn here. Keep the sources available for explicit
+            // invocation, but do not wake them up on every keystroke.
+            activateOnTyping: false,
           }),
           ...(IS_APP_STORE_BUILD ? [] : [aiRewriteExtension()]),
           spellcheckExtension({ enabled: () => settings.spellcheckEnabled }),
@@ -265,14 +377,14 @@ function buildExtensions() {
           slashCompartment.of(slashExt()),
         ]
       : []),
-    taskListExtension(),
+    ...(windowsImeSafeMode || markdownSafeMode ? [] : [taskListExtension()]),
     sessionRestoreExtension(props.tab.id),
     EditorView.updateListener.of((u) => {
-      if (u.docChanged) {
+      if (!isWindows && u.docChanged) {
         const text = u.state.doc.toString();
-        tabs.setContent(props.tab.id, text);
+        if (!u.view.composing) syncEditorContentSoon(text);
       }
-      if (u.selectionSet || u.docChanged) {
+      if (!isWindows && u.selectionSet) {
         const head = u.state.selection.main.head;
         const line = u.state.doc.lineAt(head);
         emit('cursor', line.number, head - line.from + 1);
@@ -286,12 +398,18 @@ function buildExtensions() {
 }
 
 function maybeRestoreSession() {
-  if (!view) return;
   const saved = readSession(props.tab.id);
+  if (!saved || saved === '' || props.tab.content !== '') return;
+  if (usePlainWindowsEditor) {
+    const el = plainEditor.value;
+    if (!el || el.value.length > 0) return;
+    el.value = saved;
+    tabs.setContent(props.tab.id, saved);
+    emitPlainCursorAndSelection();
+    return;
+  }
   if (
-    saved &&
-    saved !== '' &&
-    props.tab.content === '' &&
+    view &&
     view.state.doc.length === 0 &&
     saved !== view.state.doc.toString()
   ) {
@@ -300,6 +418,11 @@ function maybeRestoreSession() {
 }
 
 onMounted(() => {
+  if (usePlainWindowsEditor) {
+    syncPlainEditorFromStore(props.tab.content);
+    maybeRestoreSession();
+    return;
+  }
   if (!host.value) return;
   view = new EditorView({
     state: EditorState.create({ doc: props.tab.content, extensions: buildExtensions() }),
@@ -323,6 +446,10 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   cleanupRelayout?.();
+  if (contentSyncTimer) {
+    clearTimeout(contentSyncTimer);
+    contentSyncTimer = null;
+  }
   if (import.meta.env.DEV) {
     const w = window as unknown as { __solomdActiveView?: EditorView };
     if (w.__solomdActiveView === view) delete w.__solomdActiveView;
@@ -386,6 +513,10 @@ watch(
 watch(
   () => props.tab.content,
   (next) => {
+    if (usePlainWindowsEditor) {
+      syncPlainEditorFromStore(next);
+      return;
+    }
     if (!view) return;
     if (view.state.doc.toString() !== next) {
       view.dispatch({
@@ -472,6 +603,13 @@ watch(
 );
 
 function gotoLine(line: number) {
+  if (usePlainWindowsEditor) {
+    const el = plainEditor.value;
+    if (!el) return;
+    plainSetCaret(plainLineStartOffset(line));
+    plainScrollToLine(line);
+    return;
+  }
   if (!view) return;
   const safe = Math.max(1, Math.min(line, view.state.doc.lines));
   const lineObj = view.state.doc.line(safe);
@@ -483,6 +621,10 @@ function gotoLine(line: number) {
 }
 
 async function insertImageFromPath(srcPath: string): Promise<void> {
+  if (usePlainWindowsEditor) {
+    plainInsertText(srcPath);
+    return;
+  }
   if (!view) return;
   await cmInsertImageFromPath(view, srcPath, {
     getFilePath: () => props.tab.filePath,
@@ -494,6 +636,13 @@ async function insertImageFromPath(srcPath: string): Promise<void> {
 
 /** Returns the 1-indexed line currently at the top of the visible viewport. */
 function getViewLine(): number | null {
+  if (usePlainWindowsEditor) {
+    const el = plainEditor.value;
+    if (!el) return null;
+    const top = el.scrollTop;
+    const line = Math.max(1, Math.floor(top / plainLineHeightPx()) + 1);
+    return line;
+  }
   if (!view) return null;
   const top = view.scrollDOM.scrollTop;
   const block = view.lineBlockAtHeight(top);
@@ -502,6 +651,10 @@ function getViewLine(): number | null {
 
 /** Scroll the given 1-indexed line to the top of the viewport (without moving cursor). */
 function scrollToLine(line: number): void {
+  if (usePlainWindowsEditor) {
+    plainScrollToLine(line);
+    return;
+  }
   if (!view) return;
   const safe = Math.max(1, Math.min(line, view.state.doc.lines));
   const lineObj = view.state.doc.line(safe);
@@ -516,6 +669,10 @@ function scrollToLine(line: number): void {
  * Otherwise the cursor is placed at the end of the inserted text.
  */
 function insertMarkdown(snippet: string): void {
+  if (usePlainWindowsEditor) {
+    plainInsertText(snippet);
+    return;
+  }
   if (!view) return;
   const CURSOR = '$|$';
   const cursorIdx = snippet.indexOf(CURSOR);
@@ -544,7 +701,20 @@ const cls = computed(() => ({
 </script>
 
 <template>
-  <div :class="cls" ref="host"></div>
+  <div v-if="!usePlainWindowsEditor" :class="cls" ref="host"></div>
+  <textarea
+    v-else
+    ref="plainEditor"
+    :class="cls"
+    class="plain-editor"
+    spellcheck="false"
+    wrap="off"
+    @input="(e) => { const el = e.target as HTMLTextAreaElement; tabs.setContent(tab.id, el.value); emitPlainCursorAndSelection(); }"
+    @keyup="emitPlainCursorAndSelection"
+    @mouseup="emitPlainCursorAndSelection"
+    @select="emitPlainCursorAndSelection"
+    @focus="emitPlainCursorAndSelection"
+  ></textarea>
 </template>
 
 <style scoped>
@@ -560,5 +730,22 @@ const cls = computed(() => ({
 }
 :deep(.cm-editor.cm-focused) {
   outline: none;
+}
+.plain-editor {
+  height: 100%;
+  width: 100%;
+  resize: none;
+  border: 0;
+  outline: none;
+  box-sizing: border-box;
+  padding: 12px 16px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-editor, var(--font-mono));
+  font-size: inherit;
+  line-height: 1.6;
+  tab-size: 2;
+  white-space: pre;
+  overflow: auto;
 }
 </style>

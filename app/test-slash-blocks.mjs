@@ -8,6 +8,7 @@ import { build } from './node_modules/.pnpm/esbuild@0.25.12/node_modules/esbuild
 import { readFileSync, writeFileSync, mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import assert from 'node:assert/strict';
 
 const tmp = mkdtempSync(join(tmpdir(), 'v25-slash-'));
@@ -23,17 +24,18 @@ await build({
   logLevel: 'error',
 });
 
-const mod = await import(out);
+const mod = await import(pathToFileURL(out).href);
 const { SLASH_BLOCKS, expandSnippet, filterBlocks } = mod;
 
 // ---- Catalog shape -------------------------------------------------------
-assert.equal(SLASH_BLOCKS.length, 20, 'catalog should have 20 entries');
+assert.equal(SLASH_BLOCKS.length, 21, 'catalog should have 21 entries');
 const ids = new Set(SLASH_BLOCKS.map((b) => b.id));
 for (const required of [
   'h1', 'h2', 'h3',
   'bullet', 'numbered', 'todo',
   'code', 'quote', 'divider', 'table',
   'math_block', 'math_inline', 'mermaid',
+  'whiteboard',
   'link', 'image',
   'bold', 'italic', 'strikethrough', 'inline_code',
   'frontmatter',

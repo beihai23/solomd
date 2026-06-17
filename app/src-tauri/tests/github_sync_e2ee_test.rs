@@ -15,12 +15,16 @@ use app_lib::crypto::{
 };
 use app_lib::github_sync::{github_pull_inner, github_push_inner};
 use git2::{Repository, Signature};
+use serde_json::json;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 fn fresh(label: &str) -> PathBuf {
-    let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
     let p = std::env::temp_dir().join(format!("solomd-e2ee-{label}-{nanos}"));
     let _ = fs::remove_dir_all(&p);
     fs::create_dir_all(&p).unwrap();
@@ -30,12 +34,33 @@ fn fresh(label: &str) -> PathBuf {
 fn write_sync_json(folder: &Path, remote_url: &str) {
     let cfg_dir = folder.join(".solomd");
     fs::create_dir_all(&cfg_dir).unwrap();
-    let body = format!(
-        r#"{{"remote_url":"{}","auto_push":true,"auto_pull_minutes":0,"last_push_at":null,"last_pull_at":null,"encrypted":true,"provider":"github"}}"#,
-        remote_url
-    );
+    let body = json!({
+        "remote_url": remote_url,
+        "auto_push": true,
+        "auto_pull_minutes": 0,
+        "last_push_at": null,
+        "last_pull_at": null,
+        "encrypted": true,
+        "provider": "github",
+    })
+    .to_string();
     fs::write(cfg_dir.join("sync.json"), body).unwrap();
     fs::write(folder.join(".gitignore"), ".solomd/\n.solomd-encrypted/\n").unwrap();
+}
+
+fn file_url(path: &Path) -> String {
+    let mut p = path
+        .canonicalize()
+        .unwrap()
+        .to_string_lossy()
+        .replace('\\', "/");
+    if let Some(stripped) = p.strip_prefix("//?/") {
+        p = stripped.to_string();
+    }
+    if p.as_bytes().get(1) == Some(&b':') {
+        p = format!("/{p}");
+    }
+    format!("file://{p}")
 }
 
 fn init_shadow_with_remote(folder: &Path, remote_url: &str) {
@@ -66,7 +91,7 @@ fn init_shadow_with_remote(folder: &Path, remote_url: &str) {
 fn e2ee_full_round_trip_two_devices() {
     let bare = fresh("bare");
     Repository::init_bare(&bare).unwrap();
-    let bare_url = format!("file://{}", bare.display());
+    let bare_url = file_url(&bare);
 
     // ---- Device A ----
     let dev_a = fresh("devA");
@@ -109,7 +134,11 @@ fn e2ee_full_round_trip_two_devices() {
         );
         let enc_entry = tree.get_path(Path::new("note.md.enc")).unwrap();
         let enc_blob = bare_repo.find_blob(enc_entry.id()).unwrap();
-        assert_eq!(&enc_blob.content()[..4], b"SLMD", "ciphertext magic missing");
+        assert_eq!(
+            &enc_blob.content()[..4],
+            b"SLMD",
+            "ciphertext magic missing"
+        );
         let bin_entry = tree.get_path(Path::new("assets/img.png")).unwrap();
         let bin_blob = bare_repo.find_blob(bin_entry.id()).unwrap();
         assert_eq!(bin_blob.content(), b"\x89PNG fake bytes");
@@ -137,7 +166,10 @@ fn e2ee_full_round_trip_two_devices() {
         "plaintext should not be decrypted before passphrase is set"
     );
     assert!(
-        dev_b.join(".solomd-encrypted").join(".solomd-vault.json").exists(),
+        dev_b
+            .join(".solomd-encrypted")
+            .join(".solomd-vault.json")
+            .exists(),
         "synced salt file should have arrived in the shadow"
     );
 
@@ -151,9 +183,16 @@ fn e2ee_full_round_trip_two_devices() {
     app_lib::crypto::crypto_decrypt_after_pull_inner(folder_b.clone()).unwrap();
 
     let plain_b = dev_b.join("note.md");
-    assert!(plain_b.exists(), "decrypted plaintext should land in workspace");
+    assert!(
+        plain_b.exists(),
+        "decrypted plaintext should land in workspace"
+    );
     let body = fs::read_to_string(&plain_b).unwrap();
-    assert!(body.contains("plain on device A"), "decrypt produced wrong content: {}", body);
+    assert!(
+        body.contains("plain on device A"),
+        "decrypt produced wrong content: {}",
+        body
+    );
     let bin_b = dev_b.join("assets/img.png");
     assert!(bin_b.exists());
     assert_eq!(fs::read(&bin_b).unwrap(), b"\x89PNG fake bytes");

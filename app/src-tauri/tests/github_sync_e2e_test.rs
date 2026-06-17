@@ -18,6 +18,7 @@
 
 use app_lib::github_sync::{github_pull_inner, github_push_inner};
 use git2::{Repository, Signature};
+use serde_json::json;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -37,6 +38,21 @@ fn write(path: &Path, body: &str) {
     fs::write(path, body).unwrap();
 }
 
+fn file_url(path: &Path) -> String {
+    let mut p = path
+        .canonicalize()
+        .unwrap()
+        .to_string_lossy()
+        .replace('\\', "/");
+    if let Some(stripped) = p.strip_prefix("//?/") {
+        p = stripped.to_string();
+    }
+    if p.as_bytes().get(1) == Some(&b':') {
+        p = format!("/{p}");
+    }
+    format!("file://{p}")
+}
+
 fn commit_all(repo: &Repository, msg: &str) -> git2::Oid {
     let sig = Signature::now("Test", "test@local").unwrap();
     let mut idx = repo.index().unwrap();
@@ -45,10 +61,7 @@ fn commit_all(repo: &Repository, msg: &str) -> git2::Oid {
     idx.write().unwrap();
     let tree_oid = idx.write_tree().unwrap();
     let tree = repo.find_tree(tree_oid).unwrap();
-    let parent = repo
-        .head()
-        .ok()
-        .and_then(|h| h.peel_to_commit().ok());
+    let parent = repo.head().ok().and_then(|h| h.peel_to_commit().ok());
     let parents: Vec<&git2::Commit> = parent.iter().collect();
     repo.commit(Some("HEAD"), &sig, &sig, msg, &tree, &parents)
         .unwrap()
@@ -78,10 +91,14 @@ fn init_workspace_with_remote(label: &str, bare_url: &str) -> PathBuf {
     // Write the .solomd/sync.json the inner helpers expect.
     let cfg_dir = ws.join(".solomd");
     fs::create_dir_all(&cfg_dir).unwrap();
-    let sync_json = format!(
-        r#"{{"remote_url":"{}","auto_push":true,"auto_pull_minutes":0,"last_push_at":null,"last_pull_at":null}}"#,
-        bare_url
-    );
+    let sync_json = json!({
+        "remote_url": bare_url,
+        "auto_push": true,
+        "auto_pull_minutes": 0,
+        "last_push_at": null,
+        "last_pull_at": null,
+    })
+    .to_string();
     fs::write(cfg_dir.join("sync.json"), sync_json).unwrap();
     // Mirror what github_link_workspace does in production: keep .solomd/
     // out of the tracked tree so per-device sync.json never conflicts.
@@ -94,7 +111,7 @@ fn github_sync_push_pull_roundtrip() {
     // Bare repo standing in for github.com/owner/notes.git
     let bare_dir = fresh_dir("bare");
     Repository::init_bare(&bare_dir).unwrap();
-    let bare_url = format!("file://{}", bare_dir.display());
+    let bare_url = file_url(&bare_dir);
 
     // Device A creates a note and pushes.
     let dev_a = init_workspace_with_remote("devA", &bare_url);
@@ -160,7 +177,7 @@ fn github_sync_push_pull_roundtrip() {
 fn github_sync_surfaces_conflicts_on_concurrent_edit() {
     let bare_dir = fresh_dir("bare-conflict");
     Repository::init_bare(&bare_dir).unwrap();
-    let bare_url = format!("file://{}", bare_dir.display());
+    let bare_url = file_url(&bare_dir);
 
     // Both devices start from the same baseline.
     let dev_a = init_workspace_with_remote("conflictA", &bare_url);
@@ -169,11 +186,8 @@ fn github_sync_surfaces_conflicts_on_concurrent_edit() {
         let repo_a = Repository::open(&dev_a).unwrap();
         commit_all(&repo_a, "baseline");
     }
-    github_push_inner(
-        dev_a.to_string_lossy().into_owned(),
-        "ignored".into(),
-    )
-    .expect("baseline push");
+    github_push_inner(dev_a.to_string_lossy().into_owned(), "ignored".into())
+        .expect("baseline push");
 
     // Device B clones the baseline via pull.
     let dev_b = init_workspace_with_remote("conflictB", &bare_url);
@@ -181,11 +195,8 @@ fn github_sync_surfaces_conflicts_on_concurrent_edit() {
         let repo_b = Repository::open(&dev_b).unwrap();
         commit_all(&repo_b, "init: B");
     }
-    github_pull_inner(
-        dev_b.to_string_lossy().into_owned(),
-        "ignored".into(),
-    )
-    .expect("B pulls baseline");
+    github_pull_inner(dev_b.to_string_lossy().into_owned(), "ignored".into())
+        .expect("B pulls baseline");
 
     // Both devices edit the SAME line.
     write(
@@ -196,11 +207,7 @@ fn github_sync_surfaces_conflicts_on_concurrent_edit() {
         let repo_a = Repository::open(&dev_a).unwrap();
         commit_all(&repo_a, "A edit");
     }
-    github_push_inner(
-        dev_a.to_string_lossy().into_owned(),
-        "ignored".into(),
-    )
-    .expect("A push");
+    github_push_inner(dev_a.to_string_lossy().into_owned(), "ignored".into()).expect("A push");
 
     write(
         &dev_b.join("note.md"),
@@ -212,11 +219,8 @@ fn github_sync_surfaces_conflicts_on_concurrent_edit() {
     }
 
     // B pulls — should surface the conflict, not silently merge.
-    let r = github_pull_inner(
-        dev_b.to_string_lossy().into_owned(),
-        "ignored".into(),
-    )
-    .expect("B pull (with conflict)");
+    let r = github_pull_inner(dev_b.to_string_lossy().into_owned(), "ignored".into())
+        .expect("B pull (with conflict)");
     assert_eq!(r.kind, "conflicts", "expected conflicts, got {}", r.kind);
     assert_eq!(r.conflicts.len(), 1);
     assert!(r.conflicts[0].ends_with("note.md"));
@@ -231,7 +235,7 @@ fn github_sync_surfaces_conflicts_on_concurrent_edit() {
 fn github_sync_corrupted_config_fails_closed() {
     let bare_dir = fresh_dir("bare-fc");
     Repository::init_bare(&bare_dir).unwrap();
-    let bare_url = format!("file://{}", bare_dir.display());
+    let bare_url = file_url(&bare_dir);
 
     let dev = init_workspace_with_remote("devFC", &bare_url);
     write(&dev.join("note.md"), "hello\n");

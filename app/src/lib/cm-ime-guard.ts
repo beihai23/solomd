@@ -1,4 +1,5 @@
-import type { DecorationSet, ViewUpdate } from '@codemirror/view';
+import { type Extension, type Transaction } from '@codemirror/state';
+import { EditorView, type DecorationSet, type ViewUpdate } from '@codemirror/view';
 
 /**
  * IME composition guard (#108).
@@ -25,6 +26,68 @@ export function frozenDuringComposition(
   update: ViewUpdate,
   current: DecorationSet,
 ): DecorationSet | null {
-  if (!update.view.composing) return null;
+  if (!isImeComposing(update)) return null;
   return current.map(update.changes);
+}
+
+let imeComposing = false;
+
+export function isImeComposingActive(): boolean {
+  return imeComposing;
+}
+
+/**
+ * Best-effort IME guard for ViewPlugins.
+ *
+ * CodeMirror's `view.composing` is the main signal, but the companion
+ * state field can flip on the same event loop turn slightly earlier for
+ * some update sequences. Checking both avoids a narrow "first keystroke"
+ * window where a decoration rebuild can still sneak through.
+ */
+export function isImeComposing(update: ViewUpdate): boolean {
+  return update.view.composing || imeComposing;
+}
+
+/**
+ * Tracks native composition events in editor state so StateField-based
+ * decoration producers can also freeze during IME input. CodeMirror exposes
+ * `view.composing` to ViewPlugins, but block widgets must be provided from a
+ * StateField, where there is no EditorView.
+ */
+export function imeCompositionGuard(): Extension {
+  return [
+    EditorView.domEventHandlers({
+      compositionstart(_event) {
+        imeComposing = true;
+        return false;
+      },
+      beforeinput(event: InputEvent) {
+        if (event.isComposing || event.inputType === 'insertCompositionText' || event.inputType === 'deleteCompositionText') {
+          imeComposing = true;
+        }
+        return false;
+      },
+      compositionend(_event) {
+        imeComposing = false;
+        return false;
+      },
+      compositioncancel(_event) {
+        imeComposing = false;
+        return false;
+      },
+    }),
+  ];
+}
+
+/**
+ * StateField companion to `frozenDuringComposition`. While composition is
+ * active, keep the current DecorationSet and only map it through document
+ * changes. When composition ends, return null so the caller can rebuild.
+ */
+export function frozenFieldDuringComposition(
+  tr: Transaction,
+  current: DecorationSet,
+): DecorationSet | null {
+  if (!imeComposing) return null;
+  return current.map(tr.changes);
 }
