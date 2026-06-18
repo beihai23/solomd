@@ -36,6 +36,48 @@ const settings = useSettingsStore();
 const toasts = useToastsStore();
 const ghSync = useGithubSyncStore();
 
+// v4.6.x — sidebar width resize state
+const isResizing = ref(false);
+const startX = ref(0);
+const startWidth = ref(0);
+
+function onResizeStart(e: MouseEvent) {
+  e.preventDefault();
+  isResizing.value = true;
+  startX.value = e.clientX;
+  startWidth.value = settings.fileTreeWidth;
+  document.body.style.cursor = 'ew-resize';
+  document.body.style.userSelect = 'none';
+
+  const onMove = (m: MouseEvent) => {
+    const dx = m.clientX - startX.value;
+    settings.setFileTreeWidth(startWidth.value + dx);
+  };
+
+  const onUp = () => {
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    isResizing.value = false;
+  };
+
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
+}
+
+// Supported file types (can be configured via settings later)
+const supportedExtensions = new Set([
+  'md', 'txt', 'pdf', 'doc', 'docx', 'jpg', 'jpeg', 'png', 'gif', 'svg', 'webp',
+  'json', 'xml', 'yaml', 'yml', 'toml', 'ini', 'log',
+  'html', 'css', 'js', 'ts', 'py', 'java', 'cpp', 'c', 'go', 'rs',
+]);
+
+function isSupportedFile(name: string): boolean {
+  const ext = name.split('.').pop()?.toLowerCase() || '';
+  return supportedExtensions.has(ext);
+}
+
 /** v4.6.1 — Tolaria-parity "Copy Git URL": repository-backed blob URL for a
  *  file node, built from the linked remote + relative path (branch=main). */
 async function copyGitUrl(node: Node) {
@@ -77,6 +119,10 @@ async function loadDir(path: string): Promise<{ children: Node[]; truncated: boo
     for (const e of entries) {
       if (e.name === TRUNCATED_SENTINEL && !e.is_dir && e.path === '') {
         truncated = true;
+        continue;
+      }
+      // Filter out unsupported file types (but always show directories)
+      if (!e.is_dir && !isSupportedFile(e.name)) {
         continue;
       }
       filtered.push({ ...e });
@@ -453,7 +499,17 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <aside class="ftree" @contextmenu.prevent="openCtx($event, null)">
+  <aside
+    class="ftree"
+    :style="{ '--file-tree-width': settings.fileTreeWidth + 'px' }"
+    @contextmenu.prevent="openCtx($event, null)"
+  >
+    <!-- Width resize handle -->
+    <div
+      class="ftree__resize-handle"
+      :class="{ 'ftree__resize-handle--active': isResizing }"
+      @mousedown="onResizeStart"
+    />
     <div class="ftree__header">
       <span>Explorer</span>
       <div class="ftree__header-btns">
@@ -634,6 +690,78 @@ export const FileTreeNode = defineComponent({
       return node.children.some(subtreeHasInbox);
     };
 
+    // Get file icon based on extension
+    const getFileIcon = (name: string): string => {
+      const ext = name.split('.').pop()?.toLowerCase() || '';
+      const iconMap: Record<string, string> = {
+        'md': '📝',
+        'txt': '📄',
+        'pdf': '📕',
+        'doc': '📘',
+        'docx': '📘',
+        'xls': '📊',
+        'xlsx': '📊',
+        'ppt': '📙',
+        'pptx': '📙',
+        'jpg': '🖼',
+        'jpeg': '🖼',
+        'png': '🖼',
+        'gif': '🖼',
+        'svg': '🎨',
+        'webp': '🖼',
+        'mp3': '🎵',
+        'mp4': '🎬',
+        'wav': '🎵',
+        'zip': '📦',
+        'rar': '📦',
+        'json': '📋',
+        'xml': '📋',
+        'html': '🌐',
+        'css': '🎨',
+        'js': '📜',
+        'ts': '📜',
+        'py': '🐍',
+        'java': '☕',
+        'cpp': '⚙',
+        'c': '⚙',
+        'go': '🐹',
+        'rs': '🦀',
+        'yaml': '📋',
+        'yml': '📋',
+        'toml': '📋',
+        'ini': '📋',
+        'log': '📋',
+      };
+      return iconMap[ext] || '📄';
+    };
+
+    // Truncate filename in the middle: keep start and extension, ellipsis in middle
+    const truncateFileName = (name: string, maxLength: number = 30): string => {
+      if (name.length <= maxLength) return name;
+
+      const lastDotIndex = name.lastIndexOf('.');
+      if (lastDotIndex === -1) {
+        // No extension: simple truncation
+        const half = Math.floor((maxLength - 3) / 2);
+        return name.slice(0, half) + '...' + name.slice(-half);
+      }
+
+      const ext = name.slice(lastDotIndex); // includes the dot
+      const baseName = name.slice(0, lastDotIndex);
+      const extLength = ext.length;
+
+      // Reserve space for extension and ellipsis
+      const availableForBase = maxLength - extLength - 3;
+      if (availableForBase < 4) {
+        // Extension is too long, truncate extension instead
+        const half = Math.floor((maxLength - 3) / 2);
+        return name.slice(0, half) + '...' + name.slice(-half);
+      }
+
+      const half = Math.floor(availableForBase / 2);
+      return baseName.slice(0, half) + '...' + baseName.slice(-half) + ext;
+    };
+
     return () => {
       const n = props.node as any;
       const inboxOnly = props.inboxOnly;
@@ -642,6 +770,10 @@ export const FileTreeNode = defineComponent({
         if (n.is_dir && n.children && !subtreeHasInbox(n)) return [];
       }
       const indent = 8 + props.depth * 12;
+
+      // Use truncated name for display, full name in tooltip
+      const displayName = !n.is_dir ? truncateFileName(n.name) : n.name;
+
       const items: any[] = [
         h(
           'li',
@@ -657,8 +789,8 @@ export const FileTreeNode = defineComponent({
             title: n.path,
           },
           [
-            h('span', { class: 'ftree__icon' }, n.is_dir ? (n.expanded ? '▾' : '▸') : '•'),
-            h('span', { class: 'ftree__name' }, n.name),
+            h('span', { class: 'ftree__icon' }, n.is_dir ? (n.expanded ? '▾' : '▸') : getFileIcon(n.name)),
+            h('span', { class: 'ftree__name' }, displayName),
             !n.is_dir && props.inboxPaths.has(n.path)
               ? h('span', { class: 'ftree__inbox-dot', title: 'inbox' }, '●')
               : null,
@@ -687,13 +819,14 @@ export const FileTreeNode = defineComponent({
 
 <style scoped>
 .ftree {
-  width: 240px;
+  width: var(--file-tree-width, 240px);
   height: 100%;
   background: var(--bg-elev);
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   user-select: none;
+  position: relative;
 }
 .ftree__header {
   display: flex;
@@ -925,12 +1058,17 @@ export const FileTreeNode = defineComponent({
 }
 :deep(.ftree__item--file .ftree__icon) {
   color: var(--text-muted);
-  font-size: 9px;
+  font-size: 14px;
+  line-height: 1;
 }
 :deep(.ftree__name) {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  /* For very long filenames, keep the start and end visible with ellipsis in middle */
+  display: -webkit-box;
+  -webkit-line-clamp: 1;
+  -webkit-box-orient: vertical;
 }
 :deep(.ftree__item--dir .ftree__name) {
   font-weight: 600;
@@ -1064,5 +1202,33 @@ export const FileTreeNode = defineComponent({
   height: 1px;
   background: var(--border);
   margin: 4px 0;
+}
+
+/* Width resize handle */
+.ftree__resize-handle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: ew-resize;
+  background: transparent;
+  z-index: 10;
+  transition: background 0.15s;
+}
+
+.ftree__resize-handle:hover,
+.ftree__resize-handle--active {
+  background: var(--accent, #ff9f40);
+  opacity: 0.4;
+}
+
+/* Better filename display with middle ellipsis for very long names */
+:deep(.ftree__name) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1;
 }
 </style>
