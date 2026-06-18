@@ -647,6 +647,11 @@ function updatePlainBlock(index: number, text: string, caret?: number) {
     const activeBlock = plainBlocks.value[plainActiveBlock.value];
     const el = plainBlockEditors.value[plainActiveBlock.value];
     if (!el) return;
+    // The active block changed (re-split moved the caret into a different
+    // block), so Vue mounted a fresh <textarea>. Restore focus to it —
+    // otherwise focus falls to <body> and subsequent keystrokes are dropped
+    // (e.g. heading → Enter → typing body silently loses all but the first char).
+    el.focus();
     autoSizePlainBlock(el);
     if (activeBlock) {
       const pos = Math.max(0, Math.min(nextCaret - activeBlock.start, el.value.length));
