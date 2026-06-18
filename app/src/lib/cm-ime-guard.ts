@@ -1,4 +1,4 @@
-import { type Extension, type Transaction } from '@codemirror/state';
+import { StateEffect, type Extension, type Transaction } from '@codemirror/state';
 import { EditorView, type DecorationSet, type ViewUpdate } from '@codemirror/view';
 
 /**
@@ -31,9 +31,15 @@ export function frozenDuringComposition(
 }
 
 let imeComposing = false;
+let imeFreezeActive = false;
+let imeIdleTimer: ReturnType<typeof setTimeout> | null = null;
+const isWindowsImeHost =
+  typeof navigator !== 'undefined' && /Win/i.test(navigator.platform);
+
+export const imeSafeFlushEffect = StateEffect.define<void>();
 
 export function isImeComposingActive(): boolean {
-  return imeComposing;
+  return imeComposing || imeFreezeActive;
 }
 
 /**
@@ -45,7 +51,24 @@ export function isImeComposingActive(): boolean {
  * window where a decoration rebuild can still sneak through.
  */
 export function isImeComposing(update: ViewUpdate): boolean {
-  return update.view.composing || imeComposing;
+  return update.view.composing || imeComposing || imeFreezeActive;
+}
+
+export function isImeSafeFlushTransaction(tr: Transaction): boolean {
+  return tr.effects.some((effect) => effect.is(imeSafeFlushEffect));
+}
+
+function holdImeFreeze(view: EditorView, composing: boolean) {
+  imeComposing = composing;
+  if (!isWindowsImeHost) return;
+  imeFreezeActive = true;
+  if (imeIdleTimer) clearTimeout(imeIdleTimer);
+  imeIdleTimer = setTimeout(() => {
+    imeIdleTimer = null;
+    if (imeComposing) return;
+    imeFreezeActive = false;
+    view.dispatch({ effects: imeSafeFlushEffect.of() });
+  }, composing ? 240 : 180);
 }
 
 /**
@@ -57,22 +80,34 @@ export function isImeComposing(update: ViewUpdate): boolean {
 export function imeCompositionGuard(): Extension {
   return [
     EditorView.domEventHandlers({
-      compositionstart(_event) {
-        imeComposing = true;
+      compositionstart(_event, view) {
+        holdImeFreeze(view, true);
         return false;
       },
-      beforeinput(event: InputEvent) {
-        if (event.isComposing || event.inputType === 'insertCompositionText' || event.inputType === 'deleteCompositionText') {
-          imeComposing = true;
+      beforeinput(event: InputEvent, view) {
+        if (
+          event.isComposing ||
+          event.inputType === 'insertCompositionText' ||
+          event.inputType === 'deleteCompositionText'
+        ) {
+          holdImeFreeze(view, true);
+        } else if (
+          event.inputType === 'insertText' ||
+          event.inputType === 'deleteContentBackward' ||
+          event.inputType === 'deleteContentForward'
+        ) {
+          holdImeFreeze(view, false);
         }
         return false;
       },
-      compositionend(_event) {
+      compositionend(_event, view) {
         imeComposing = false;
+        holdImeFreeze(view, false);
         return false;
       },
-      compositioncancel(_event) {
+      compositioncancel(_event, view) {
         imeComposing = false;
+        holdImeFreeze(view, false);
         return false;
       },
     }),
@@ -88,6 +123,6 @@ export function frozenFieldDuringComposition(
   tr: Transaction,
   current: DecorationSet,
 ): DecorationSet | null {
-  if (!imeComposing) return null;
+  if (!imeComposing && !imeFreezeActive) return null;
   return current.map(tr.changes);
 }

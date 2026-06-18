@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { ref, onMounted, onBeforeUnmount, watch, computed } from 'vue';
+import { ref, onMounted, onBeforeUnmount, watch, computed, nextTick } from 'vue';
 import { EditorState, Compartment } from '@codemirror/state';
 import { EditorView, keymap, lineNumbers, highlightActiveLine, drawSelection, rectangularSelection, crosshairCursor } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
 import { searchKeymap, search } from '@codemirror/search';
 import { syntaxHighlighting, defaultHighlightStyle, indentOnInput, bracketMatching } from '@codemirror/language';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
+import mermaid from 'mermaid';
 import { LanguageDescription } from '@codemirror/language';
 import { javascript } from '@codemirror/lang-javascript';
 import { python } from '@codemirror/lang-python';
@@ -27,7 +28,7 @@ import type { Tab } from '../types';
 import { livePreviewExtension, richHighlightOnly } from '../lib/cm-live-preview';
 import { liveEditExtension } from '../lib/cm-live-render';
 import { liveBlocksExtension, liveBlocksTheme, extractImageRoot } from '../lib/cm-live-blocks';
-import { replaceBoardSnapshot } from '../lib/tldraw-board';
+import { findTldrawFences, replaceBoardSnapshot } from '../lib/tldraw-board';
 import { dragAwareExtension } from '../lib/cm-drag-aware';
 import { imagePasteExtension, insertImageFromPath as cmInsertImageFromPath } from '../lib/cm-image-paste';
 import { focusModeExtension, typewriterModeExtension } from '../lib/cm-focus-mode';
@@ -50,6 +51,16 @@ import {
   readSession,
   clearSession,
 } from '../lib/cm-session-restore';
+import { renderMarkdown, extractImageRoot as extractMarkdownImageRoot } from '../lib/markdown';
+import { rewriteImageUrls } from '../lib/image-resolve';
+
+type PlainBlock = {
+  id: string;
+  start: number;
+  end: number;
+  text: string;
+  html: string;
+};
 
 const codeLanguages = [
   LanguageDescription.of({ name: 'javascript', alias: ['js', 'jsx'], support: javascript({ jsx: true }) }),
@@ -127,10 +138,230 @@ function syncEditorContentSoon(text: string) {
 }
 
 const plainEditor = ref<HTMLTextAreaElement | null>(null);
+const plainLiveHost = ref<HTMLDivElement | null>(null);
+const plainBlockEditors = ref<Record<number, HTMLTextAreaElement | null>>({});
+const plainText = ref(props.tab.content || '');
+const plainActiveBlock = ref(0);
+let plainComposing = false;
+let plainMermaidIdSeq = 0;
+const plainRenderCache = new Map<string, string>();
+
+mermaid.initialize({
+  startOnLoad: false,
+  securityLevel: 'strict',
+  theme: settings.theme === 'dark' ? 'dark' : 'default',
+});
+
+const plainLiveEnabled = computed(
+  () => usePlainWindowsEditor && settings.viewMode === 'liveEdit' && props.tab.language === 'markdown',
+);
+
+const plainEditorStyle = computed(() => ({
+  '--plain-editor-font-size': `${settings.fontSize || 14}px`,
+  '--plain-editor-font-family': buildEditorFontStack(settings.fontFamily),
+  '--plain-preview-font-size': `${settings.previewFontSize || settings.fontSize || 15}px`,
+}));
+
+const plainBlocks = computed<PlainBlock[]>(() => {
+  if (!plainLiveEnabled.value) return [];
+  return splitPlainMarkdownBlocks(plainText.value || '').map((block, index) => ({
+    ...block,
+    id: `${block.start}:${index}`,
+    html: index === plainActiveBlock.value ? '' : renderPlainBlock(block.text),
+  }));
+});
+
+function renderPlainBlock(src: string): string {
+  const root = extractMarkdownImageRoot(plainText.value || '');
+  const key = `${props.tab.filePath || ''}\u0000${root}\u0000${src}`;
+  const cached = plainRenderCache.get(key);
+  if (cached != null) return cached;
+  const html = rewriteImageUrls(
+    renderMarkdown(src || '\n', { breaks: true }),
+    root,
+    props.tab.filePath,
+  );
+  plainRenderCache.set(key, html);
+  if (plainRenderCache.size > 300) plainRenderCache.clear();
+  return html;
+}
+
+async function processPlainLiveRenderedBlocks() {
+  if (!plainLiveEnabled.value || !plainLiveHost.value) return;
+  await nextTick();
+  const hostEl = plainLiveHost.value;
+
+  const mermaidBlocks = hostEl.querySelectorAll('.plain-block__render pre > code.language-mermaid');
+  for (const block of Array.from(mermaidBlocks)) {
+    const pre = block.parentElement as HTMLElement | null;
+    if (!pre || pre.dataset.rendered === '1') continue;
+    pre.dataset.rendered = '1';
+    const code = (block.textContent || '').trim();
+    const id = `plain-mmd-${++plainMermaidIdSeq}`;
+    try {
+      const { svg } = await mermaid.render(id, code);
+      const wrap = document.createElement('div');
+      wrap.className = 'plain-mermaid-block';
+      wrap.innerHTML = svg;
+      pre.replaceWith(wrap);
+    } catch (e) {
+      pre.classList.add('plain-block__broken');
+      pre.textContent = `Mermaid error: ${(e as Error).message}`;
+    }
+  }
+
+  const tldrawBlocks = hostEl.querySelectorAll('.plain-block__render pre > code.language-tldraw');
+  if (tldrawBlocks.length === 0) return;
+  const { boardToSvg } = await import('../lib/tldraw-runtime');
+  const fences = findTldrawFences(plainText.value || '');
+  const theme = {
+    colorScheme: (settings.theme === 'dark' ? 'dark' : 'light') as 'dark' | 'light',
+    locale: settings.language || 'en',
+  };
+  for (const block of Array.from(tldrawBlocks)) {
+    const pre = block.parentElement as HTMLElement | null;
+    if (!pre || pre.dataset.rendered === '1') continue;
+    pre.dataset.rendered = '1';
+    const body = (block.textContent || '').trim();
+    const fence = fences.find((item) => item.snapshot.trim() === body) ?? null;
+    const wrap = document.createElement('div');
+    wrap.className = 'plain-whiteboard-block';
+    try {
+      const svg = await boardToSvg(fence?.snapshot ?? body, theme);
+      if (svg) {
+        wrap.innerHTML = svg;
+        if (fence?.boardId) {
+          wrap.classList.add('plain-whiteboard-block--clickable');
+          wrap.setAttribute('role', 'button');
+          wrap.setAttribute('tabindex', '0');
+          wrap.title = t('whiteboard.openFull');
+          const openFull = () => {
+            window.dispatchEvent(
+              new CustomEvent('solomd:whiteboard-open', {
+                detail: { boardId: fence.boardId, tabId: props.tab.id, snapshot: fence.snapshot },
+              }),
+            );
+          };
+          wrap.addEventListener('click', openFull);
+          wrap.addEventListener('keydown', (ev) => {
+            if ((ev as KeyboardEvent).key === 'Enter' || (ev as KeyboardEvent).key === ' ') {
+              ev.preventDefault();
+              openFull();
+            }
+          });
+        }
+      } else {
+        wrap.classList.add('plain-block__broken');
+        wrap.textContent = t('whiteboard.empty');
+      }
+      pre.replaceWith(wrap);
+    } catch {
+      pre.classList.add('plain-block__broken');
+      pre.textContent = t('whiteboard.loadFailed');
+    }
+  }
+}
+
+function splitPlainMarkdownBlocks(src: string): Array<{ start: number; end: number; text: string }> {
+  if (!src) return [{ start: 0, end: 0, text: '' }];
+
+  const lines: Array<{ start: number; end: number; text: string; raw: string }> = [];
+  let pos = 0;
+  while (pos < src.length) {
+    const nl = src.indexOf('\n', pos);
+    const end = nl >= 0 ? nl + 1 : src.length;
+    const raw = src.slice(pos, end);
+    lines.push({
+      start: pos,
+      end,
+      raw,
+      text: raw.endsWith('\n') ? raw.slice(0, -1) : raw,
+    });
+    pos = end;
+  }
+
+  const blocks: Array<{ start: number; end: number; text: string }> = [];
+  const pushRange = (start: number, end: number) => {
+    if (end < start) return;
+    blocks.push({ start, end, text: src.slice(start, end) });
+  };
+  const kindFor = (line: { text: string }) => {
+    const text = line.text;
+    const trimmed = text.trim();
+    if (trimmed === '') return 'blank';
+    if (/^(```|~~~)/.test(trimmed)) return 'fence';
+    if (/^#{1,6}\s+/.test(trimmed)) return 'heading';
+    if (/^(---|\*\*\*|___)\s*$/.test(trimmed)) return 'thematic';
+    if (/^\s{0,3}>\s?/.test(text)) return 'quote';
+    if (/^\s{0,3}([-+*]|\d+[.)])\s+/.test(text)) return 'list';
+    if (/^\s{0,3}([-*])\s+\[[ xX]\]\s+/.test(text)) return 'list';
+    if (/^\s{0,3}\|.*\|\s*$/.test(text)) return 'table';
+    if (/^\s{4,}\S/.test(text)) return 'indented';
+    return 'paragraph';
+  };
+
+  for (let i = 0; i < lines.length;) {
+    const line = lines[i];
+    const kind = kindFor(line);
+
+    if (kind === 'blank' || kind === 'heading' || kind === 'thematic') {
+      pushRange(line.start, line.end);
+      i++;
+      continue;
+    }
+
+    if (kind === 'fence') {
+      const marker = line.text.trim().startsWith('~~~') ? '~~~' : '```';
+      let j = i + 1;
+      while (j < lines.length) {
+        if (lines[j].text.trim().startsWith(marker)) {
+          j++;
+          break;
+        }
+        j++;
+      }
+      pushRange(line.start, lines[j - 1]?.end ?? line.end);
+      i = j;
+      continue;
+    }
+
+    if (kind === 'table') {
+      let j = i + 1;
+      while (j < lines.length && (kindFor(lines[j]) === 'table' || /^\s{0,3}\|?\s*:?-{3,}:?\s*(\|\s*:?-{3,}:?\s*)+\|?\s*$/.test(lines[j].text))) j++;
+      pushRange(line.start, lines[j - 1]?.end ?? line.end);
+      i = j;
+      continue;
+    }
+
+    if (kind === 'list' || kind === 'quote' || kind === 'indented') {
+      let j = i + 1;
+      while (j < lines.length) {
+        const nextKind = kindFor(lines[j]);
+        if (nextKind !== kind && nextKind !== 'blank') break;
+        if (nextKind === 'blank' && j + 1 < lines.length && kindFor(lines[j + 1]) !== kind) break;
+        j++;
+      }
+      pushRange(line.start, lines[j - 1]?.end ?? line.end);
+      i = j;
+      continue;
+    }
+
+    let j = i + 1;
+    while (j < lines.length && kindFor(lines[j]) === 'paragraph') j++;
+    pushRange(line.start, lines[j - 1]?.end ?? line.end);
+    i = j;
+  }
+
+  if (blocks.length === 0) return [{ start: 0, end: src.length, text: src }];
+  return blocks;
+}
 
 function plainLineHeightPx(): number {
-  if (!plainEditor.value) return 24;
-  const style = window.getComputedStyle(plainEditor.value);
+  const editor = plainLiveEnabled.value
+    ? plainBlockEditors.value[plainActiveBlock.value]
+    : plainEditor.value;
+  if (!editor) return Math.max(16, (settings.fontSize || 14) * 1.6);
+  const style = window.getComputedStyle(editor);
   const n = Number.parseFloat(style.lineHeight);
   if (Number.isFinite(n) && n > 0) return n;
   const fs = Number.parseFloat(style.fontSize);
@@ -138,6 +369,13 @@ function plainLineHeightPx(): number {
 }
 
 function plainSelectionText(): string {
+  if (plainLiveEnabled.value) {
+    const el = plainBlockEditors.value[plainActiveBlock.value];
+    if (!el) return '';
+    const from = el.selectionStart ?? 0;
+    const to = el.selectionEnd ?? 0;
+    return from === to ? '' : el.value.slice(from, to);
+  }
   const el = plainEditor.value;
   if (!el) return '';
   const from = el.selectionStart ?? 0;
@@ -146,6 +384,19 @@ function plainSelectionText(): string {
 }
 
 function emitPlainCursorAndSelection() {
+  if (plainLiveEnabled.value) {
+    const el = plainBlockEditors.value[plainActiveBlock.value];
+    const block = plainBlocks.value[plainActiveBlock.value];
+    if (!el || !block) return;
+    const head = el.selectionStart ?? 0;
+    const before = plainText.value.slice(0, block.start) + el.value.slice(0, head);
+    const lines = before.split('\n');
+    const line = lines.length;
+    const col = lines[lines.length - 1]?.length ?? 0;
+    emit('cursor', line, col + 1);
+    emit('selection', plainSelectionText());
+    return;
+  }
   const el = plainEditor.value;
   if (!el) return;
   const head = el.selectionStart ?? 0;
@@ -157,6 +408,13 @@ function emitPlainCursorAndSelection() {
 }
 
 function plainSetCaret(pos: number) {
+  if (plainLiveEnabled.value) {
+    const blocks = plainBlocks.value;
+    const found = blocks.findIndex((block) => pos >= block.start && pos <= block.end);
+    const index = found < 0 ? 0 : found;
+    activatePlainBlock(index, Math.max(0, pos - (blocks[index]?.start ?? 0)));
+    return;
+  }
   const el = plainEditor.value;
   if (!el) return;
   const safe = Math.max(0, Math.min(pos, el.value.length));
@@ -166,6 +424,13 @@ function plainSetCaret(pos: number) {
 }
 
 function plainLineStartOffset(line: number): number {
+  if (plainLiveEnabled.value) {
+    const lines = plainText.value.split('\n');
+    const safeLine = Math.max(1, Math.min(line, lines.length));
+    let offset = 0;
+    for (let i = 1; i < safeLine; i++) offset += lines[i - 1].length + 1;
+    return offset;
+  }
   const el = plainEditor.value;
   if (!el) return 0;
   const safeLine = Math.max(1, Math.min(line, el.value.split('\n').length));
@@ -182,13 +447,32 @@ function plainLineStartOffset(line: number): number {
 }
 
 function plainScrollToLine(line: number) {
+  if (plainLiveEnabled.value) {
+    plainSetCaret(plainLineStartOffset(line));
+    return;
+  }
   const el = plainEditor.value;
   if (!el) return;
   const safeLine = Math.max(1, line);
   el.scrollTop = Math.max(0, (safeLine - 1) * plainLineHeightPx() - 40);
+  syncPlainLiveScroll();
+}
+
+function syncPlainLiveScroll() {
+  emitPlainCursorAndSelection();
 }
 
 function plainInsertText(snippet: string) {
+  if (plainLiveEnabled.value) {
+    const index = plainActiveBlock.value;
+    const el = plainBlockEditors.value[index];
+    if (!el) return;
+    const start = el.selectionStart ?? 0;
+    const end = el.selectionEnd ?? 0;
+    const nextBlock = `${el.value.slice(0, start)}${snippet}${el.value.slice(end)}`;
+    updatePlainBlock(index, nextBlock, start + snippet.length);
+    return;
+  }
   const el = plainEditor.value;
   if (!el) return;
   const start = el.selectionStart ?? 0;
@@ -197,14 +481,146 @@ function plainInsertText(snippet: string) {
   el.value = next;
   const caret = start + snippet.length;
   el.setSelectionRange(caret, caret);
+  plainText.value = next;
   tabs.setContent(props.tab.id, next);
   emitPlainCursorAndSelection();
 }
 
 function syncPlainEditorFromStore(text: string) {
   const el = plainEditor.value;
+  plainText.value = text;
   if (!el) return;
   if (el.value !== text) el.value = text;
+  nextTick(() => {
+    emitPlainCursorAndSelection();
+    syncPlainLiveScroll();
+  });
+}
+
+function syncPlainEditorAfterModeSwitch() {
+  if (!usePlainWindowsEditor) return;
+  nextTick(() => {
+    if (plainLiveEnabled.value) {
+      const block = plainBlocks.value[plainActiveBlock.value];
+      const el = plainBlockEditors.value[plainActiveBlock.value];
+      if (block && el && el.value !== block.text) el.value = block.text;
+      if (el) autoSizePlainBlock(el);
+      emitPlainCursorAndSelection();
+      return;
+    }
+    const el = plainEditor.value;
+    if (!el) return;
+    if (el.value !== plainText.value) el.value = plainText.value;
+    emitPlainCursorAndSelection();
+    syncPlainLiveScroll();
+  });
+}
+
+function handlePlainInput(event: Event) {
+  if (plainLiveEnabled.value) return;
+  const el = event.target as HTMLTextAreaElement;
+  plainText.value = el.value;
+  tabs.setContent(props.tab.id, el.value);
+  emitPlainCursorAndSelection();
+  nextTick(syncPlainLiveScroll);
+}
+
+function estimatePlainBlockCaretFromClick(index: number, event: MouseEvent): number | undefined {
+  const block = plainBlocks.value[index];
+  const target = event.currentTarget as HTMLElement | null;
+  const render = target?.querySelector('.plain-block__render') as HTMLElement | null;
+  if (!block || !render) return undefined;
+  const lines = block.text.split('\n');
+  if (lines.length <= 1) return 0;
+  const rect = render.getBoundingClientRect();
+  const style = window.getComputedStyle(render);
+  const lineHeight = Number.parseFloat(style.lineHeight) || (Number.parseFloat(style.fontSize) || 15) * 1.7;
+  const lineIndex = Math.max(0, Math.min(lines.length - 1, Math.floor((event.clientY - rect.top) / lineHeight)));
+  let caret = 0;
+  for (let i = 0; i < lineIndex; i++) caret += lines[i].length + 1;
+  return caret;
+}
+
+function activatePlainBlockFromClick(index: number, event: MouseEvent) {
+  if (index === plainActiveBlock.value) return;
+  activatePlainBlock(index, estimatePlainBlockCaretFromClick(index, event));
+}
+
+function activatePlainBlock(index: number, caret?: number) {
+  plainActiveBlock.value = Math.max(0, Math.min(index, plainBlocks.value.length - 1));
+  nextTick(() => {
+    const el = plainBlockEditors.value[plainActiveBlock.value];
+    if (!el) return;
+    el.focus();
+    if (caret != null) {
+      const pos = Math.max(0, Math.min(caret, el.value.length));
+      el.setSelectionRange(pos, pos);
+    }
+    autoSizePlainBlock(el);
+    emitPlainCursorAndSelection();
+  });
+}
+
+function setPlainBlockEditor(index: number, el: HTMLTextAreaElement | null) {
+  plainBlockEditors.value[index] = el;
+  if (!el) return;
+  const block = plainBlocks.value[index];
+  if (block && el.value !== block.text) el.value = block.text;
+  nextTick(() => autoSizePlainBlock(el));
+}
+
+function autoSizePlainBlock(el: HTMLTextAreaElement) {
+  el.style.height = 'auto';
+  el.style.height = `${Math.max(plainLineHeightPx(), el.scrollHeight)}px`;
+}
+
+function handlePlainBlockInput(index: number, event: Event) {
+  const el = event.target as HTMLTextAreaElement;
+  autoSizePlainBlock(el);
+  if (plainComposing) return;
+  updatePlainBlock(index, el.value, el.selectionStart ?? el.value.length);
+}
+
+function handlePlainBlockCompositionStart() {
+  plainComposing = true;
+}
+
+function handlePlainBlockCompositionEnd(index: number, event: CompositionEvent) {
+  plainComposing = false;
+  const el = event.target as HTMLTextAreaElement;
+  autoSizePlainBlock(el);
+  updatePlainBlock(index, el.value, el.selectionStart ?? el.value.length);
+}
+
+function updatePlainBlock(index: number, text: string, caret?: number) {
+  const block = plainBlocks.value[index];
+  if (!block) return;
+  const nextCaret = block.start + (caret ?? text.length);
+  const next = `${plainText.value.slice(0, block.start)}${text}${plainText.value.slice(block.end)}`;
+  plainText.value = next;
+  tabs.setContent(props.tab.id, next);
+  const nextBlocks = splitPlainMarkdownBlocks(next);
+  const nextIndex = Math.max(
+    0,
+    nextBlocks.findIndex((candidate) => nextCaret >= candidate.start && nextCaret <= candidate.end),
+  );
+  const nextBlock = nextBlocks[nextIndex];
+  plainActiveBlock.value = nextIndex;
+  if (nextIndex === index && nextBlock?.start === block.start) {
+    emitPlainCursorAndSelection();
+    return;
+  }
+  nextTick(() => {
+    const activeBlock = plainBlocks.value[plainActiveBlock.value];
+    const el = plainBlockEditors.value[plainActiveBlock.value];
+    if (!el) return;
+    autoSizePlainBlock(el);
+    if (activeBlock) {
+      const pos = Math.max(0, Math.min(nextCaret - activeBlock.start, el.value.length));
+      el.setSelectionRange(pos, pos);
+    }
+    emitPlainCursorAndSelection();
+  });
 }
 
 function slashExt() {
@@ -235,7 +651,6 @@ function spellCheckExt(on: boolean) {
 
 function richExtensionsFor(tab: Tab) {
   if (tab.language !== 'markdown') return [];
-  if (isWindows) return [];
   // v2.3 live-edit takes precedence over the existing livePreview toggle —
   // the WYSIWYG bundle ALREADY includes rich highlighting + marker hiding,
   // and stacking livePreviewExtension on top would cause duplicate
@@ -302,8 +717,8 @@ const fontSizeTheme = (px: number, family: string) =>
 
 function buildExtensions() {
   if (usePlainWindowsEditor) return [];
-  const markdownSafeMode = isWindows;
-  const windowsImeSafeMode = isWindows;
+  const markdownSafeMode = false;
+  const windowsImeSafeMode = false;
   return [
     imeCompositionGuard(),
     history(),
@@ -380,11 +795,11 @@ function buildExtensions() {
     ...(windowsImeSafeMode || markdownSafeMode ? [] : [taskListExtension()]),
     sessionRestoreExtension(props.tab.id),
     EditorView.updateListener.of((u) => {
-      if (!isWindows && u.docChanged) {
+      if (u.docChanged) {
         const text = u.state.doc.toString();
         if (!u.view.composing) syncEditorContentSoon(text);
       }
-      if (!isWindows && u.selectionSet) {
+      if (u.selectionSet) {
         const head = u.state.selection.main.head;
         const line = u.state.doc.lineAt(head);
         emit('cursor', line.number, head - line.from + 1);
@@ -401,6 +816,11 @@ function maybeRestoreSession() {
   const saved = readSession(props.tab.id);
   if (!saved || saved === '' || props.tab.content !== '') return;
   if (usePlainWindowsEditor) {
+    if (plainLiveEnabled.value) {
+      plainText.value = saved;
+      tabs.setContent(props.tab.id, saved);
+      return;
+    }
     const el = plainEditor.value;
     if (!el || el.value.length > 0) return;
     el.value = saved;
@@ -421,6 +841,7 @@ onMounted(() => {
   if (usePlainWindowsEditor) {
     syncPlainEditorFromStore(props.tab.content);
     maybeRestoreSession();
+    void processPlainLiveRenderedBlocks();
     return;
   }
   if (!host.value) return;
@@ -587,7 +1008,22 @@ watch(
   () => settings.viewMode,
   () => {
     view?.dispatch({ effects: richCompartment.reconfigure(richExtensionsFor(props.tab)) });
+    syncPlainEditorAfterModeSwitch();
+    void processPlainLiveRenderedBlocks();
   }
+);
+
+watch(
+  () => [plainLiveEnabled.value, plainText.value, plainActiveBlock.value, settings.theme, settings.language],
+  () => {
+    mermaid.initialize({
+      startOnLoad: false,
+      securityLevel: 'strict',
+      theme: settings.theme === 'dark' ? 'dark' : 'default',
+    });
+    void processPlainLiveRenderedBlocks();
+  },
+  { flush: 'post' },
 );
 
 // v2.5: hot-toggle the slash-command extension when the user flips
@@ -604,6 +1040,11 @@ watch(
 
 function gotoLine(line: number) {
   if (usePlainWindowsEditor) {
+    if (plainLiveEnabled.value) {
+      plainSetCaret(plainLineStartOffset(line));
+      plainScrollToLine(line);
+      return;
+    }
     const el = plainEditor.value;
     if (!el) return;
     plainSetCaret(plainLineStartOffset(line));
@@ -637,6 +1078,11 @@ async function insertImageFromPath(srcPath: string): Promise<void> {
 /** Returns the 1-indexed line currently at the top of the visible viewport. */
 function getViewLine(): number | null {
   if (usePlainWindowsEditor) {
+    if (plainLiveEnabled.value) {
+      const block = plainBlocks.value[plainActiveBlock.value];
+      if (!block) return 1;
+      return plainText.value.slice(0, block.start).split('\n').length;
+    }
     const el = plainEditor.value;
     if (!el) return null;
     const top = el.scrollTop;
@@ -702,19 +1148,49 @@ const cls = computed(() => ({
 
 <template>
   <div v-if="!usePlainWindowsEditor" :class="cls" ref="host"></div>
-  <textarea
-    v-else
-    ref="plainEditor"
-    :class="cls"
-    class="plain-editor"
-    spellcheck="false"
-    wrap="off"
-    @input="(e) => { const el = e.target as HTMLTextAreaElement; tabs.setContent(tab.id, el.value); emitPlainCursorAndSelection(); }"
-    @keyup="emitPlainCursorAndSelection"
-    @mouseup="emitPlainCursorAndSelection"
-    @select="emitPlainCursorAndSelection"
-    @focus="emitPlainCursorAndSelection"
-  ></textarea>
+  <div v-else-if="plainLiveEnabled" ref="plainLiveHost" :class="[cls, 'plain-block-editor']" :style="plainEditorStyle">
+    <div
+      v-for="(block, index) in plainBlocks"
+      :key="block.id"
+      class="plain-block"
+      :class="{ 'plain-block--active': index === plainActiveBlock }"
+      @click="(event) => activatePlainBlockFromClick(index, event)"
+    >
+      <textarea
+        v-if="index === plainActiveBlock"
+        :ref="(el) => setPlainBlockEditor(index, el as HTMLTextAreaElement | null)"
+        class="plain-block__textarea"
+        spellcheck="false"
+        wrap="off"
+        @input="(event) => handlePlainBlockInput(index, event)"
+        @compositionstart="handlePlainBlockCompositionStart"
+        @compositionend="(event) => handlePlainBlockCompositionEnd(index, event)"
+        @click.stop
+        @keyup="emitPlainCursorAndSelection"
+        @mouseup="emitPlainCursorAndSelection"
+        @select="emitPlainCursorAndSelection"
+        @focus="emitPlainCursorAndSelection"
+      ></textarea>
+      <div
+        v-else
+        class="plain-block__render"
+        v-html="block.html"
+      ></div>
+    </div>
+  </div>
+  <div v-else :class="cls" :style="plainEditorStyle">
+    <textarea
+      ref="plainEditor"
+      class="plain-editor"
+      spellcheck="false"
+      wrap="off"
+      @input="handlePlainInput"
+      @keyup="emitPlainCursorAndSelection"
+      @mouseup="emitPlainCursorAndSelection"
+      @select="emitPlainCursorAndSelection"
+      @focus="emitPlainCursorAndSelection"
+    ></textarea>
+  </div>
 </template>
 
 <style scoped>
@@ -741,11 +1217,178 @@ const cls = computed(() => ({
   padding: 12px 16px;
   background: var(--bg);
   color: var(--text);
-  font-family: var(--font-editor, var(--font-mono));
-  font-size: inherit;
+  font-family: var(--plain-editor-font-family, var(--font-editor, var(--font-mono)));
+  font-size: var(--plain-editor-font-size, 14px);
   line-height: 1.6;
   tab-size: 2;
   white-space: pre;
   overflow: auto;
+}
+.plain-block-editor {
+  overflow: auto;
+  padding: 12px 16px 80px;
+  box-sizing: border-box;
+  font-family: var(--plain-editor-font-family, var(--font-editor, var(--font-mono)));
+  font-size: var(--plain-editor-font-size, 14px);
+  line-height: 1.6;
+}
+.plain-block {
+  position: relative;
+  min-height: 1.6em;
+  padding: 1px 0;
+}
+.plain-block--active {
+  background: var(--bg);
+}
+.plain-block__textarea {
+  display: block;
+  width: 100%;
+  min-height: 1.6em;
+  resize: none;
+  border: 0;
+  outline: none;
+  box-sizing: border-box;
+  padding: 0;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  caret-color: var(--accent);
+  font: inherit;
+  line-height: inherit;
+  tab-size: 2;
+  white-space: pre;
+}
+.plain-block__textarea::selection {
+  background: rgba(255, 159, 64, 0.28);
+}
+.plain-block__render {
+  color: var(--text);
+  overflow: visible;
+  font-family: var(--font-ui);
+  font-size: var(--plain-preview-font-size, 15px);
+  line-height: 1.7;
+  padding: 0.05em 0;
+}
+.plain-block__render :deep(h1),
+.plain-block__render :deep(h2),
+.plain-block__render :deep(h3),
+.plain-block__render :deep(h4) {
+  font-weight: 700;
+  line-height: 1.25;
+  margin: 1.1em 0 0.45em;
+}
+.plain-block__render :deep(h1),
+.plain-block__render :deep(h2) {
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.25em;
+}
+.plain-block__render :deep(h1) {
+  font-size: 2em;
+}
+.plain-block__render :deep(h2) {
+  font-size: 1.5em;
+}
+.plain-block__render :deep(h3) {
+  font-size: 1.2em;
+}
+.plain-block__render :deep(p),
+.plain-block__render :deep(ul),
+.plain-block__render :deep(ol),
+.plain-block__render :deep(blockquote),
+.plain-block__render :deep(pre),
+.plain-block__render :deep(table) {
+  margin-top: 0;
+  margin-bottom: 0.8em;
+}
+.plain-block__render :deep(p) {
+  white-space: pre-wrap;
+}
+.plain-block__render :deep(a) {
+  color: var(--accent);
+  text-decoration: none;
+}
+.plain-block__render :deep(a:hover) {
+  text-decoration: underline;
+}
+.plain-block__render :deep(code) {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: var(--bg-hover);
+  padding: 0.15em 0.4em;
+  border-radius: 4px;
+}
+.plain-block__render :deep(pre) {
+  font-family: var(--font-mono);
+  background: var(--bg-hover);
+  padding: 14px 16px;
+  border-radius: 6px;
+  overflow-x: auto;
+}
+.plain-block__render :deep(pre code) {
+  display: block;
+  background: transparent;
+  padding: 0;
+}
+.plain-block__render :deep(blockquote) {
+  border-left: 3px solid var(--accent);
+  padding: 0.2em 1em;
+  color: var(--text-muted);
+}
+.plain-block__render :deep(ul),
+.plain-block__render :deep(ol) {
+  padding-left: 1.6em;
+}
+.plain-block__render :deep(table) {
+  border-collapse: collapse;
+  max-width: 100%;
+}
+.plain-block__render :deep(th),
+.plain-block__render :deep(td) {
+  border: 1px solid var(--border);
+  padding: 6px 12px;
+}
+.plain-block__render :deep(thead th) {
+  background: var(--bg-soft);
+  font-weight: 600;
+}
+.plain-block__render :deep(hr) {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 1.6em 0;
+}
+.plain-block__render :deep(img) {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+}
+.plain-block__render :deep(.katex-display) {
+  overflow-x: auto;
+  overflow-y: hidden;
+  margin: 1em 0;
+  text-align: center;
+}
+.plain-block__render :deep(.plain-mermaid-block),
+.plain-block__render :deep(.plain-whiteboard-block) {
+  margin: 1em 0;
+  max-width: 100%;
+  overflow: auto;
+}
+.plain-block__render :deep(.plain-mermaid-block svg),
+.plain-block__render :deep(.plain-whiteboard-block svg) {
+  max-width: 100%;
+  height: auto;
+}
+.plain-block__render :deep(.plain-whiteboard-block) {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+}
+.plain-block__render :deep(.plain-whiteboard-block--clickable) {
+  cursor: pointer;
+}
+.plain-block__render :deep(.plain-block__broken) {
+  color: var(--danger);
+  white-space: pre-wrap;
 }
 </style>

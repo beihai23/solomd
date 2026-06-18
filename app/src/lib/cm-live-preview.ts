@@ -22,7 +22,7 @@ import {
   ViewPlugin,
   ViewUpdate,
 } from '@codemirror/view';
-import { frozenDuringComposition } from './cm-ime-guard';
+import { frozenDuringComposition, isImeSafeFlushTransaction } from './cm-ime-guard';
 import { tags as t } from '@lezer/highlight';
 import { isDragging, isDragEndTransaction } from './cm-drag-aware';
 
@@ -58,7 +58,8 @@ const liveMarkdownPlugin = ViewPlugin.fromClass(
       // Skip marker-toggle rebuilds during pointer drag-selection — see
       // cm-drag-aware.ts for the Windows WebView2 pointer-capture reason.
       const dragEnded = update.transactions.some(isDragEndTransaction);
-      if (update.docChanged || update.viewportChanged || dragEnded) {
+      const imeFlush = update.transactions.some(isImeSafeFlushTransaction);
+      if (update.docChanged || update.viewportChanged || dragEnded || imeFlush) {
         this.decorations = this.build(update.view);
         return;
       }
