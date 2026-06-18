@@ -59,6 +59,7 @@ type PlainBlock = {
   start: number;
   end: number;
   text: string;
+  hasTrailingNewline: boolean;
   html: string;
 };
 
@@ -262,8 +263,10 @@ async function processPlainLiveRenderedBlocks() {
   }
 }
 
-function splitPlainMarkdownBlocks(src: string): Array<{ start: number; end: number; text: string }> {
-  if (!src) return [{ start: 0, end: 0, text: '' }];
+function splitPlainMarkdownBlocks(
+  src: string,
+): Array<{ start: number; end: number; text: string; hasTrailingNewline: boolean }> {
+  if (!src) return [{ start: 0, end: 0, text: '', hasTrailingNewline: false }];
 
   const lines: Array<{ start: number; end: number; text: string; raw: string }> = [];
   let pos = 0;
@@ -280,10 +283,17 @@ function splitPlainMarkdownBlocks(src: string): Array<{ start: number; end: numb
     pos = end;
   }
 
-  const blocks: Array<{ start: number; end: number; text: string }> = [];
+  const blocks: Array<{ start: number; end: number; text: string; hasTrailingNewline: boolean }> = [];
   const pushRange = (start: number, end: number) => {
     if (end < start) return;
-    blocks.push({ start, end, text: src.slice(start, end) });
+    // The editable text must NOT carry the block-separating trailing newline.
+    // Keeping it created a phantom empty last line in the active <textarea>:
+    // the caret could land after it and typed/IME-committed text dropped onto a
+    // fresh line ("每输入一个换一行"). start/end still cover the full range so the
+    // separator is reconstructed in updatePlainBlock.
+    const raw = src.slice(start, end);
+    const hasTrailingNewline = raw.endsWith('\n');
+    blocks.push({ start, end, text: hasTrailingNewline ? raw.slice(0, -1) : raw, hasTrailingNewline });
   };
   const kindFor = (line: { text: string }) => {
     const text = line.text;
@@ -352,7 +362,17 @@ function splitPlainMarkdownBlocks(src: string): Array<{ start: number; end: numb
     i = j;
   }
 
-  if (blocks.length === 0) return [{ start: 0, end: src.length, text: src }];
+  if (blocks.length === 0) {
+    const hasTrailingNewline = src.endsWith('\n');
+    return [
+      {
+        start: 0,
+        end: src.length,
+        text: hasTrailingNewline ? src.slice(0, -1) : src,
+        hasTrailingNewline,
+      },
+    ];
+  }
   return blocks;
 }
 
@@ -596,17 +616,30 @@ function updatePlainBlock(index: number, text: string, caret?: number) {
   const block = plainBlocks.value[index];
   if (!block) return;
   const nextCaret = block.start + (caret ?? text.length);
-  const next = `${plainText.value.slice(0, block.start)}${text}${plainText.value.slice(block.end)}`;
+  // Re-attach the block separator that splitPlainMarkdownBlocks stripped from
+  // the editable text, so neighbouring blocks don't merge on every edit.
+  const tail = block.hasTrailingNewline ? '\n' : '';
+  const next = `${plainText.value.slice(0, block.start)}${text}${tail}${plainText.value.slice(block.end)}`;
   plainText.value = next;
   tabs.setContent(props.tab.id, next);
   const nextBlocks = splitPlainMarkdownBlocks(next);
-  const nextIndex = Math.max(
-    0,
-    nextBlocks.findIndex((candidate) => nextCaret >= candidate.start && nextCaret <= candidate.end),
+  // Locate the block that now holds the caret. If it can't be matched (should
+  // not happen), stay on the block being edited rather than snapping to block 0
+  // — snapping to 0 deactivated the edited block, flipping it into preview mode.
+  const found = nextBlocks.findIndex(
+    (candidate) => nextCaret >= candidate.start && nextCaret <= candidate.end,
   );
+  const nextIndex = found >= 0 ? found : Math.min(index, nextBlocks.length - 1);
   const nextBlock = nextBlocks[nextIndex];
   plainActiveBlock.value = nextIndex;
-  if (nextIndex === index && nextBlock?.start === block.start) {
+  // Fast path only when the block is structurally unchanged. We must also
+  // confirm the new block text matches what the <textarea> already holds:
+  // typing can split one block into several (e.g. a char before a list "- "
+  // marker turns that line into a paragraph). When that happens the inline
+  // :ref re-runs setPlainBlockEditor and rewrites el.value to the now-shorter
+  // block text, which collapses the caret to the line end — so we must fall
+  // through to the nextTick branch and restore the caret explicitly.
+  if (nextIndex === index && nextBlock?.start === block.start && nextBlock?.text === text) {
     emitPlainCursorAndSelection();
     return;
   }
