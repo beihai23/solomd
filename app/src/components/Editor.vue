@@ -53,6 +53,8 @@ import {
 } from '../lib/cm-session-restore';
 import { renderMarkdown, extractImageRoot as extractMarkdownImageRoot } from '../lib/markdown';
 import { rewriteImageUrls } from '../lib/image-resolve';
+import { SLASH_BLOCKS, filterBlocks, expandSnippet } from '../lib/slash-blocks';
+import { useWorkspaceIndexStore } from '../stores/workspaceIndex';
 
 type PlainBlock = {
   id: string;
@@ -99,6 +101,7 @@ const emit = defineEmits<{
 
 const tabs = useTabsStore();
 const settings = useSettingsStore();
+const workspaceIndex = useWorkspaceIndexStore();
 const { t } = useI18n();
 const pandoc = usePandocExport();
 let cachedCitations: CitationEntry[] = [];
@@ -825,6 +828,135 @@ function replacePlainAll() {
   nextTick(runPlainSearch);
 }
 
+// ---- Plain editor: autocomplete popup (/ slash commands, [[ wikilinks,
+// # tags, @ citations). Triggers as you type; ↑/↓ navigate, Enter/Tab insert,
+// Esc dismisses. Reuses the same data the CodeMirror editor uses. ----
+type AcKind = 'slash' | 'wikilink' | 'tag' | 'citation';
+interface AcItem { label: string; hint?: string; insert: string; cursorOffset: number }
+const acOpen = ref(false);
+const acItems = ref<AcItem[]>([]);
+const acIndex = ref(0);
+const acPos = ref<{ left: number; top: number }>({ left: 0, top: 0 });
+let acTriggerStart = -1;
+
+function closePlainAutocomplete() {
+  acOpen.value = false;
+  acItems.value = [];
+  acTriggerStart = -1;
+}
+
+function baseNoteName(path: string): string {
+  return (path.split(/[\\/]/).pop() || path).replace(/\.md$/i, '');
+}
+
+function buildAcItems(kind: AcKind, query: string): AcItem[] {
+  const q = query.toLowerCase();
+  if (kind === 'slash') {
+    return filterBlocks(SLASH_BLOCKS, query).slice(0, 8).map((b) => {
+      const ex = expandSnippet(b.snippet, '');
+      return { label: b.label, hint: b.hint, insert: ex.text, cursorOffset: ex.cursorOffset };
+    });
+  }
+  if (kind === 'wikilink') {
+    return (workspaceIndex.entries || [])
+      .map((e) => e.title || baseNoteName(e.path))
+      .filter((n) => n && n.toLowerCase().includes(q))
+      .slice(0, 8)
+      .map((n) => ({ label: n, hint: 'wiki', insert: `[[${n}]]`, cursorOffset: n.length + 4 }));
+  }
+  if (kind === 'tag') {
+    return (workspaceIndex.tags || [])
+      .filter((t) => t.tag.toLowerCase().includes(q))
+      .slice(0, 8)
+      .map((t) => ({ label: `#${t.tag}`, hint: String(t.count), insert: `#${t.tag} `, cursorOffset: t.tag.length + 2 }));
+  }
+  // citation
+  return cachedCitations
+    .filter((c) => (c.key || '').toLowerCase().includes(q))
+    .slice(0, 8)
+    .map((c) => ({ label: `@${c.key}`, hint: (c.title ? String(c.title).slice(0, 32) : ''), insert: `@${c.key} `, cursorOffset: c.key.length + 2 }));
+}
+
+function caretRectFromHighlight(caret: number): { left: number; bottom: number } | null {
+  const el = plainBlockEditors.value[plainActiveBlock.value];
+  const pre = el?.closest('.plain-block__edit')?.querySelector('.plain-block__highlight') as HTMLElement | null;
+  if (!pre) return null;
+  let remaining = caret;
+  let target: Node | null = null;
+  let local = 0;
+  const walker = document.createTreeWalker(pre, NodeFilter.SHOW_TEXT);
+  let n: Node | null = walker.nextNode();
+  while (n) {
+    const len = n.textContent?.length ?? 0;
+    if (remaining <= len) { target = n; local = remaining; break; }
+    remaining -= len;
+    n = walker.nextNode();
+  }
+  const range = document.createRange();
+  try {
+    if (target) range.setStart(target, Math.min(local, target.textContent?.length ?? 0));
+    else { range.selectNodeContents(pre); range.collapse(false); }
+    range.collapse(true);
+  } catch {
+    return null;
+  }
+  const r = range.getBoundingClientRect();
+  return { left: r.left, bottom: r.bottom };
+}
+
+function maybeOpenPlainAutocomplete(el: HTMLTextAreaElement) {
+  if (plainComposing) return;
+  const caret = el.selectionStart ?? 0;
+  const before = el.value.slice(0, caret);
+  let kind: AcKind | null = null;
+  let query = '';
+  let m: RegExpMatchArray | null;
+  if ((m = before.match(/(?:^|\n)[ \t]*\/([^\s/]*)$/))) { kind = 'slash'; query = m[1]; acTriggerStart = caret - m[1].length - 1; }
+  else if ((m = before.match(/\[\[([^\]\n]*)$/))) { kind = 'wikilink'; query = m[1]; acTriggerStart = caret - m[1].length - 2; }
+  else if ((m = before.match(/(?:^|[\s(])#([^\s#]*)$/))) { kind = 'tag'; query = m[1]; acTriggerStart = caret - m[1].length - 1; }
+  else if ((m = before.match(/(?:^|[\s(])@([^\s@]*)$/))) { kind = 'citation'; query = m[1]; acTriggerStart = caret - m[1].length - 1; }
+  if (!kind) { closePlainAutocomplete(); return; }
+  const items = buildAcItems(kind, query);
+  if (!items.length) { closePlainAutocomplete(); return; }
+  acItems.value = items;
+  acIndex.value = 0;
+  acOpen.value = true;
+  nextTick(() => {
+    const rect = caretRectFromHighlight(acTriggerStart);
+    if (rect) acPos.value = { left: Math.round(rect.left), top: Math.round(rect.bottom + 4) };
+  });
+}
+
+function applyPlainAutocomplete(item: AcItem) {
+  const el = plainBlockEditors.value[plainActiveBlock.value];
+  if (!el || acTriggerStart < 0) { closePlainAutocomplete(); return; }
+  const index = plainActiveBlock.value;
+  const caret = el.selectionStart ?? el.value.length;
+  const start = acTriggerStart;
+  const value = el.value.slice(0, start) + item.insert + el.value.slice(caret);
+  const newCaret = start + item.cursorOffset;
+  closePlainAutocomplete();
+  updatePlainBlock(index, value, newCaret);
+  nextTick(() => {
+    const e2 = plainBlockEditors.value[plainActiveBlock.value];
+    if (e2) {
+      e2.focus();
+      const p = Math.min(newCaret, e2.value.length);
+      e2.setSelectionRange(p, p);
+    }
+  });
+}
+
+/** Returns true if the keydown was consumed by the autocomplete popup. */
+function handleAutocompleteKeydown(event: KeyboardEvent): boolean {
+  if (!acOpen.value || !acItems.value.length) return false;
+  if (event.key === 'ArrowDown') { event.preventDefault(); acIndex.value = (acIndex.value + 1) % acItems.value.length; return true; }
+  if (event.key === 'ArrowUp') { event.preventDefault(); acIndex.value = (acIndex.value - 1 + acItems.value.length) % acItems.value.length; return true; }
+  if (event.key === 'Enter' || event.key === 'Tab') { event.preventDefault(); applyPlainAutocomplete(acItems.value[acIndex.value]); return true; }
+  if (event.key === 'Escape') { event.preventDefault(); closePlainAutocomplete(); return true; }
+  return false;
+}
+
 /** Compute a Tab/Shift+Tab indent edit over the textarea's current selection. */
 function computePlainTabEdit(
   el: HTMLTextAreaElement,
@@ -886,6 +1018,7 @@ function handlePlainKeydownShared(event: KeyboardEvent): boolean {
 
 function handlePlainBlockKeydown(index: number, event: KeyboardEvent) {
   if (plainComposing) return;
+  if (handleAutocompleteKeydown(event)) return;
   if (handlePlainKeydownShared(event)) return;
   if (event.key === 'Tab') {
     event.preventDefault();
@@ -1079,6 +1212,7 @@ function handlePlainBlockInput(index: number, event: Event) {
   plainActiveSource.value = el.value; // keep the highlight overlay in sync (also mid-composition)
   if (plainComposing) return;
   updatePlainBlock(index, el.value, el.selectionStart ?? el.value.length);
+  maybeOpenPlainAutocomplete(el);
 }
 
 function handlePlainBlockCompositionStart() {
@@ -1785,6 +1919,25 @@ const cls = computed(() => ({
         <button class="plain-find__btn plain-find__btn--text" @click="replacePlainAll">All</button>
       </div>
     </div>
+
+    <!-- Autocomplete popup (/ slash, [[ wikilink, # tag, @ citation). -->
+    <ul
+      v-if="acOpen && acItems.length"
+      class="plain-ac"
+      :style="{ left: acPos.left + 'px', top: acPos.top + 'px' }"
+    >
+      <li
+        v-for="(item, i) in acItems"
+        :key="i"
+        class="plain-ac__item"
+        :class="{ 'plain-ac__item--active': i === acIndex }"
+        @mousedown.prevent="applyPlainAutocomplete(item)"
+        @mouseenter="acIndex = i"
+      >
+        <span class="plain-ac__label">{{ item.label }}</span>
+        <span v-if="item.hint" class="plain-ac__hint">{{ item.hint }}</span>
+      </li>
+    </ul>
   </div>
 </template>
 
@@ -1866,6 +2019,41 @@ const cls = computed(() => ({
 }
 .plain-find__btn--text {
   font-size: 12px;
+}
+.plain-ac {
+  position: fixed;
+  z-index: 30;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  min-width: 180px;
+  max-width: 360px;
+  max-height: 280px;
+  overflow-y: auto;
+  background: var(--bg-elevated, var(--bg));
+  border: 1px solid var(--border, rgba(127, 127, 127, 0.35));
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
+}
+.plain-ac__item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text);
+}
+.plain-ac__item--active {
+  background: var(--accent, #ff9f40);
+  color: var(--accent-fg, #fff);
+}
+.plain-ac__hint {
+  font-size: 11px;
+  opacity: 0.7;
+  white-space: nowrap;
 }
 .plain-editor {
   height: 100%;

@@ -134,6 +134,15 @@ return { pass: el.getAttribute('wrap')==='soft'&&cs.whiteSpace==='pre-wrap', det
   @{ n='spellcheck enabled'; seed='teh recieve'; body=@'
 const el=A(); return { pass: el.getAttribute('spellcheck')==='true', detail:{spellcheck:el.getAttribute('spellcheck')} };
 '@ }
+  @{ n='slash command: popup + filter + insert'; seed=$null; body=@'
+await waitEditor(); let el=A(); el.focus();
+setV(el,'/'); el.setSelectionRange(1,1); el.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:'/'})); await sleep(200);
+const opened=!!document.querySelector('.plain-ac'); const n1=document.querySelectorAll('.plain-ac__item').length;
+setV(el,'/todo'); el.setSelectionRange(5,5); el.dispatchEvent(new InputEvent('input',{bubbles:true,inputType:'insertText',data:'o'})); await sleep(200);
+const labels=[...document.querySelectorAll('.plain-ac__item .plain-ac__label')].map(x=>x.textContent);
+el=A(); key(el,'Enter'); await sleep(250); el=A();
+return { pass: opened && n1>0 && labels.length===1 && el.value==='- [ ] ' && !document.querySelector('.plain-ac'), detail:{opened,n1,labels,val:JSON.stringify(el.value)} };
+'@ }
 )
 
 # Force liveEdit once.
