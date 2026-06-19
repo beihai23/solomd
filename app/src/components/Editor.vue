@@ -30,7 +30,7 @@ import { liveEditExtension } from '../lib/cm-live-render';
 import { liveBlocksExtension, liveBlocksTheme, extractImageRoot } from '../lib/cm-live-blocks';
 import { findTldrawFences, replaceBoardSnapshot } from '../lib/tldraw-board';
 import { dragAwareExtension } from '../lib/cm-drag-aware';
-import { imagePasteExtension, insertImageFromPath as cmInsertImageFromPath } from '../lib/cm-image-paste';
+import { imagePasteExtension, insertImageFromPath as cmInsertImageFromPath, handleTextareaImagePaste } from '../lib/cm-image-paste';
 import { focusModeExtension, typewriterModeExtension } from '../lib/cm-focus-mode';
 import { wikilinkExtension, wikilinkComplete } from '../lib/cm-wikilink';
 import { tagAutocompleteExtension, tagComplete } from '../lib/cm-tag-autocomplete';
@@ -53,6 +53,8 @@ import {
 } from '../lib/cm-session-restore';
 import { renderMarkdown, extractImageRoot as extractMarkdownImageRoot } from '../lib/markdown';
 import { rewriteImageUrls } from '../lib/image-resolve';
+import { SLASH_BLOCKS, filterBlocks, expandSnippet } from '../lib/slash-blocks';
+import { useWorkspaceIndexStore } from '../stores/workspaceIndex';
 
 type PlainBlock = {
   id: string;
@@ -99,6 +101,7 @@ const emit = defineEmits<{
 
 const tabs = useTabsStore();
 const settings = useSettingsStore();
+const workspaceIndex = useWorkspaceIndexStore();
 const { t } = useI18n();
 const pandoc = usePandocExport();
 let cachedCitations: CitationEntry[] = [];
@@ -128,6 +131,12 @@ const typewriterCompartment = new Compartment();
 const vimCompartment = new Compartment();
 const slashCompartment = new Compartment();
 const isWindows = typeof navigator !== 'undefined' && /Win/i.test(navigator.platform);
+// Windows uses the plain-textarea editor: WebView2 + contentEditable drops the
+// first IME character and doubles CJK punctuation (worst on Sogou), and even
+// freezing CodeMirror's decorations during composition does not fix it — the
+// bug is in WebView2's contentEditable IME handling itself. A plain <textarea>
+// relies on the browser's native IME path and avoids both. (Verified: a
+// CodeMirror spike on Windows still ate the first char + doubled punctuation.)
 const usePlainWindowsEditor = isWindows;
 
 function syncEditorContentSoon(text: string) {
@@ -173,12 +182,22 @@ const plainBlocks = computed<PlainBlock[]>(() => {
 });
 
 function renderPlainBlock(src: string): string {
+  // A standalone thematic-break block ("---" / "***" / "___") would be misread
+  // as a YAML front-matter fence when rendered in isolation (each block renders
+  // on its own), producing an empty md-frontmatter element instead of a rule.
+  // Emit the <hr> directly.
+  if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(src)) return '<hr>';
   const root = extractMarkdownImageRoot(plainText.value || '');
   const key = `${props.tab.filePath || ''}\u0000${root}\u0000${src}`;
   const cached = plainRenderCache.get(key);
   if (cached != null) return cached;
   const html = rewriteImageUrls(
-    renderMarkdown(src || '\n', { breaks: true }),
+    // Drop `disabled` on task checkboxes so they can be clicked to toggle in the
+    // preview (handled by activatePlainBlockFromClick → togglePlainTask).
+    renderMarkdown(src || '\n', { breaks: true }).replace(
+      /(<input class="task-list-item-checkbox" type="checkbox"[^>]*?)\s+disabled=""/g,
+      '$1',
+    ),
     root,
     props.tab.filePath,
   );
@@ -186,6 +205,7 @@ function renderPlainBlock(src: string): string {
   if (plainRenderCache.size > 300) plainRenderCache.clear();
   return html;
 }
+
 
 async function processPlainLiveRenderedBlocks() {
   if (!plainLiveEnabled.value || !plainLiveHost.value) return;
@@ -422,6 +442,7 @@ function emitPlainCursorAndSelection() {
     const col = lines[lines.length - 1]?.length ?? 0;
     emit('cursor', line, col + 1);
     emit('selection', plainSelectionText());
+    maybeTypewriterScroll();
     return;
   }
   const el = plainEditor.value;
@@ -432,6 +453,21 @@ function emitPlainCursorAndSelection() {
   const col = lines[lines.length - 1]?.length ?? 0;
   emit('cursor', line, col + 1);
   emit('selection', plainSelectionText());
+}
+
+// Typewriter mode: keep the active block vertically centred (matches the
+// CodeMirror typewriterModeExtension).
+function maybeTypewriterScroll() {
+  if (!props.typewriterMode || !plainLiveEnabled.value) return;
+  nextTick(() => {
+    const host = plainLiveHost.value;
+    const el = plainBlockEditors.value[plainActiveBlock.value];
+    if (!host || !el) return;
+    const hostRect = host.getBoundingClientRect();
+    const elRect = el.getBoundingClientRect();
+    const delta = elRect.top + elRect.height / 2 - (hostRect.top + hostRect.height / 2);
+    if (Math.abs(delta) > 1) host.scrollTop += delta;
+  });
 }
 
 function plainSetCaret(pos: number) {
@@ -489,6 +525,22 @@ function syncPlainLiveScroll() {
   emitPlainCursorAndSelection();
 }
 
+function handlePlainPaste(event: ClipboardEvent) {
+  // Clipboard image paste (Ctrl+V of a screenshot). Text paste falls through to
+  // the textarea's native handling. plainInsertText records its own undo step.
+  void handleTextareaImagePaste(
+    event,
+    {
+      getFilePath: () => props.tab.filePath,
+      getDocContent: () => props.tab.content,
+      getAttachmentMode: () => settings.attachmentMode,
+      getAssetsDirName: () => settings.assetsDirName,
+      getCustomPath: () => settings.attachmentCustomPath,
+    },
+    (text) => plainInsertText(text),
+  );
+}
+
 function plainInsertText(snippet: string) {
   if (plainLiveEnabled.value) {
     const index = plainActiveBlock.value;
@@ -502,6 +554,7 @@ function plainInsertText(snippet: string) {
   }
   const el = plainEditor.value;
   if (!el) return;
+  recordPlainHistory();
   const start = el.selectionStart ?? 0;
   const end = el.selectionEnd ?? 0;
   const next = `${el.value.slice(0, start)}${snippet}${el.value.slice(end)}`;
@@ -511,6 +564,18 @@ function plainInsertText(snippet: string) {
   plainText.value = next;
   tabs.setContent(props.tab.id, next);
   emitPlainCursorAndSelection();
+}
+
+function focusPlainEditor() {
+  // Plain editors don't take focus on their own (the CodeMirror path calls
+  // view.focus()). Without this, a freshly opened/created document has focus on
+  // <body> and keystrokes go nowhere until the user clicks the editor.
+  nextTick(() => {
+    const el = plainLiveEnabled.value
+      ? plainBlockEditors.value[plainActiveBlock.value]
+      : plainEditor.value;
+    el?.focus();
+  });
 }
 
 function syncPlainEditorFromStore(text: string) {
@@ -546,10 +611,483 @@ function syncPlainEditorAfterModeSwitch() {
 function handlePlainInput(event: Event) {
   if (plainLiveEnabled.value) return;
   const el = event.target as HTMLTextAreaElement;
+  if (!plainComposing) recordPlainHistory();
   plainText.value = el.value;
   tabs.setContent(props.tab.id, el.value);
   emitPlainCursorAndSelection();
   nextTick(syncPlainLiveScroll);
+}
+
+// ---- Plain editor: document-level undo/redo (the WebView2-safe textarea path
+// has no CodeMirror history). Snapshots are the whole document + an absolute
+// caret offset, with rapid edits coalesced into one step. ----
+type PlainSnapshot = { content: string; caret: number };
+const plainUndoStack: PlainSnapshot[] = [];
+let plainRedoStack: PlainSnapshot[] = [];
+let plainHistoryTs = 0;
+
+function plainAbsoluteCaret(): number {
+  if (plainLiveEnabled.value) {
+    const el = plainBlockEditors.value[plainActiveBlock.value];
+    const block = plainBlocks.value[plainActiveBlock.value];
+    if (!el || !block) return plainText.value.length;
+    return block.start + (el.selectionStart ?? 0);
+  }
+  const el = plainEditor.value;
+  return el ? el.selectionStart ?? el.value.length : plainText.value.length;
+}
+
+function recordPlainHistory() {
+  const now = Date.now();
+  const top = plainUndoStack[plainUndoStack.length - 1];
+  if (top && top.content === plainText.value) {
+    plainHistoryTs = now;
+    return;
+  }
+  // Coalesce bursts of typing into a single undo step.
+  if (plainUndoStack.length && now - plainHistoryTs < 500) {
+    plainHistoryTs = now;
+    return;
+  }
+  plainUndoStack.push({ content: plainText.value, caret: plainAbsoluteCaret() });
+  if (plainUndoStack.length > 300) plainUndoStack.shift();
+  plainRedoStack = [];
+  plainHistoryTs = now;
+}
+
+function applyPlainContent(content: string, caret: number) {
+  plainText.value = content;
+  tabs.setContent(props.tab.id, content);
+  const safe = Math.max(0, Math.min(caret, content.length));
+  if (!plainLiveEnabled.value) {
+    nextTick(() => {
+      const el = plainEditor.value;
+      if (el) {
+        if (el.value !== content) el.value = content;
+        el.focus();
+        el.setSelectionRange(safe, safe);
+      }
+      emitPlainCursorAndSelection();
+    });
+    return;
+  }
+  nextTick(() => plainSetCaret(safe));
+}
+
+function plainUndo() {
+  if (!plainUndoStack.length) return;
+  plainRedoStack.push({ content: plainText.value, caret: plainAbsoluteCaret() });
+  const prev = plainUndoStack.pop() as PlainSnapshot;
+  plainHistoryTs = 0;
+  applyPlainContent(prev.content, prev.caret);
+}
+
+function plainRedo() {
+  if (!plainRedoStack.length) return;
+  plainUndoStack.push({ content: plainText.value, caret: plainAbsoluteCaret() });
+  const next = plainRedoStack.pop() as PlainSnapshot;
+  plainHistoryTs = 0;
+  applyPlainContent(next.content, next.caret);
+}
+
+// ---- Plain editor: in-document find / replace (the textarea path has no
+// CodeMirror search panel). Matches are computed over the whole document;
+// navigating selects the match in the right block. ----
+const plainFindOpen = ref(false);
+const plainFindQuery = ref('');
+const plainReplaceValue = ref('');
+const plainFindCaseSensitive = ref(false);
+const plainFindInput = ref<HTMLInputElement | null>(null);
+const plainMatches = ref<Array<{ start: number; end: number }>>([]);
+const plainMatchIndex = ref(0);
+
+function runPlainSearch() {
+  const q = plainFindQuery.value;
+  if (!q) {
+    plainMatches.value = [];
+    plainMatchIndex.value = 0;
+    return;
+  }
+  const hay = plainFindCaseSensitive.value ? plainText.value : plainText.value.toLowerCase();
+  const needle = plainFindCaseSensitive.value ? q : q.toLowerCase();
+  const out: Array<{ start: number; end: number }> = [];
+  let i = hay.indexOf(needle);
+  while (i >= 0) {
+    out.push({ start: i, end: i + q.length });
+    i = hay.indexOf(needle, i + Math.max(1, q.length));
+  }
+  plainMatches.value = out;
+  if (plainMatchIndex.value >= out.length) plainMatchIndex.value = 0;
+}
+
+function openPlainFind() {
+  plainFindOpen.value = true;
+  const selected = plainSelectionText();
+  if (selected && !selected.includes('\n')) plainFindQuery.value = selected;
+  nextTick(() => {
+    plainFindInput.value?.focus();
+    plainFindInput.value?.select();
+    runPlainSearch();
+    if (plainMatches.value.length) gotoPlainMatch(0);
+  });
+}
+
+function closePlainFind() {
+  plainFindOpen.value = false;
+}
+
+function selectPlainRange(start: number, end: number) {
+  if (plainLiveEnabled.value) {
+    const blocks = plainBlocks.value;
+    const bi = blocks.findIndex((b) => start >= b.start && start < b.end);
+    plainActiveBlock.value = bi < 0 ? Math.max(0, blocks.length - 1) : bi;
+    nextTick(() => {
+      const el = plainBlockEditors.value[plainActiveBlock.value];
+      const b = plainBlocks.value[plainActiveBlock.value];
+      if (!el || !b) return;
+      el.focus();
+      const s = Math.max(0, Math.min(start - b.start, el.value.length));
+      const e = Math.max(s, Math.min(end - b.start, el.value.length));
+      el.setSelectionRange(s, e);
+      el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      emitPlainCursorAndSelection();
+    });
+    return;
+  }
+  const el = plainEditor.value;
+  if (!el) return;
+  el.focus();
+  el.setSelectionRange(start, end);
+  emitPlainCursorAndSelection();
+}
+
+function gotoPlainMatch(delta: number) {
+  if (!plainMatches.value.length) {
+    runPlainSearch();
+    if (!plainMatches.value.length) return;
+  }
+  const n = plainMatches.value.length;
+  plainMatchIndex.value = ((plainMatchIndex.value + delta) % n + n) % n;
+  const m = plainMatches.value[plainMatchIndex.value];
+  if (m) selectPlainRange(m.start, m.end);
+}
+
+function replacePlainCurrent() {
+  const m = plainMatches.value[plainMatchIndex.value];
+  if (!m) return;
+  recordPlainHistory();
+  const r = plainReplaceValue.value;
+  const next = plainText.value.slice(0, m.start) + r + plainText.value.slice(m.end);
+  applyPlainContent(next, m.start + r.length);
+  nextTick(() => {
+    runPlainSearch();
+    if (plainMatches.value.length) {
+      if (plainMatchIndex.value >= plainMatches.value.length) plainMatchIndex.value = 0;
+      const nm = plainMatches.value[plainMatchIndex.value];
+      if (nm) selectPlainRange(nm.start, nm.end);
+    }
+  });
+}
+
+function replacePlainAll() {
+  if (!plainFindQuery.value || !plainMatches.value.length) return;
+  recordPlainHistory();
+  const r = plainReplaceValue.value;
+  let result = '';
+  let last = 0;
+  for (const m of plainMatches.value) {
+    result += plainText.value.slice(last, m.start) + r;
+    last = m.end;
+  }
+  result += plainText.value.slice(last);
+  applyPlainContent(result, result.length);
+  nextTick(runPlainSearch);
+}
+
+// ---- Plain editor: autocomplete popup (/ slash commands, [[ wikilinks,
+// # tags, @ citations). Triggers as you type; ↑/↓ navigate, Enter/Tab insert,
+// Esc dismisses. Reuses the same data the CodeMirror editor uses. ----
+type AcKind = 'slash' | 'wikilink' | 'tag' | 'citation';
+interface AcItem { label: string; hint?: string; insert: string; cursorOffset: number }
+const acOpen = ref(false);
+const acItems = ref<AcItem[]>([]);
+const acIndex = ref(0);
+const acPos = ref<{ left: number; top: number }>({ left: 0, top: 0 });
+let acTriggerStart = -1;
+
+function closePlainAutocomplete() {
+  acOpen.value = false;
+  acItems.value = [];
+  acTriggerStart = -1;
+}
+
+function baseNoteName(path: string): string {
+  return (path.split(/[\\/]/).pop() || path).replace(/\.md$/i, '');
+}
+
+function buildAcItems(kind: AcKind, query: string): AcItem[] {
+  const q = query.toLowerCase();
+  if (kind === 'slash') {
+    return filterBlocks(SLASH_BLOCKS, query).slice(0, 8).map((b) => {
+      const ex = expandSnippet(b.snippet, '');
+      return { label: b.label, hint: b.hint, insert: ex.text, cursorOffset: ex.cursorOffset };
+    });
+  }
+  if (kind === 'wikilink') {
+    return (workspaceIndex.entries || [])
+      .map((e) => e.title || baseNoteName(e.path))
+      .filter((n) => n && n.toLowerCase().includes(q))
+      .slice(0, 8)
+      .map((n) => ({ label: n, hint: 'wiki', insert: `[[${n}]]`, cursorOffset: n.length + 4 }));
+  }
+  if (kind === 'tag') {
+    return (workspaceIndex.tags || [])
+      .filter((t) => t.tag.toLowerCase().includes(q))
+      .slice(0, 8)
+      .map((t) => ({ label: `#${t.tag}`, hint: String(t.count), insert: `#${t.tag} `, cursorOffset: t.tag.length + 2 }));
+  }
+  // citation
+  return cachedCitations
+    .filter((c) => (c.key || '').toLowerCase().includes(q))
+    .slice(0, 8)
+    .map((c) => ({ label: `@${c.key}`, hint: (c.title ? String(c.title).slice(0, 32) : ''), insert: `@${c.key} `, cursorOffset: c.key.length + 2 }));
+}
+
+function caretRectFromHighlight(_caret: number): { left: number; bottom: number } | null {
+  // Anchor the autocomplete popup to the active block's textarea (bottom-left).
+  // A textarea can't give per-caret pixel coords without a mirror element, and
+  // blocks are short, so anchoring below the block is accurate enough.
+  const el = plainBlockEditors.value[plainActiveBlock.value];
+  if (!el) return null;
+  const r = el.getBoundingClientRect();
+  return { left: r.left, bottom: r.top + Math.min(r.height, 24) };
+}
+
+function maybeOpenPlainAutocomplete(el: HTMLTextAreaElement) {
+  if (plainComposing) return;
+  const caret = el.selectionStart ?? 0;
+  const before = el.value.slice(0, caret);
+  let kind: AcKind | null = null;
+  let query = '';
+  let m: RegExpMatchArray | null;
+  if ((m = before.match(/(?:^|\n)[ \t]*\/([^\s/]*)$/))) { kind = 'slash'; query = m[1]; acTriggerStart = caret - m[1].length - 1; }
+  else if ((m = before.match(/\[\[([^\]\n]*)$/))) { kind = 'wikilink'; query = m[1]; acTriggerStart = caret - m[1].length - 2; }
+  else if ((m = before.match(/(?:^|[\s(])#([^\s#]*)$/))) { kind = 'tag'; query = m[1]; acTriggerStart = caret - m[1].length - 1; }
+  else if ((m = before.match(/(?:^|[\s(])@([^\s@]*)$/))) { kind = 'citation'; query = m[1]; acTriggerStart = caret - m[1].length - 1; }
+  if (!kind) { closePlainAutocomplete(); return; }
+  const items = buildAcItems(kind, query);
+  if (!items.length) { closePlainAutocomplete(); return; }
+  acItems.value = items;
+  acIndex.value = 0;
+  acOpen.value = true;
+  nextTick(() => {
+    const rect = caretRectFromHighlight(acTriggerStart);
+    if (rect) acPos.value = { left: Math.round(rect.left), top: Math.round(rect.bottom + 4) };
+  });
+}
+
+function applyPlainAutocomplete(item: AcItem) {
+  const el = plainBlockEditors.value[plainActiveBlock.value];
+  if (!el || acTriggerStart < 0) { closePlainAutocomplete(); return; }
+  const index = plainActiveBlock.value;
+  const caret = el.selectionStart ?? el.value.length;
+  const start = acTriggerStart;
+  const value = el.value.slice(0, start) + item.insert + el.value.slice(caret);
+  const newCaret = start + item.cursorOffset;
+  closePlainAutocomplete();
+  updatePlainBlock(index, value, newCaret);
+  nextTick(() => {
+    const e2 = plainBlockEditors.value[plainActiveBlock.value];
+    if (e2) {
+      e2.focus();
+      const p = Math.min(newCaret, e2.value.length);
+      e2.setSelectionRange(p, p);
+    }
+  });
+}
+
+/** Returns true if the keydown was consumed by the autocomplete popup. */
+function handleAutocompleteKeydown(event: KeyboardEvent): boolean {
+  if (!acOpen.value || !acItems.value.length) return false;
+  if (event.key === 'ArrowDown') { event.preventDefault(); acIndex.value = (acIndex.value + 1) % acItems.value.length; return true; }
+  if (event.key === 'ArrowUp') { event.preventDefault(); acIndex.value = (acIndex.value - 1 + acItems.value.length) % acItems.value.length; return true; }
+  if (event.key === 'Enter' || event.key === 'Tab') { event.preventDefault(); applyPlainAutocomplete(acItems.value[acIndex.value]); return true; }
+  if (event.key === 'Escape') { event.preventDefault(); closePlainAutocomplete(); return true; }
+  return false;
+}
+
+/** Compute a Tab/Shift+Tab indent edit over the textarea's current selection. */
+function computePlainTabEdit(
+  el: HTMLTextAreaElement,
+  outdent: boolean,
+): { value: string; selStart: number; selEnd: number } {
+  const INDENT = '  ';
+  const v = el.value;
+  const s = el.selectionStart ?? 0;
+  const e = el.selectionEnd ?? 0;
+  if (!outdent && s === e) {
+    return { value: v.slice(0, s) + INDENT + v.slice(e), selStart: s + INDENT.length, selEnd: s + INDENT.length };
+  }
+  const lineStart = v.lastIndexOf('\n', s - 1) + 1;
+  const nl = v.indexOf('\n', e);
+  const lineEnd = nl < 0 ? v.length : nl;
+  const region = v.slice(lineStart, lineEnd);
+  const lines = region.split('\n');
+  let deltaFirst = 0;
+  let deltaTotal = 0;
+  const newLines = lines.map((ln, i) => {
+    if (outdent) {
+      const m = ln.match(/^( {1,2}|\t)/);
+      const removed = m ? m[0].length : 0;
+      if (i === 0) deltaFirst = -removed;
+      deltaTotal -= removed;
+      return ln.slice(removed);
+    }
+    if (i === 0) deltaFirst = INDENT.length;
+    deltaTotal += INDENT.length;
+    return INDENT + ln;
+  });
+  const value = v.slice(0, lineStart) + newLines.join('\n') + v.slice(lineEnd);
+  const selStart = Math.max(lineStart, s + deltaFirst);
+  const selEnd = Math.max(selStart, e + deltaTotal);
+  return { value, selStart, selEnd };
+}
+
+/** Shared keydown handling (undo/redo, Tab indent) for the plain editors. */
+function handlePlainKeydownShared(event: KeyboardEvent): boolean {
+  const mod = event.ctrlKey || event.metaKey;
+  if (mod && !event.altKey && (event.key === 'f' || event.key === 'F')) {
+    event.preventDefault();
+    openPlainFind();
+    return true;
+  }
+  if (mod && !event.altKey && (event.key === 'z' || event.key === 'Z')) {
+    event.preventDefault();
+    if (event.shiftKey) plainRedo();
+    else plainUndo();
+    return true;
+  }
+  if (mod && !event.altKey && (event.key === 'y' || event.key === 'Y')) {
+    event.preventDefault();
+    plainRedo();
+    return true;
+  }
+  // Ctrl/Cmd+J — AI rewrite of the selection (matches cm-ai-rewrite). The
+  // overlay + accept path are shared with the CodeMirror editor; accept replaces
+  // the (retained) selection via the insert-markdown channel.
+  if (!IS_APP_STORE_BUILD && mod && !event.altKey && (event.key === 'j' || event.key === 'J')) {
+    const sel = plainAbsoluteSelection();
+    const text = plainSelectionText();
+    if (sel && text) {
+      event.preventDefault();
+      window.dispatchEvent(
+        new CustomEvent('solomd:ai-rewrite-open', { detail: { selection: text, from: sel.from, to: sel.to } }),
+      );
+      return true;
+    }
+  }
+  return false;
+}
+
+function plainAbsoluteSelection(): { from: number; to: number } | null {
+  if (plainLiveEnabled.value) {
+    const el = plainBlockEditors.value[plainActiveBlock.value];
+    const block = plainBlocks.value[plainActiveBlock.value];
+    if (!el || !block) return null;
+    return { from: block.start + (el.selectionStart ?? 0), to: block.start + (el.selectionEnd ?? 0) };
+  }
+  const el = plainEditor.value;
+  if (!el) return null;
+  return { from: el.selectionStart ?? 0, to: el.selectionEnd ?? 0 };
+}
+
+/**
+ * Markdown list / quote continuation on Enter (matches CodeMirror's behaviour):
+ * Enter at the end of a list/quote item starts the next item (ordered numbers
+ * increment); Enter on an empty item removes the marker and ends the list.
+ * Returns the new {value, caret} or null to let the textarea handle Enter.
+ */
+function computeSmartEnter(el: HTMLTextAreaElement): { value: string; caret: number } | null {
+  if (el.selectionStart !== el.selectionEnd) return null;
+  const v = el.value;
+  const caret = el.selectionStart ?? 0;
+  const lineStart = v.lastIndexOf('\n', caret - 1) + 1;
+  const nl = v.indexOf('\n', caret);
+  const lineEnd = nl < 0 ? v.length : nl;
+  const line = v.slice(lineStart, lineEnd);
+
+  const ul = line.match(/^(\s*)([-*+])\s+(\[[ xX]\]\s+)?(.*)$/);
+  const ol = line.match(/^(\s*)(\d+)([.)])\s+(.*)$/);
+  const bq = line.match(/^(\s*)(>)\s?(.*)$/);
+  let marker: string | null = null;
+  let content = '';
+  if (ul) { marker = `${ul[1]}${ul[2]} ${ul[3] ? '[ ] ' : ''}`; content = ul[4]; }
+  else if (ol) { marker = `${ol[1]}${Number(ol[2]) + 1}${ol[3]} `; content = ol[4]; }
+  else if (bq) { marker = `${bq[1]}> `; content = bq[3]; }
+  if (marker === null) return null;
+
+  // Empty item → remove the marker (end the list), leaving a blank line.
+  if (content.trim() === '') {
+    return { value: v.slice(0, lineStart) + v.slice(caret), caret: lineStart };
+  }
+  // Continue the list/quote with a fresh marker.
+  const insert = `\n${marker}`;
+  return { value: v.slice(0, caret) + insert + v.slice(caret), caret: caret + insert.length };
+}
+
+function handlePlainBlockKeydown(index: number, event: KeyboardEvent) {
+  if (plainComposing) return;
+  if (handleAutocompleteKeydown(event)) return;
+  if (handlePlainKeydownShared(event)) return;
+  if (event.key === 'Tab') {
+    event.preventDefault();
+    const el = event.target as HTMLTextAreaElement;
+    const edit = computePlainTabEdit(el, event.shiftKey);
+    updatePlainBlock(index, edit.value, edit.selStart);
+    // updatePlainBlock's fast path may skip caret restore (block text unchanged
+    // in length-mapping terms); force the selection so the caret follows the
+    // indent and a range stays selected for repeated Tab.
+    nextTick(() => {
+      const e2 = plainBlockEditors.value[plainActiveBlock.value];
+      if (e2) {
+        e2.focus();
+        e2.setSelectionRange(edit.selStart, edit.selEnd);
+      }
+    });
+    return;
+  }
+  if (event.key === 'Enter' && !event.shiftKey && !event.ctrlKey && !event.metaKey && !event.altKey) {
+    const el = event.target as HTMLTextAreaElement;
+    const smart = computeSmartEnter(el);
+    if (smart) {
+      event.preventDefault();
+      updatePlainBlock(index, smart.value, smart.caret);
+      nextTick(() => {
+        const e2 = plainBlockEditors.value[plainActiveBlock.value];
+        if (e2) {
+          e2.focus();
+          const p = Math.min(smart.caret, e2.value.length);
+          e2.setSelectionRange(p, p);
+        }
+      });
+    }
+  }
+}
+
+function handlePlainEditorKeydown(event: KeyboardEvent) {
+  if (plainComposing) return;
+  if (handlePlainKeydownShared(event)) return;
+  if (event.key === 'Tab') {
+    event.preventDefault();
+    const el = event.target as HTMLTextAreaElement;
+    const edit = computePlainTabEdit(el, event.shiftKey);
+    recordPlainHistory();
+    el.value = edit.value;
+    el.setSelectionRange(edit.selStart, edit.selEnd);
+    plainText.value = edit.value;
+    tabs.setContent(props.tab.id, edit.value);
+    emitPlainCursorAndSelection();
+  }
 }
 
 /**
@@ -634,8 +1172,45 @@ function estimatePlainBlockCaretFromClick(index: number, event: MouseEvent): num
 }
 
 function activatePlainBlockFromClick(index: number, event: MouseEvent) {
+  // Clicking a rendered task checkbox toggles its source marker instead of
+  // entering edit mode.
+  const target = event.target as HTMLElement | null;
+  if (
+    target instanceof HTMLInputElement &&
+    target.type === 'checkbox' &&
+    target.classList.contains('task-list-item-checkbox')
+  ) {
+    const render = (event.currentTarget as HTMLElement).querySelector('.plain-block__render');
+    const boxes = render
+      ? Array.from(render.querySelectorAll('input.task-list-item-checkbox'))
+      : [];
+    const ordinal = boxes.indexOf(target);
+    event.preventDefault();
+    if (ordinal >= 0) togglePlainTask(index, ordinal);
+    return;
+  }
   if (index === plainActiveBlock.value) return;
   activatePlainBlock(index, estimatePlainBlockCaretFromClick(index, event));
+}
+
+/** Flip the `ordinal`-th task checkbox marker in a block's source, in place. */
+function togglePlainTask(index: number, ordinal: number) {
+  const block = plainBlocks.value[index];
+  if (!block) return;
+  let n = -1;
+  const re = /^(\s*(?:[-*+]|\d+[.)])\s+\[)([ xX])(\])/gm;
+  const newText = block.text.replace(re, (m, pre, mark, post) => {
+    n += 1;
+    if (n !== ordinal) return m;
+    return `${pre}${mark === ' ' ? 'x' : ' '}${post}`;
+  });
+  if (newText === block.text) return;
+  recordPlainHistory();
+  const tail = block.hasTrailingNewline ? '\n' : '';
+  const next =
+    plainText.value.slice(0, block.start) + newText + tail + plainText.value.slice(block.end);
+  plainText.value = next;
+  tabs.setContent(props.tab.id, next);
 }
 
 function activatePlainBlock(index: number, caret?: number) {
@@ -671,6 +1246,7 @@ function handlePlainBlockInput(index: number, event: Event) {
   autoSizePlainBlock(el);
   if (plainComposing) return;
   updatePlainBlock(index, el.value, el.selectionStart ?? el.value.length);
+  maybeOpenPlainAutocomplete(el);
 }
 
 function handlePlainBlockCompositionStart() {
@@ -687,6 +1263,8 @@ function handlePlainBlockCompositionEnd(index: number, event: CompositionEvent) 
 function updatePlainBlock(index: number, text: string, caret?: number) {
   const block = plainBlocks.value[index];
   if (!block) return;
+  // Snapshot the pre-edit document for undo (coalesced) before we mutate it.
+  if (!plainComposing) recordPlainHistory();
   const nextCaret = block.start + (caret ?? text.length);
   // Re-attach the block separator that splitPlainMarkdownBlocks stripped from
   // the editable text, so neighbouring blocks don't merge on every edit.
@@ -960,6 +1538,7 @@ onMounted(() => {
     syncPlainEditorFromStore(props.tab.content);
     maybeRestoreSession();
     void processPlainLiveRenderedBlocks();
+    focusPlainEditor();
     return;
   }
   if (!host.value) return;
@@ -1002,6 +1581,21 @@ onBeforeUnmount(() => {
 watch(
   () => props.tab.id,
   () => {
+    if (usePlainWindowsEditor) {
+      // The Editor component is reused across tabs (no :key), so switching to /
+      // creating a document must re-sync content, reset per-document state, and
+      // re-focus — otherwise the new doc shows stale text and can't be typed in.
+      plainActiveBlock.value = 0;
+      plainUndoStack.length = 0;
+      plainRedoStack = [];
+      plainHistoryTs = 0;
+      closePlainFind();
+      syncPlainEditorFromStore(props.tab.content);
+      maybeRestoreSession();
+      void processPlainLiveRenderedBlocks();
+      focusPlainEditor();
+      return;
+    }
     if (!view) return;
     view.setState(
       EditorState.create({ doc: props.tab.content, extensions: buildExtensions() })
@@ -1266,48 +1860,111 @@ const cls = computed(() => ({
 
 <template>
   <div v-if="!usePlainWindowsEditor" :class="cls" ref="host"></div>
-  <div v-else-if="plainLiveEnabled" ref="plainLiveHost" :class="[cls, 'plain-block-editor']" :style="plainEditorStyle">
-    <div
-      v-for="(block, index) in plainBlocks"
-      :key="block.id"
-      class="plain-block"
-      :class="{ 'plain-block--active': index === plainActiveBlock }"
-      @click="(event) => activatePlainBlockFromClick(index, event)"
-    >
+  <div v-else class="plain-host">
+    <div v-if="plainLiveEnabled" ref="plainLiveHost" :class="[cls, 'plain-block-editor']" :style="plainEditorStyle">
+      <div
+        v-for="(block, index) in plainBlocks"
+        :key="block.id"
+        class="plain-block"
+        :class="{ 'plain-block--active': index === plainActiveBlock }"
+        @click="(event) => activatePlainBlockFromClick(index, event)"
+      >
+        <textarea
+          v-if="index === plainActiveBlock"
+          :ref="(el) => setPlainBlockEditor(index, el as HTMLTextAreaElement | null)"
+          class="plain-block__textarea"
+          :class="{ 'plain-textarea--wrap': settings.wordWrap }"
+          :spellcheck="props.spellCheck"
+          :wrap="settings.wordWrap ? 'soft' : 'off'"
+          @keydown="(event) => handlePlainBlockKeydown(index, event)"
+          @paste="handlePlainPaste"
+          @input="(event) => handlePlainBlockInput(index, event)"
+          @compositionstart="handlePlainBlockCompositionStart"
+          @compositionend="(event) => handlePlainBlockCompositionEnd(index, event)"
+          @click.stop
+          @keyup="emitPlainCursorAndSelection"
+          @mouseup="emitPlainCursorAndSelection"
+          @select="emitPlainCursorAndSelection"
+          @focus="emitPlainCursorAndSelection"
+        ></textarea>
+        <div
+          v-else
+          class="plain-block__render"
+          v-html="block.html"
+        ></div>
+      </div>
+    </div>
+    <div v-else :class="cls" :style="plainEditorStyle">
       <textarea
-        v-if="index === plainActiveBlock"
-        :ref="(el) => setPlainBlockEditor(index, el as HTMLTextAreaElement | null)"
-        class="plain-block__textarea"
-        spellcheck="false"
-        wrap="off"
-        @input="(event) => handlePlainBlockInput(index, event)"
-        @compositionstart="handlePlainBlockCompositionStart"
-        @compositionend="(event) => handlePlainBlockCompositionEnd(index, event)"
-        @click.stop
+        ref="plainEditor"
+        class="plain-editor"
+        :class="{ 'plain-textarea--wrap': settings.wordWrap }"
+        :spellcheck="props.spellCheck"
+        :wrap="settings.wordWrap ? 'soft' : 'off'"
+        @keydown="handlePlainEditorKeydown"
+        @paste="handlePlainPaste"
+        @input="handlePlainInput"
         @keyup="emitPlainCursorAndSelection"
         @mouseup="emitPlainCursorAndSelection"
         @select="emitPlainCursorAndSelection"
         @focus="emitPlainCursorAndSelection"
       ></textarea>
-      <div
-        v-else
-        class="plain-block__render"
-        v-html="block.html"
-      ></div>
     </div>
-  </div>
-  <div v-else :class="cls" :style="plainEditorStyle">
-    <textarea
-      ref="plainEditor"
-      class="plain-editor"
-      spellcheck="false"
-      wrap="off"
-      @input="handlePlainInput"
-      @keyup="emitPlainCursorAndSelection"
-      @mouseup="emitPlainCursorAndSelection"
-      @select="emitPlainCursorAndSelection"
-      @focus="emitPlainCursorAndSelection"
-    ></textarea>
+
+    <!-- In-document find / replace (Ctrl+F). The textarea path has no CodeMirror
+         search panel, so this provides one. -->
+    <div v-if="plainFindOpen" class="plain-find" @keydown.esc.prevent.stop="closePlainFind">
+      <div class="plain-find__row">
+        <input
+          ref="plainFindInput"
+          class="plain-find__input"
+          :value="plainFindQuery"
+          placeholder="Find"
+          @input="(e) => { plainFindQuery = (e.target as HTMLInputElement).value; runPlainSearch(); }"
+          @keydown.enter.prevent="gotoPlainMatch(1)"
+        />
+        <span class="plain-find__count">{{ plainMatches.length ? (plainMatchIndex + 1) + '/' + plainMatches.length : '0/0' }}</span>
+        <button class="plain-find__btn" title="Previous (Shift+Enter)" @click="gotoPlainMatch(-1)">‹</button>
+        <button class="plain-find__btn" title="Next (Enter)" @click="gotoPlainMatch(1)">›</button>
+        <button
+          class="plain-find__btn"
+          :class="{ 'plain-find__btn--on': plainFindCaseSensitive }"
+          title="Match case"
+          @click="plainFindCaseSensitive = !plainFindCaseSensitive; runPlainSearch()"
+        >Aa</button>
+        <button class="plain-find__btn" title="Close (Esc)" @click="closePlainFind">✕</button>
+      </div>
+      <div class="plain-find__row">
+        <input
+          class="plain-find__input"
+          :value="plainReplaceValue"
+          placeholder="Replace"
+          @input="(e) => plainReplaceValue = (e.target as HTMLInputElement).value"
+          @keydown.enter.prevent="replacePlainCurrent"
+        />
+        <button class="plain-find__btn plain-find__btn--text" @click="replacePlainCurrent">Replace</button>
+        <button class="plain-find__btn plain-find__btn--text" @click="replacePlainAll">All</button>
+      </div>
+    </div>
+
+    <!-- Autocomplete popup (/ slash, [[ wikilink, # tag, @ citation). -->
+    <ul
+      v-if="acOpen && acItems.length"
+      class="plain-ac"
+      :style="{ left: acPos.left + 'px', top: acPos.top + 'px' }"
+    >
+      <li
+        v-for="(item, i) in acItems"
+        :key="i"
+        class="plain-ac__item"
+        :class="{ 'plain-ac__item--active': i === acIndex }"
+        @mousedown.prevent="applyPlainAutocomplete(item)"
+        @mouseenter="acIndex = i"
+      >
+        <span class="plain-ac__label">{{ item.label }}</span>
+        <span v-if="item.hint" class="plain-ac__hint">{{ item.hint }}</span>
+      </li>
+    </ul>
   </div>
 </template>
 
@@ -1325,6 +1982,106 @@ const cls = computed(() => ({
 :deep(.cm-editor.cm-focused) {
   outline: none;
 }
+.plain-host {
+  position: relative;
+  height: 100%;
+  width: 100%;
+}
+.plain-find {
+  position: absolute;
+  top: 8px;
+  right: 16px;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  background: var(--bg-elevated, var(--bg));
+  border: 1px solid var(--border, rgba(127, 127, 127, 0.35));
+  border-radius: 8px;
+  padding: 6px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+}
+.plain-find__row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.plain-find__input {
+  width: 200px;
+  padding: 4px 8px;
+  border: 1px solid var(--border, rgba(127, 127, 127, 0.35));
+  border-radius: 5px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+  outline: none;
+}
+.plain-find__input:focus {
+  border-color: var(--accent, #ff9f40);
+}
+.plain-find__count {
+  font-size: 12px;
+  color: var(--text-faint, #888);
+  min-width: 40px;
+  text-align: center;
+}
+.plain-find__btn {
+  min-width: 26px;
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+}
+.plain-find__btn:hover {
+  background: var(--bg-hover, rgba(127, 127, 127, 0.15));
+}
+.plain-find__btn--on {
+  color: var(--accent, #ff9f40);
+  border-color: var(--accent, #ff9f40);
+}
+.plain-find__btn--text {
+  font-size: 12px;
+}
+.plain-ac {
+  position: fixed;
+  z-index: 30;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  min-width: 180px;
+  max-width: 360px;
+  max-height: 280px;
+  overflow-y: auto;
+  background: var(--bg-elevated, var(--bg));
+  border: 1px solid var(--border, rgba(127, 127, 127, 0.35));
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22);
+}
+.plain-ac__item {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 5px 10px;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text);
+}
+.plain-ac__item--active {
+  background: var(--accent, #ff9f40);
+  color: var(--accent-fg, #fff);
+}
+.plain-ac__hint {
+  font-size: 11px;
+  opacity: 0.7;
+  white-space: nowrap;
+}
 .plain-editor {
   height: 100%;
   width: 100%;
@@ -1341,6 +2098,11 @@ const cls = computed(() => ({
   tab-size: 2;
   white-space: pre;
   overflow: auto;
+}
+.plain-editor.plain-textarea--wrap {
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  overflow-x: hidden;
 }
 .plain-block-editor {
   overflow: auto;
@@ -1375,6 +2137,10 @@ const cls = computed(() => ({
   line-height: inherit;
   tab-size: 2;
   white-space: pre;
+}
+.plain-block__textarea.plain-textarea--wrap {
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
 }
 .plain-block__textarea::selection {
   background: rgba(255, 159, 64, 0.28);
