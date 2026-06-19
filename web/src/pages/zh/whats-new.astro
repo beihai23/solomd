@@ -5,7 +5,7 @@ import Footer from '../../components/Footer.astro';
 import Giscus from '../../components/Giscus.astro';
 
 const lang = 'zh' as const;
-const VERSION = '4.6.5';
+const VERSION = '4.7.0';
 const baseUrl = `https://github.com/zhitongblog/solomd/releases/download/v${VERSION}`;
 ---
 
@@ -38,6 +38,32 @@ const baseUrl = `https://github.com/zhitongblog/solomd/releases/download/v${VERS
         <a class="btn btn--secondary btn--lg" href={`${baseUrl}/SoloMD_${VERSION}_x64_en-US.msi`}>下载 (Windows)</a>
         <a class="btn btn--secondary btn--lg" href={`https://github.com/zhitongblog/solomd/releases/tag/v${VERSION}`}>所有平台 →</a>
       </div>
+
+      <section>
+        <p class="version-row" style="margin-top:8px;">
+          <span class="version-tag">v4.7</span>
+          <time>2026 年 6 月</time>
+        </p>
+        <h2 style="margin-top:8px;">4.7 —— Windows 换上全新编辑器。</h2>
+        <p class="lead">
+          <strong>仅限 Windows。</strong>Windows 上的 SoloMD 现在改用一套彻底重写的
+          <strong>分块编辑器</strong>,不再用 CodeMirror。WebView2 的
+          <code>contentEditable</code> 会<strong>吞掉中文 / 输入法的第一个字</strong>、
+          并<strong>把标点变成双份</strong>（搜狗最严重）—— 这个 bug 在 CodeMirror
+          里无法修复,因为它出在 WebView2 本身。新编辑器让每个块走原生
+          <code>&lt;textarea&gt;</code> 的系统输入法路径,吞字和双标点的问题不再出现。
+        </p>
+        <p>
+          新的 Windows 编辑器<strong>功能完全对齐</strong>:实时 Markdown 预览、自动补全
+          与斜杠命令（<code>/</code>）、专注模式与打字机模式、智能列表续写、AI 改写
+          （<code>Ctrl+J</code>）、文内查找替换（<code>Ctrl+F</code>）、剪贴板图片粘贴、
+          任务清单勾选、撤销 / 重做、Tab 缩进、拼写检查与自动换行。
+        </p>
+        <p style="opacity:.8;">
+          <strong>macOS、Linux、iOS 和 Android 不受影响</strong> —— 继续使用现有的
+          CodeMirror 编辑器。4.7 还修复了:命令面板在悬停或滚轮滚动列表时不再乱跳（#93）。
+        </p>
+      </section>
 
       <section>
         <p class="version-row" style="margin-top:8px;">

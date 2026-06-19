@@ -5,7 +5,7 @@ import Footer from '../components/Footer.astro';
 import Giscus from '../components/Giscus.astro';
 
 const lang = 'en' as const;
-const VERSION = '4.6.5';
+const VERSION = '4.7.0';
 const baseUrl = `https://github.com/zhitongblog/solomd/releases/download/v${VERSION}`;
 ---
 
@@ -39,6 +39,38 @@ const baseUrl = `https://github.com/zhitongblog/solomd/releases/download/v${VERS
         <a class="btn btn--secondary btn--lg" href={`${baseUrl}/SoloMD_${VERSION}_x64_en-US.msi`}>Download (Windows)</a>
         <a class="btn btn--secondary btn--lg" href={`https://github.com/zhitongblog/solomd/releases/tag/v${VERSION}`}>All assets →</a>
       </div>
+
+      <section>
+        <p class="version-row" style="margin-top:8px;">
+          <span class="version-tag">v4.7</span>
+          <time>June 2026</time>
+        </p>
+        <h2 style="margin-top:8px;">4.7 — Windows gets a brand-new editor.</h2>
+        <p class="lead">
+          <strong>Windows only.</strong> SoloMD on Windows now uses a completely
+          rebuilt <strong>block editor</strong> in place of CodeMirror.
+          WebView2's <code>contentEditable</code> dropped the
+          <strong>first character of CJK / IME input</strong> and
+          <strong>doubled punctuation</strong> (worst with Sogou) — a bug that
+          could not be fixed inside CodeMirror because it lives in WebView2
+          itself. The new editor types each block through a native
+          <code>&lt;textarea&gt;</code> on the OS-native IME path, so the
+          dropped-character and doubled-punctuation problems are gone.
+        </p>
+        <p>
+          The new Windows editor keeps <strong>full feature parity</strong>:
+          live Markdown preview, autocomplete &amp; slash commands
+          (<code>/</code>), focus &amp; typewriter mode, smart list continuation,
+          AI rewrite (<code>Ctrl+J</code>), in-document find &amp; replace
+          (<code>Ctrl+F</code>), clipboard image paste, task-checkbox toggle,
+          undo / redo, Tab indent, spellcheck and word-wrap.
+        </p>
+        <p style="opacity:.8;">
+          <strong>macOS, Linux, iOS and Android are unaffected</strong> — they
+          keep the existing CodeMirror editor. Also in 4.7: the command palette
+          no longer jumps when you hover or wheel-scroll the list (#93).
+        </p>
+      </section>
 
       <section>
         <p class="version-row" style="margin-top:8px;">
