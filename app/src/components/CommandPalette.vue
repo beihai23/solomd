@@ -48,7 +48,14 @@ watch(filtered, () => {
 // selection. block: 'nearest' avoids the "yank to centre" jump that a
 // plain scrollIntoView() would do every keypress. We only fire after a
 // nextTick so the DOM has settled when filtered just changed.
+// #93 — but ONLY for keyboard moves. Hovering / wheel-scrolling changes
+// selectedIdx via @mouseenter (items pass under the cursor as the list
+// scrolls); scrolling those into view fought the wheel and caused the
+// "weird jumps". `kbNav` gates the auto-scroll to keyboard navigation only.
+let kbNav = false;
 watch(selectedIdx, async () => {
+  if (!kbNav) return;
+  kbNav = false;
   await nextTick();
   const el = itemRefs.value[selectedIdx.value];
   if (el) el.scrollIntoView({ block: 'nearest' });
@@ -64,9 +71,11 @@ function onKey(e: KeyboardEvent) {
     emit('close');
   } else if (e.key === 'ArrowDown') {
     e.preventDefault();
+    kbNav = true;
     selectedIdx.value = Math.min(selectedIdx.value + 1, filtered.value.length - 1);
   } else if (e.key === 'ArrowUp') {
     e.preventDefault();
+    kbNav = true;
     selectedIdx.value = Math.max(selectedIdx.value - 1, 0);
   } else if (e.key === 'Enter') {
     e.preventDefault();
@@ -102,7 +111,7 @@ async function runIdx(i: number) {
           class="palette__item"
           :class="{ 'palette__item--active': i === selectedIdx }"
           @click="runIdx(i)"
-          @mousemove="selectedIdx = i"
+          @mouseenter="selectedIdx = i"
         >
           <span class="palette__title">{{ c.title }}</span>
           <span class="palette__shortcut" v-if="c.shortcut">{{ c.shortcut }}</span>
