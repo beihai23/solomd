@@ -45,7 +45,7 @@ import {
   ViewPlugin,
   type ViewUpdate,
 } from '@codemirror/view';
-import { frozenDuringComposition } from './cm-ime-guard';
+import { frozenDuringComposition, isImeSafeFlushTransaction } from './cm-ime-guard';
 import { tags as t } from '@lezer/highlight';
 import { isDragging, isDragEndTransaction } from './cm-drag-aware';
 
@@ -265,7 +265,8 @@ const liveRenderPlugin = ViewPlugin.fromClass(
       // See cm-drag-aware.ts — freeze marker toggles during pointer drag
       // so Windows WebView2 doesn't lose pointer capture mid-selection.
       const dragEnded = u.transactions.some(isDragEndTransaction);
-      if (u.docChanged || u.viewportChanged || dragEnded) {
+      const imeFlush = u.transactions.some(isImeSafeFlushTransaction);
+      if (u.docChanged || u.viewportChanged || dragEnded || imeFlush) {
         this.decorations = buildDecorations(u.view);
         return;
       }

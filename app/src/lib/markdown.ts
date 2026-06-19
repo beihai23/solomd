@@ -1,6 +1,7 @@
 import MarkdownIt from 'markdown-it';
 import anchor from 'markdown-it-anchor';
 import hljs from 'highlight.js/lib/common';
+import 'katex/contrib/mhchem';
 // @ts-ignore — types are loose
 import katex from '@vscode/markdown-it-katex';
 // @ts-ignore — no types shipped
@@ -390,10 +391,17 @@ function unwrapInlineHtmlBlocks(source: string): string {
     .join('');
 }
 
-export function renderMarkdown(source: string): string {
+export function renderMarkdown(source: string, options?: { breaks?: boolean }): string {
   lastFrontMatterRaw = null;
   const normalized = unwrapInlineHtmlBlocks(source || '');
-  const body = md.render(normalized);
+  const prevBreaks = md.options.breaks;
+  if (options?.breaks !== undefined) md.set({ breaks: options.breaks });
+  let body = '';
+  try {
+    body = md.render(normalized);
+  } finally {
+    if (options?.breaks !== undefined) md.set({ breaks: prevBreaks });
+  }
   if (lastFrontMatterRaw !== null) {
     const fmHtml = renderFrontMatterHtml(lastFrontMatterRaw);
     lastFrontMatterRaw = null;

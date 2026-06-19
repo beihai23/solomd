@@ -20,7 +20,7 @@ import {
   ViewUpdate,
   WidgetType,
 } from '@codemirror/view';
-import { frozenDuringComposition } from './cm-ime-guard';
+import { frozenDuringComposition, isImeSafeFlushTransaction } from './cm-ime-guard';
 
 const TOGGLE_EVENT = 'solomd-task-toggle';
 
@@ -140,6 +140,7 @@ export function taskListExtension() {
         if (
           update.docChanged ||
           update.viewportChanged ||
+          update.transactions.some(isImeSafeFlushTransaction) ||
           syntaxTree(update.startState) !== syntaxTree(update.state)
         ) {
           this.decorations = buildTaskDecorations(update.view);

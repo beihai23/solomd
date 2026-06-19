@@ -21,6 +21,7 @@
 import { RangeSetBuilder, StateField, StateEffect } from '@codemirror/state';
 import type { EditorState } from '@codemirror/state';
 import { isDragging, isDragEndTransaction } from './cm-drag-aware';
+import { frozenFieldDuringComposition, isImeSafeFlushTransaction } from './cm-ime-guard';
 import {
   Decoration,
   DecorationSet,
@@ -38,6 +39,7 @@ const relayoutEffect = StateEffect.define<null>();
 import { resolveImageSrc } from './image-resolve';
 import { renderMarkdown, extractImageRoot } from './markdown';
 import mermaid from 'mermaid';
+import 'katex/contrib/mhchem';
 import katex from 'katex';
 import {
   parseTldrawFence,
@@ -749,6 +751,9 @@ export function liveBlocksExtension(opts: BlockOptions = {}) {
       // Rebuild on edits, on a relayout signal (Mermaid SVG ready), and on
       // the drag-end flush. Selection moves rebuild too (cursor entering a
       // block reveals its source), but not mid-drag — see cm-drag-aware.ts.
+      const frozen = frozenFieldDuringComposition(tr, deco);
+      if (frozen) return frozen;
+      if (isImeSafeFlushTransaction(tr)) return buildBlockDecorations(tr.state, opts);
       if (tr.docChanged) return buildBlockDecorations(tr.state, opts);
       if (tr.effects.some((e) => e.is(relayoutEffect))) {
         return buildBlockDecorations(tr.state, opts);
