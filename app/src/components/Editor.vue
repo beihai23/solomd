@@ -1029,7 +1029,33 @@ function handlePlainKeydownShared(event: KeyboardEvent): boolean {
     plainRedo();
     return true;
   }
+  // Ctrl/Cmd+J — AI rewrite of the selection (matches cm-ai-rewrite). The
+  // overlay + accept path are shared with the CodeMirror editor; accept replaces
+  // the (retained) selection via the insert-markdown channel.
+  if (!IS_APP_STORE_BUILD && mod && !event.altKey && (event.key === 'j' || event.key === 'J')) {
+    const sel = plainAbsoluteSelection();
+    const text = plainSelectionText();
+    if (sel && text) {
+      event.preventDefault();
+      window.dispatchEvent(
+        new CustomEvent('solomd:ai-rewrite-open', { detail: { selection: text, from: sel.from, to: sel.to } }),
+      );
+      return true;
+    }
+  }
   return false;
+}
+
+function plainAbsoluteSelection(): { from: number; to: number } | null {
+  if (plainLiveEnabled.value) {
+    const el = plainBlockEditors.value[plainActiveBlock.value];
+    const block = plainBlocks.value[plainActiveBlock.value];
+    if (!el || !block) return null;
+    return { from: block.start + (el.selectionStart ?? 0), to: block.start + (el.selectionEnd ?? 0) };
+  }
+  const el = plainEditor.value;
+  if (!el) return null;
+  return { from: el.selectionStart ?? 0, to: el.selectionEnd ?? 0 };
 }
 
 /**
