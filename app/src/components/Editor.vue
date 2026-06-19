@@ -541,6 +541,18 @@ function plainInsertText(snippet: string) {
   emitPlainCursorAndSelection();
 }
 
+function focusPlainEditor() {
+  // Plain editors don't take focus on their own (the CodeMirror path calls
+  // view.focus()). Without this, a freshly opened/created document has focus on
+  // <body> and keystrokes go nowhere until the user clicks the editor.
+  nextTick(() => {
+    const el = plainLiveEnabled.value
+      ? plainBlockEditors.value[plainActiveBlock.value]
+      : plainEditor.value;
+    el?.focus();
+  });
+}
+
 function syncPlainEditorFromStore(text: string) {
   const el = plainEditor.value;
   plainText.value = text;
@@ -1310,6 +1322,7 @@ onMounted(() => {
     syncPlainEditorFromStore(props.tab.content);
     maybeRestoreSession();
     void processPlainLiveRenderedBlocks();
+    focusPlainEditor();
     return;
   }
   if (!host.value) return;
@@ -1352,6 +1365,21 @@ onBeforeUnmount(() => {
 watch(
   () => props.tab.id,
   () => {
+    if (usePlainWindowsEditor) {
+      // The Editor component is reused across tabs (no :key), so switching to /
+      // creating a document must re-sync content, reset per-document state, and
+      // re-focus — otherwise the new doc shows stale text and can't be typed in.
+      plainActiveBlock.value = 0;
+      plainUndoStack.length = 0;
+      plainRedoStack = [];
+      plainHistoryTs = 0;
+      closePlainFind();
+      syncPlainEditorFromStore(props.tab.content);
+      maybeRestoreSession();
+      void processPlainLiveRenderedBlocks();
+      focusPlainEditor();
+      return;
+    }
     if (!view) return;
     view.setState(
       EditorState.create({ doc: props.tab.content, extensions: buildExtensions() })
