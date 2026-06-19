@@ -153,6 +153,11 @@ const plainBlockEditors = ref<Record<number, HTMLTextAreaElement | null>>({});
 const plainText = ref(props.tab.content || '');
 const plainActiveBlock = ref(0);
 let plainComposing = false;
+// Reactive twin of plainComposing for the template: while an IME composition is
+// active we must show the REAL textarea text (and hide the syntax-highlight
+// overlay), otherwise the composing pinyin/candidates are invisible (the overlay
+// makes textarea text transparent) and CJK input looks broken.
+const plainImeActive = ref(false);
 let plainMermaidIdSeq = 0;
 const plainRenderCache = new Map<string, string>();
 
@@ -1310,10 +1315,12 @@ function handlePlainBlockInput(index: number, event: Event) {
 
 function handlePlainBlockCompositionStart() {
   plainComposing = true;
+  plainImeActive.value = true;
 }
 
 function handlePlainBlockCompositionEnd(index: number, event: CompositionEvent) {
   plainComposing = false;
+  plainImeActive.value = false;
   const el = event.target as HTMLTextAreaElement;
   autoSizePlainBlock(el);
   updatePlainBlock(index, el.value, el.selectionStart ?? el.value.length);
@@ -1928,7 +1935,7 @@ const cls = computed(() => ({
         :class="{ 'plain-block--active': index === plainActiveBlock }"
         @click="(event) => activatePlainBlockFromClick(index, event)"
       >
-        <div v-if="index === plainActiveBlock" class="plain-block__edit">
+        <div v-if="index === plainActiveBlock" class="plain-block__edit" :class="{ 'plain-block__edit--composing': plainImeActive }">
           <pre
             class="plain-block__highlight"
             :class="{ 'plain-textarea--wrap': settings.wordWrap }"
@@ -2249,6 +2256,16 @@ const cls = computed(() => ({
   color: transparent;
   -webkit-text-fill-color: transparent;
   caret-color: var(--accent);
+}
+/* During IME composition show the real textarea text and hide the highlight
+   overlay, so composing pinyin / candidates are visible (transparent text would
+   make CJK input look broken). */
+.plain-block__edit--composing .plain-block__textarea--overlay {
+  color: var(--text);
+  -webkit-text-fill-color: var(--text);
+}
+.plain-block__edit--composing .plain-block__highlight {
+  visibility: hidden;
 }
 /* Markdown token colours (mirror the CodeMirror highlight palette roughly). */
 .plain-block__highlight .md-heading { color: var(--accent, #ff9f40); font-weight: 600; }
