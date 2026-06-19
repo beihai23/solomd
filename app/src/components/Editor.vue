@@ -182,6 +182,11 @@ const plainBlocks = computed<PlainBlock[]>(() => {
 });
 
 function renderPlainBlock(src: string): string {
+  // A standalone thematic-break block ("---" / "***" / "___") would be misread
+  // as a YAML front-matter fence when rendered in isolation (each block renders
+  // on its own), producing an empty md-frontmatter element instead of a rule.
+  // Emit the <hr> directly.
+  if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(src)) return '<hr>';
   const root = extractMarkdownImageRoot(plainText.value || '');
   const key = `${props.tab.filePath || ''}\u0000${root}\u0000${src}`;
   const cached = plainRenderCache.get(key);
