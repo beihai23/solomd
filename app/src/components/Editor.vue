@@ -1855,6 +1855,8 @@ defineExpose({ gotoLine, insertImageFromPath, getViewLine, scrollToLine, insertM
 const cls = computed(() => ({
   'cm-host': true,
   'cm-host--dark': settings.theme === 'dark',
+  // #109 — constrain the editing column to a centered readable width.
+  'cm-host--limit-width': settings.limitEditorWidth,
 }));
 </script>
 
@@ -1974,6 +1976,22 @@ const cls = computed(() => ({
   width: 100%;
   overflow: hidden;
   background: var(--bg);
+}
+/* #109 — readable editing column. Centre the CodeMirror content (and the
+   Windows plain-block editor) instead of letting long lines run full-bleed.
+   Width matches the preview pane's readable column (760px) so editor and
+   preview line up. */
+.cm-host--limit-width :deep(.cm-content) {
+  max-width: 760px;
+  margin-left: auto;
+  margin-right: auto;
+}
+.cm-host--limit-width.plain-block-editor :deep(.plain-block),
+.cm-host--limit-width.plain-block-editor :deep(.plain-block__textarea),
+.cm-host--limit-width :deep(.plain-editor) {
+  max-width: 760px;
+  margin-left: auto;
+  margin-right: auto;
 }
 :deep(.cm-editor) {
   height: 100%;

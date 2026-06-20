@@ -55,6 +55,27 @@ async function copyGitUrl(node: Node) {
   toasts.success(t('explorer.copyGitUrlDone') || 'Git URL copied to clipboard.');
   closeCtx();
 }
+
+/** #120 — copy the node's absolute filesystem path (file OR folder). */
+async function copyNodePath(node: Node) {
+  await writeText(node.path);
+  toasts.success(t('explorer.copyPathDone') || 'Path copied.');
+  closeCtx();
+}
+
+/** #120 — copy the node's path relative to the workspace root, slash-normalised. */
+async function copyNodeRelativePath(node: Node) {
+  const folder = workspace.currentFolder;
+  const sep = node.path.includes('\\') ? '\\' : '/';
+  let rel = node.path;
+  if (folder) {
+    const folderNorm = folder.endsWith(sep) ? folder : folder + sep;
+    if (node.path.startsWith(folderNorm)) rel = node.path.slice(folderNorm.length);
+  }
+  await writeText(rel.split('\\').join('/'));
+  toasts.success(t('explorer.copyRelPathDone') || 'Relative path copied.');
+  closeCtx();
+}
 const tabs = useTabsStore();
 const { t } = useI18n();
 
@@ -428,6 +449,13 @@ async function openFolderAndClose() {
   closeSwitcher();
   await files.openFolder();
 }
+/** #118 — close the current workspace folder (return to the no-folder state).
+ *  `setFolder(null)` is already a supported "closed workspace" state; this just
+ *  exposes it, since previously a folder once opened could never be closed. */
+function closeFolder() {
+  closeSwitcher();
+  workspace.setFolder(null);
+}
 
 // Close the context menu on any outside click / escape.
 function onWindowClick() {
@@ -474,6 +502,12 @@ onBeforeUnmount(() => {
           :title="t('explorer.openFolder') || 'Open folder…'"
           @click="files.openFolder"
         >📁</button>
+        <button
+          v-if="workspace.currentFolder"
+          class="ftree__hbtn"
+          :title="t('explorer.closeFolder') || 'Close folder'"
+          @click="closeFolder"
+        >✕</button>
       </div>
     </div>
 
@@ -603,6 +637,12 @@ onBeforeUnmount(() => {
       </button>
       <button v-if="ctx.node" class="ftree__ctx-item ftree__ctx-item--danger" @click="deleteNode(ctx.node)">
         🗑 {{ t('explorer.delete') || 'Delete' }}
+      </button>
+      <button v-if="ctx.node" class="ftree__ctx-item" @click="copyNodePath(ctx.node)">
+        📋 {{ t('explorer.copyPath') || 'Copy Path' }}
+      </button>
+      <button v-if="ctx.node" class="ftree__ctx-item" @click="copyNodeRelativePath(ctx.node)">
+        📋 {{ t('explorer.copyRelPath') || 'Copy Relative Path' }}
       </button>
       <button v-if="ctx.node && !ctx.node.is_dir" class="ftree__ctx-item" @click="copyGitUrl(ctx.node)">
         🔗 {{ t('explorer.copyGitUrl') || 'Copy Git URL' }}

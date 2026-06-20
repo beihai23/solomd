@@ -432,6 +432,13 @@ function onSelectPdfFont(v: string) {
 
         <section data-cat="basics">
           <label>
+            <input type="checkbox" :checked="settings.limitEditorWidth" @change="settings.toggleLimitEditorWidth()" />
+            {{ t('settings.limitEditorWidth') || 'Limit editor width (readable column)' }}
+          </label>
+        </section>
+
+        <section data-cat="basics">
+          <label>
             <input
               type="checkbox"
               :checked="settings.codeBlockLineNumbers"

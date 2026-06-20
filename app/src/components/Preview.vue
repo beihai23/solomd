@@ -406,7 +406,7 @@ defineExpose({ scrollToLine, openSearch });
       ref="host"
       class="preview-content"
       :class="{
-        'preview-content--fit': settings.previewFitWidth && skin !== 'reading',
+        'preview-content--fit': settings.previewFitWidth,
         'preview-content--reading': skin === 'reading',
         'cb-numbered-on': settings.codeBlockLineNumbers,
       }"
@@ -703,6 +703,12 @@ defineExpose({ scrollToLine, openSearch });
   font-size: 18px;
   line-height: 1.8;
   color: var(--text);
+}
+/* #117 — let the Fit-Width toggle widen reading mode too (full-bleed reading
+   column instead of the fixed 720px). Needs higher specificity than the plain
+   `.preview-content--reading` rule above, which appears later in source. */
+.preview-content--reading.preview-content--fit {
+  max-width: none;
 }
 :where(.preview-content--reading) h1,
 :where(.preview-content--reading) h2,

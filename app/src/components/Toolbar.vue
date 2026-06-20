@@ -599,7 +599,7 @@ onBeforeUnmount(() => {
         <Icon :name="settings.livePreview ? 'live' : 'source'" />
       </button>
       <button
-        v-if="settings.viewMode === 'split' || settings.viewMode === 'preview'"
+        v-if="settings.viewMode === 'split' || settings.viewMode === 'preview' || settings.viewMode === 'reading'"
         class="icon-btn"
         @click="settings.togglePreviewFitWidth"
         :class="{ active: settings.previewFitWidth }"

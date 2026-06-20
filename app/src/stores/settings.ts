@@ -68,6 +68,9 @@ interface Settings {
   autoCheckUpdate: boolean;
   // Preview layout
   previewFitWidth: boolean;
+  // #109 — constrain the editor pane to a centered readable column instead of
+  // letting long lines stretch the full window width.
+  limitEditorWidth: boolean;
   // Custom CSS theme override (path to a .css file on disk)
   customCssPath: string;
   // Anonymous telemetry (Aptabase). Defaults true but user can opt out.
@@ -365,6 +368,7 @@ function defaults(): Settings {
       } catch { return 'en'; }
     })() as 'en' | 'zh' | 'ja' | 'ko' | 'de' | 'fr' | 'es' | 'pt' | 'it' | 'pl' | 'nl' | 'tr' | 'sv' | 'uk',
     previewFitWidth: false,
+    limitEditorWidth: false,
     customCssPath: '',
     telemetryEnabled: true,
     telemetryNoticeAck: false,
@@ -863,6 +867,10 @@ export const useSettingsStore = defineStore('settings', {
     },
     togglePreviewFitWidth() {
       this.previewFitWidth = !this.previewFitWidth;
+      this.persist();
+    },
+    toggleLimitEditorWidth() {
+      this.limitEditorWidth = !this.limitEditorWidth;
       this.persist();
     },
     toggleRagEnabled() {
