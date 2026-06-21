@@ -178,6 +178,88 @@ async function processMermaidBlocks(container: HTMLElement) {
   }
 }
 
+// #115 — html2canvas (bundled by html2pdf.js) can't parse modern CSS color
+// functions: `color(display-p3 …)`, `oklch()`, `oklab()`, `lab()`, `lch()`,
+// `hwb()`, `color-mix()`. When a theme or inline span resolves to one of these,
+// the whole export throws "Attempting to parse an unsupported color function"
+// and leaves the user staring at a half-dead UI. WebKit's getComputedStyle
+// returns these functions verbatim (e.g. "color(display-p3 1 0 0)"), so we walk
+// the off-screen render tree, resolve every offending color to a concrete sRGB
+// rgba() via a 1×1 canvas (canvas defaults to the sRGB colorspace and
+// gamut-maps for us), and pin it inline. html2canvas then only ever sees rgba().
+const MODERN_COLOR_FN = /\b(?:color|oklch|oklab|lab|lch|hwb|color-mix)\(/i;
+const COLOR_PROPS = [
+  'color',
+  'backgroundColor',
+  'borderTopColor',
+  'borderRightColor',
+  'borderBottomColor',
+  'borderLeftColor',
+  'outlineColor',
+  'textDecorationColor',
+  'columnRuleColor',
+  'caretColor',
+  'fill',
+  'stroke',
+] as const;
+
+function makeSrgbResolver(): (value: string) => string | null {
+  const canvas = document.createElement('canvas');
+  canvas.width = canvas.height = 1;
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  const cache = new Map<string, string | null>();
+  return (value: string): string | null => {
+    if (cache.has(value)) return cache.get(value)!;
+    let out: string | null = null;
+    try {
+      if (ctx) {
+        // A sentinel fill first: if the browser can't parse `value`, fillStyle
+        // silently keeps the previous value, so we'd read the sentinel back and
+        // know the conversion is unsafe — better to leave the original alone.
+        ctx.fillStyle = '#abcdef';
+        ctx.fillStyle = value;
+        ctx.clearRect(0, 0, 1, 1);
+        ctx.fillRect(0, 0, 1, 1);
+        const [r, g, b, a] = ctx.getImageData(0, 0, 1, 1).data;
+        out = `rgba(${r}, ${g}, ${b}, ${(a / 255).toFixed(3)})`;
+      }
+    } catch {
+      out = null;
+    }
+    cache.set(value, out);
+    return out;
+  };
+}
+
+/**
+ * Replace unsupported modern color functions in `root` (and all descendants)
+ * with resolved sRGB rgba(), set inline so html2canvas reads only colors it
+ * understands. Best-effort and fully guarded — sanitization must never be the
+ * reason an export fails. (#115)
+ */
+function sanitizeModernColors(root: HTMLElement): void {
+  try {
+    const resolve = makeSrgbResolver();
+    const els = [root, ...Array.from(root.querySelectorAll<HTMLElement>('*'))];
+    for (const el of els) {
+      const cs = getComputedStyle(el);
+      for (const prop of COLOR_PROPS) {
+        const v = (cs as unknown as Record<string, string>)[prop];
+        if (v && MODERN_COLOR_FN.test(v)) {
+          const rgba = resolve(v);
+          if (rgba) el.style.setProperty(camelToKebab(prop), rgba, 'important');
+        }
+      }
+    }
+  } catch {
+    /* never let color sanitization break the export */
+  }
+}
+
+function camelToKebab(s: string): string {
+  return s.replace(/[A-Z]/g, (m) => `-${m.toLowerCase()}`);
+}
+
 /**
  * @param source — markdown source (may include YAML front matter; rendering
  *   strips the block so it doesn't bleed into the PDF body).
@@ -250,6 +332,17 @@ export async function markdownToPdfBlob(
     if (cleaned) return;
     cleaned = true;
     root.remove();
+    // #115 — html2pdf.js renders into a full-screen `div.html2pdf__overlay`
+    // (position:fixed; z-index:1000; visible) and html2canvas clones into an
+    // `iframe.html2canvas-container`. On a thrown export — e.g. the unparseable
+    // `color()`/`oklch()` case above, before we sanitized it — these are left
+    // mounted: the overlay swallows EVERY mouse click (the UI feels frozen,
+    // Cmd-Q only) and the orphan iframe surfaces as a zoomable "nested page"
+    // that survives a restart. Sweep them so no export, success or failure,
+    // can wedge the app.
+    document
+      .querySelectorAll('.html2pdf__overlay, iframe.html2canvas-container')
+      .forEach((n) => n.remove());
   };
 
   try {
@@ -264,6 +357,11 @@ export async function markdownToPdfBlob(
       await processMermaidBlocks(page);
       // Give the browser a tick to lay everything out (KaTeX fonts especially).
       await new Promise((r) => setTimeout(r, 60));
+      // #115 — convert any modern CSS color functions (color()/oklch()/…) that
+      // html2canvas can't parse into resolved sRGB rgba(), now that Mermaid SVGs
+      // and KaTeX are in the tree. Runs on the live (offscreen) node so
+      // getComputedStyle sees the cascade.
+      sanitizeModernColors(page);
 
       // v2.5 F3: derive jsPDF / margin args from the resolved opts. When
       // the caller didn't customize anything, fall back to the legacy
