@@ -5,7 +5,7 @@ import Footer from '../../components/Footer.astro';
 import Giscus from '../../components/Giscus.astro';
 
 const lang = 'zh' as const;
-const VERSION = '4.7.3';
+const VERSION = '4.7.4';
 const baseUrl = `https://github.com/zhitongblog/solomd/releases/download/v${VERSION}`;
 ---
 
@@ -62,6 +62,13 @@ const baseUrl = `https://github.com/zhitongblog/solomd/releases/download/v${VERS
         <p style="opacity:.8;">
           <strong>macOS、Linux、iOS 和 Android 不受影响</strong> —— 继续使用现有的
           CodeMirror 编辑器。4.7 还修复了:命令面板在悬停或滚轮滚动列表时不再乱跳（#93）。
+        </p>
+        <p style="margin-top:14px;">
+          <strong>4.7.4</strong> —— Windows 编辑器的 <strong>Backspace / Delete</strong>
+          恢复可靠。Windows 实时编辑模式下每个段落是独立的文本框,因此在段落块开头按
+          Backspace、或在块末尾按 Delete 时会撞到文本框边界、毫无反应,删除"时灵时不灵"。
+          现在这两种边界按键会作用于整篇文档,像普通编辑器一样合并段落 / 删除空行,
+          光标与焦点也会跟随。
         </p>
         <p style="margin-top:14px;">
           <strong>4.7.3</strong> —— <strong>PDF 导出</strong>不再因主题或内容使用现代
