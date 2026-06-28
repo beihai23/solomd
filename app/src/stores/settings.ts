@@ -581,6 +581,12 @@ export const useSettingsStore = defineStore('settings', {
     },
     setFontSize(n: number) {
       this.fontSize = Math.max(10, Math.min(28, n));
+      // #133 — the Settings "字号 / Font size" slider is the single base size
+      // users expect to govern every view. Keep the preview pane in lockstep so
+      // changing it visibly resizes the rendered side too (split panes then
+      // match). The ⌃⌘+/− preview-zoom axis can still nudge previewFontSize on
+      // its own afterwards for users who want the panes to differ.
+      this.previewFontSize = Math.max(10, Math.min(32, this.fontSize));
       this.persist();
     },
     setFontFamily(f: string) {

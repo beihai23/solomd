@@ -391,9 +391,93 @@ function unwrapInlineHtmlBlocks(source: string): string {
     .join('');
 }
 
+/**
+ * #132 — re-indent nested list items to consistent 2-space steps.
+ *
+ * CommonMark turns content indented ≥4 spaces past its list item's content
+ * column into an *indented code block*. So a sub-list a user typed with a Tab
+ * (8 columns) under a 2-space parent silently renders as a code block with the
+ * `*`/`**` markers shown literally. Typora / Obsidian re-indent instead of
+ * punishing the typo; we do the same before parsing. We walk the document,
+ * derive each marker's nesting depth from the sequence of indents seen so far,
+ * and rewrite its leading whitespace to depth*2 spaces; continuation lines of
+ * an item shift by the same delta. Fenced code and genuine top-level indented
+ * code blocks (no enclosing list) are left untouched.
+ */
+function normalizeListIndent(source: string): string {
+  const expand = (ws: string): number => {
+    let n = 0;
+    for (const c of ws) n += c === '\t' ? 4 - (n % 4) : 1;
+    return n;
+  };
+  const lines = source.split('\n');
+  const out: string[] = [];
+  const stack: { orig: number; norm: number }[] = [];
+  let inFence = false;
+  let fenceChar = '';
+  let curDelta = 0;
+  let curOrig = -1;
+  const markRe = /^(\s*)([-*+]|\d{1,9}[.)])(\s+)(.*)$/;
+  const fenceRe = /^(\s*)(```+|~~~+)/;
+  for (const line of lines) {
+    const fm = fenceRe.exec(line);
+    if (fm) {
+      if (!inFence) {
+        inFence = true;
+        fenceChar = fm[2][0];
+        out.push(line);
+        continue;
+      }
+      if (fm[2][0] === fenceChar) {
+        inFence = false;
+        out.push(line);
+        continue;
+      }
+    }
+    if (inFence) {
+      out.push(line);
+      continue;
+    }
+    const m = markRe.exec(line);
+    if (m) {
+      const orig = expand(m[1]);
+      while (stack.length && orig < stack[stack.length - 1].orig) stack.pop();
+      const top = stack[stack.length - 1];
+      let norm: number;
+      if (top && orig === top.orig) {
+        norm = top.norm;
+      } else if (top && orig > top.orig) {
+        norm = top.norm + 2;
+        stack.push({ orig, norm });
+      } else {
+        norm = 0;
+        stack.length = 0;
+        stack.push({ orig, norm });
+      }
+      curDelta = norm - orig;
+      curOrig = orig;
+      out.push(' '.repeat(norm) + m[2] + m[3] + m[4]);
+    } else if (line.trim() === '') {
+      out.push(line);
+    } else {
+      const leadWs = (line.match(/^\s*/) as RegExpMatchArray)[0];
+      const lead = expand(leadWs);
+      if (stack.length && curOrig >= 0 && lead >= curOrig) {
+        out.push(' '.repeat(Math.max(0, lead + curDelta)) + line.slice(leadWs.length));
+      } else {
+        stack.length = 0;
+        curDelta = 0;
+        curOrig = -1;
+        out.push(line);
+      }
+    }
+  }
+  return out.join('\n');
+}
+
 export function renderMarkdown(source: string, options?: { breaks?: boolean }): string {
   lastFrontMatterRaw = null;
-  const normalized = unwrapInlineHtmlBlocks(source || '');
+  const normalized = normalizeListIndent(unwrapInlineHtmlBlocks(source || ''));
   const prevBreaks = md.options.breaks;
   if (options?.breaks !== undefined) md.set({ breaks: options.breaks });
   let body = '';

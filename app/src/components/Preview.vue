@@ -325,15 +325,42 @@ function handleLinkClick(e: MouseEvent) {
   }
   // Relative path: resolve against current file's directory and open in app
   if (props.filePath) {
-    const sep = props.filePath.lastIndexOf('/');
-    const dir = sep >= 0 ? props.filePath.substring(0, sep + 1) : '';
-    // Normalise: strip leading ./
-    const cleaned = href.replace(/^\.\//, '');
-    const resolved = dir + cleaned;
+    const resolved = resolveRelativePath(props.filePath, href);
     files.openPath(resolved, { bypassNewWindow: true }).catch((err) => {
       console.warn('[Preview] openPath failed:', resolved, err);
     });
   }
+}
+
+/**
+ * #116 — resolve a relative markdown link against the current file's path.
+ * Robust to (a) Windows back-slash separators, (b) percent-encoded hrefs
+ * (CJK filenames / spaces are URL-encoded by the renderer), and (c) `../` /
+ * `./` traversal. The result is emitted in the base path's separator style so
+ * the Rust side opens it on every platform.
+ */
+function resolveRelativePath(basePath: string, href: string): string {
+  // Strip any #fragment / ?query the anchor may carry, then decode.
+  let rel = href.replace(/[#?].*$/, '');
+  try {
+    rel = decodeURIComponent(rel);
+  } catch {
+    /* malformed encoding — fall back to the raw href */
+  }
+  const winStyle = basePath.includes('\\') && !basePath.includes('/');
+  const sepCh = winStyle ? '\\' : '/';
+  // Directory segments of the current file (drop the file name itself).
+  const segs = basePath.split(/[\\/]+/);
+  segs.pop();
+  for (const part of rel.split(/[\\/]+/)) {
+    if (part === '' || part === '.') continue;
+    if (part === '..') {
+      if (segs.length > 1) segs.pop();
+      continue;
+    }
+    segs.push(part);
+  }
+  return segs.join(sepCh);
 }
 
 onMounted(async () => {
@@ -460,7 +487,10 @@ defineExpose({ scrollToLine, openSearch });
   margin: 0 auto;
   padding: 28px 36px 64px;
   color: var(--text);
-  font-family: var(--font-ui);
+  /* #133 — honor the editor `fontFamily` setting (set as `--content-font-family`
+     in App.vue) so the rendered pane matches the editor in split view. Falls
+     back to the UI font when unset. */
+  font-family: var(--content-font-family, var(--font-ui));
   /* v4.3.0 PR #74 — preview-only font size; driven by settings.previewFontSize
      via the `--content-font-size` CSS custom property set in App.vue. */
   font-size: var(--content-font-size, 15px);

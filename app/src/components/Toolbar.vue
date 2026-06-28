@@ -14,6 +14,7 @@ import { cleanAIArtifacts } from '../lib/clean-ai';
 import { useI18n } from '../i18n';
 import { openPath } from '@tauri-apps/plugin-opener';
 import { open as openFileDialog } from '@tauri-apps/plugin-dialog';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 import { isIOS, isMacOS } from '../lib/platform';
 import { IS_APP_STORE_BUILD } from '../lib/app-build';
 import { EditorView } from '@codemirror/view';
@@ -45,6 +46,44 @@ const isMarkdown = computed(() => tabs.activeTab?.language === 'markdown');
 // and get neither the pad nor the drag region. Computed once at module init
 // (platform doesn't change at runtime).
 const macTitleBar = isMacOS();
+
+// #127 — drag the window by the title bar. The declarative
+// `data-tauri-drag-region` attribute proved unreliable on macOS once the
+// unified title bar shipped (the empty spacer carried the attr yet the window
+// would not move). Drive the OS drag explicitly via `startDragging()` on
+// mousedown over any non-interactive region of the bar, and replicate the
+// native double-click-to-zoom. Listener is in the capture phase so it fires
+// before any child stops propagation, and only runs inside the Tauri shell.
+function isInteractiveTitleBarTarget(el: EventTarget | null): boolean {
+  const node = el as HTMLElement | null;
+  return !!node?.closest?.(
+    'button, input, select, textarea, a, [contenteditable="true"], .dropdown__menu, [data-no-drag]',
+  );
+}
+function onTitleBarMouseDown(e: MouseEvent) {
+  if (!macTitleBar || e.button !== 0 || e.detail > 1) return;
+  if (isInteractiveTitleBarTarget(e.target)) return;
+  if (!('__TAURI_INTERNALS__' in window)) return;
+  void getCurrentWindow().startDragging();
+}
+function onTitleBarDblClick(e: MouseEvent) {
+  if (!macTitleBar) return;
+  if (isInteractiveTitleBarTarget(e.target)) return;
+  if (!('__TAURI_INTERNALS__' in window)) return;
+  void getCurrentWindow().toggleMaximize();
+}
+
+// #134 — when the bar overflows on a narrow window, let a plain mouse wheel
+// scroll it horizontally so the clipped buttons stay reachable (trackpads
+// already emit horizontal deltas natively). Leave Ctrl/Cmd+wheel alone — that
+// is the app-wide zoom gesture handled in App.vue.
+function onToolbarWheel(e: WheelEvent) {
+  if (e.ctrlKey || e.metaKey || e.deltaY === 0) return;
+  const el = e.currentTarget as HTMLElement;
+  if (el.scrollWidth <= el.clientWidth) return;
+  el.scrollLeft += e.deltaY;
+  e.preventDefault();
+}
 
 /**
  * v2.5 F6 — open the CJK proofread panel. App.vue listens for this
@@ -312,12 +351,11 @@ onBeforeUnmount(() => {
   <div
     class="toolbar"
     :class="{ 'toolbar--mac': macTitleBar }"
-    :data-tauri-drag-region="macTitleBar ? '' : undefined"
+    @mousedown.capture="onTitleBarMouseDown"
+    @dblclick="onTitleBarDblClick"
+    @wheel="onToolbarWheel"
   >
-    <div
-      class="toolbar__brand"
-      :data-tauri-drag-region="macTitleBar ? '' : undefined"
-    >
+    <div class="toolbar__brand">
       <span class="brand__hash">#</span><span class="brand__md">MD</span>
     </div>
 
@@ -325,7 +363,6 @@ onBeforeUnmount(() => {
       v-if="tabs.activeTab?.fileName"
       class="toolbar__title"
       :title="tabs.activeTab?.filePath || tabs.activeTab?.fileName"
-      :data-tauri-drag-region="macTitleBar ? '' : undefined"
     >{{ tabs.activeTab.fileName }}</span>
 
     <div class="toolbar__group">
@@ -539,10 +576,7 @@ onBeforeUnmount(() => {
       </button>
     </div>
 
-    <div
-      class="toolbar__spacer"
-      :data-tauri-drag-region="macTitleBar ? '' : undefined"
-    ></div>
+    <div class="toolbar__spacer"></div>
 
     <div class="toolbar__group" v-if="isMarkdown">
       <button
@@ -694,17 +728,20 @@ onBeforeUnmount(() => {
   background: var(--bg-elev);
   border-bottom: 1px solid var(--border);
   user-select: none;
-  /* NB: do NOT set overflow on this element. Each toolbar group hosts
-     `.dropdown__menu` items via `position: absolute`, which need to
-     escape this strip downward into the editor area. v3.6.0 added
-     `overflow-x: auto` here to address Mac narrow-window clipping
-     (issue #181) — but the browser then escalated overflow-y to
-     auto/clip too, so every dropdown (New / Open / Insert / Copy /
-     Export) was silently truncated and click events fell through to
-     the editor below. v3.6.1 reverts the overflow rule; the original
-     #181 fix needs to be redone with `<Teleport>` for dropdowns or a
-     media-query-based group collapse. Tracked for v3.7. */
+  /* #134 — on narrow windows the button groups used to overflow the strip and
+     become unclickable (no scroll). The old #181 attempt at `overflow-x: auto`
+     was reverted because dropdown menus were `position: absolute` inside the
+     bar and got clipped. They are now `<Teleport>`-ed to <body> (see the
+     `.dropdown__menu` blocks below) and repositioned on scroll via
+     `onViewportChange`, so the strip can scroll horizontally without clipping
+     any menu. overflow-y stays hidden so a stray vertical scrollbar can't eat
+     into the thin title bar. */
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none; /* Firefox: hide the bar, keep wheel/trackpad scroll */
 }
+/* WebKit: hide the horizontal scrollbar so it doesn't shrink the ~40px bar. */
+.toolbar::-webkit-scrollbar { height: 0; width: 0; }
 /* v4.6 unified title bar — macOS only. The native traffic-light buttons are
    overlaid at the top-left by `titleBarStyle: "Overlay"`; reserve room for
    them so they don't sit on top of the brand / New button. ~72px clears the

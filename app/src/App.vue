@@ -52,7 +52,7 @@ import UnsavedDialog from './components/UnsavedDialog.vue';
 import FileChangedDialog from './components/FileChangedDialog.vue';
 import Toast from './components/Toast.vue';
 import { useTabsStore } from './stores/tabs';
-import { useSettingsStore } from './stores/settings';
+import { useSettingsStore, buildEditorFontStack } from './stores/settings';
 import { useWindowsStore, isAuxLabel } from './stores/windows';
 import { useTilesStore } from './stores/tiles';
 import { usePomodoroStore } from './stores/pomodoro';
@@ -247,9 +247,17 @@ useFileWatcher(showFileChangedDialog);
 // preview + split (window-level capture handler). Trackpad pinch also arrives
 // here (browsers set ctrlKey on pinch), so pinch-to-zoom works too. passive:false
 // lets us preventDefault so the page doesn't scroll while zooming.
+let lastWheelZoomAt = 0;
 function onWheelZoom(e: WheelEvent): void {
   if (!(e.ctrlKey || e.metaKey)) return;
   e.preventDefault();
+  if (e.deltaY === 0) return;
+  // #125 — a trackpad pinch / momentum wheel fires dozens of events per gesture;
+  // applying a 0.1 step to each rocketed the zoom and made the layout shake.
+  // Throttle to one step per ~60ms so zooming is smooth and controllable.
+  const now = Date.now();
+  if (now - lastWheelZoomAt < 60) return;
+  lastWheelZoomAt = now;
   const dir = e.deltaY < 0 ? 1 : -1;
   settings.setGlobalZoom((settings.globalZoom || 1) + dir * 0.1);
 }
@@ -436,6 +444,17 @@ watchEffect(() => {
   document.documentElement.style.setProperty(
     '--content-font-size',
     `${settings.previewFontSize || 15}px`,
+  );
+});
+
+// #133 — the rendered preview previously ignored the editor `fontFamily`
+// setting (it was hardcoded to the UI font), so in split view the two panes
+// used different typefaces. Surface the chosen face — with the same CJK
+// fallback stack the editor uses — so Preview.vue / ReadingView render in it.
+watchEffect(() => {
+  document.documentElement.style.setProperty(
+    '--content-font-family',
+    buildEditorFontStack(settings.fontFamily),
   );
 });
 
@@ -1154,42 +1173,49 @@ const visibleRsPanes = computed(() => {
     .map((id) => ({ id: id as 'search' | 'outline' | 'backlinks' | 'relationships' | 'tags' | 'neighborhood' | 'types' | 'history' | 'inspector' | 'agent' }));
 });
 
-// v4.3.0 issue #57b — HTML5 drag state for right-sidebar pane reordering.
-// Holding null = nothing dragging; a string = the pane id currently being
-// dragged. The drop target index is computed by the dragover handler.
+// #131 — sidebar pane reordering via the ⋮⋮ grip.
+//
+// This used HTML5 drag-and-drop (`draggable` + dragstart/dragover/drop), but
+// the Tauri webview ships with `dragDropEnabled: true` (the app needs the
+// native OS file-drop for "drop a file to open it" + image drop), and that
+// native handler swallows in-webview HTML5 DnD — so the grip silently did
+// nothing. Pointer events are not intercepted, so we drive the reorder
+// manually: pointerdown on the grip → track the pane under the cursor →
+// pointerup commits the move. Works on mouse, trackpad and touch alike.
 const draggingPaneId = ref<string | null>(null);
 const dragOverPaneId = ref<string | null>(null);
-function onPaneDragStart(e: DragEvent, id: string) {
-  draggingPaneId.value = id;
-  if (e.dataTransfer) {
-    e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('application/x-solomd-rs-pane', id);
-  }
-}
-function onPaneDragOver(e: DragEvent, id: string) {
-  if (!draggingPaneId.value || draggingPaneId.value === id) return;
+function startPaneReorder(e: PointerEvent, id: string) {
+  if (e.button !== 0 && e.pointerType === 'mouse') return;
   e.preventDefault();
-  dragOverPaneId.value = id;
-  if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
-}
-function onPaneDragLeave(id: string) {
-  if (dragOverPaneId.value === id) dragOverPaneId.value = null;
-}
-function onPaneDrop(_e: DragEvent, targetId: string) {
-  const src = draggingPaneId.value;
-  draggingPaneId.value = null;
+  draggingPaneId.value = id;
   dragOverPaneId.value = null;
-  if (!src || src === targetId) return;
-  // Find the target's index in the full order list (not just the visible
-  // subset) so reordering survives toggling pane visibility off + on.
-  const order = [...(settings.rsPaneOrder || [])];
-  const targetIdx = order.indexOf(targetId);
-  if (targetIdx < 0) return;
-  settings.moveRsPane(src, targetIdx);
-}
-function onPaneDragEnd() {
-  draggingPaneId.value = null;
-  dragOverPaneId.value = null;
+  const paneUnder = (x: number, y: number): string | null => {
+    const host = (document.elementFromPoint(x, y) as HTMLElement | null)?.closest(
+      '[data-rs-pane]',
+    ) as HTMLElement | null;
+    return host?.getAttribute('data-rs-pane') || null;
+  };
+  const onMove = (m: PointerEvent) => {
+    const over = paneUnder(m.clientX, m.clientY);
+    dragOverPaneId.value = over && over !== id ? over : null;
+  };
+  const onUp = () => {
+    document.removeEventListener('pointermove', onMove);
+    document.removeEventListener('pointerup', onUp);
+    const src = draggingPaneId.value;
+    const tgt = dragOverPaneId.value;
+    draggingPaneId.value = null;
+    dragOverPaneId.value = null;
+    if (!src || !tgt || src === tgt) return;
+    // Index into the full order list (not just the visible subset) so the
+    // reorder survives toggling pane visibility off + on.
+    const order = [...(settings.rsPaneOrder || [])];
+    const targetIdx = order.indexOf(tgt);
+    if (targetIdx < 0) return;
+    settings.moveRsPane(src, targetIdx);
+  };
+  document.addEventListener('pointermove', onMove);
+  document.addEventListener('pointerup', onUp);
 }
 
 // Sidebar visibility / pane composition changes the editor's available
@@ -1313,16 +1339,11 @@ watchEffect(() => { void settings.aiEnabled; void settings.aiProvider; refreshAi
                 dragOverPaneId === p.id ? 'rs-pane-host--drop-target' : '',
               ]"
               :style="paneStyle(p.id)"
-              @dragover="onPaneDragOver($event, p.id)"
-              @dragleave="onPaneDragLeave(p.id)"
-              @drop="onPaneDrop($event, p.id)"
             >
               <div
                 class="rs-pane-grip"
-                draggable="true"
                 :title="t('rsPane.dragToReorder')"
-                @dragstart="onPaneDragStart($event, p.id)"
-                @dragend="onPaneDragEnd"
+                @pointerdown="startPaneReorder($event, p.id)"
               >⋮⋮</div>
               <GlobalSearch
                 v-if="p.id === 'search'"
@@ -1380,16 +1401,11 @@ watchEffect(() => { void settings.aiEnabled; void settings.aiProvider; refreshAi
                 dragOverPaneId === p.id ? 'rs-pane-host--drop-target' : '',
               ]"
               :style="paneStyle(p.id)"
-              @dragover="onPaneDragOver($event, p.id)"
-              @dragleave="onPaneDragLeave(p.id)"
-              @drop="onPaneDrop($event, p.id)"
             >
               <div
                 class="rs-pane-grip"
-                draggable="true"
                 :title="t('rsPane.dragToReorder')"
-                @dragstart="onPaneDragStart($event, p.id)"
-                @dragend="onPaneDragEnd"
+                @pointerdown="startPaneReorder($event, p.id)"
               >⋮⋮</div>
               <GlobalSearch
                 v-if="p.id === 'search'"
@@ -1526,8 +1542,11 @@ watchEffect(() => { void settings.aiEnabled; void settings.aiProvider; refreshAi
 .app {
   display: flex;
   flex-direction: column;
-  height: 100vh;
-  width: 100vw;
+  /* #125 — 100% (not 100vw/100vh) so the app-wide CSS `zoom` doesn't render
+     the root wider/taller than the window (vw/vh ignore zoom). See the matching
+     note in main.css on `html, body, #app`. */
+  height: 100%;
+  width: 100%;
   background: var(--bg);
   color: var(--text);
   /* v4.3.x issue #73 — respect mobile system-bar insets so the toolbar
@@ -1698,6 +1717,9 @@ watchEffect(() => { void settings.aiEnabled; void settings.aiProvider; refreshAi
   cursor: grab;
   user-select: none;
   -webkit-user-select: none;
+  /* #131 — pointer-driven reorder: stop the browser turning a vertical drag on
+     the grip into a scroll/pan gesture so pointermove tracking stays clean. */
+  touch-action: none;
   background: transparent;
   transition: background 120ms, color 120ms;
 }
