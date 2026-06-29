@@ -93,7 +93,11 @@ pdf-extract = "0.7"            # PDF text extraction
 notify = "8"
 notify-debouncer-mini = "0.7"
 serde_yaml = "0.9"
-sha2 = "0.10"                  # cache key hashing
+sha2 = "0.10"                  # cache key hashing + image-bed S3 SigV4 payload hash
+# v4.8 image bed — S3 SigV4 signing (HMAC-SHA256 key chain) + GitHub contents
+# API base64 body. `hex` / `chrono` (clock) are already in the tree below.
+hmac = "0.12"
+base64 = "0.22"
 once_cell = "1"                # global index state
 
 # v2.0 spellcheck (F2): Hunspell wrapped in pure-Rust port
@@ -110,7 +114,7 @@ keyring = { version = "3", default-features = false, features = [
   "sync-secret-service",
   "crypto-rust",
 ] }
-reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls", "multipart"] }
 futures-util = "0.3"           # for stream consumption in ai_proxy
 async-stream = "0.3"           # streaming responses to the frontend
 

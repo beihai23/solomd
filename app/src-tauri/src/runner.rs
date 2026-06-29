@@ -1,6 +1,9 @@
 #[path = "commands.rs"]
 mod commands;
 
+#[path = "image_upload.rs"]
+mod image_upload;
+
 #[path = "search.rs"]
 mod search;
 
@@ -691,6 +694,7 @@ pub fn run_with(initial_file: Option<String>) {
             commands::write_binary_file,
             commands::print_webview,
             commands::copy_file,
+            image_upload::upload_image,
             commands::list_dir,
             commands::fs_create_file,
             commands::fs_create_dir,

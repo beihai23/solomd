@@ -50,6 +50,7 @@ import AboutDialog from './components/AboutDialog.vue';
 import AgentSetupWizard from './components/AgentSetupWizard.vue';
 import UnsavedDialog from './components/UnsavedDialog.vue';
 import FileChangedDialog from './components/FileChangedDialog.vue';
+import ImageUrlDialog from './components/ImageUrlDialog.vue';
 import Toast from './components/Toast.vue';
 import { useTabsStore } from './stores/tabs';
 import { useSettingsStore, buildEditorFontStack } from './stores/settings';
@@ -117,6 +118,21 @@ const selectionText = ref('');
 const paletteOpen = ref(false);
 const quickSwitcherOpen = ref(false);
 const settingsOpen = ref(false);
+// "Image from URL" dialog (网络图片). Opened via the `solomd:open-image-url-
+// dialog` window event (toolbar Insert menu / command palette); on confirm it
+// dispatches `solomd:insert-image-url` to the focused pane's editor.
+const imageUrlDialogOpen = ref(false);
+function onOpenImageUrlDialog() {
+  imageUrlDialogOpen.value = true;
+}
+function onImageUrlConfirm(url: string, alt: string) {
+  imageUrlDialogOpen.value = false;
+  window.dispatchEvent(
+    new CustomEvent('solomd:insert-image-url', {
+      detail: { url, alt, paneId: tiles.focusedPaneId },
+    }),
+  );
+}
 // When a caller wants the Settings panel to land on a specific category
 // (e.g. the AI button → `integrations`), set this before opening; the
 // SettingsPanel watches it and switches activeCategory accordingly.
@@ -848,6 +864,7 @@ onMounted(async () => {
   // as a named handler (see `onOpenAgentWizard` below) so onBeforeUnmount
   // can detach it — otherwise every HMR remount stacks another listener.
   window.addEventListener('solomd:open-agent-wizard', onOpenAgentWizard);
+  window.addEventListener('solomd:open-image-url-dialog', onOpenImageUrlDialog);
 
   // Initialize tile layout: validate persisted state or create default
   tiles.validate(tabs.tabs);
@@ -1050,6 +1067,7 @@ onBeforeUnmount(() => {
   window.removeEventListener(VIEW_CLOSE_EVENT, onCloseView as EventListener);
   window.removeEventListener('solomd:open-settings', onOpenSettingsEvent as EventListener);
   window.removeEventListener('solomd:open-agent-wizard', onOpenAgentWizard);
+  window.removeEventListener('solomd:open-image-url-dialog', onOpenImageUrlDialog);
   if (unlistenOpened) {
     unlistenOpened();
     unlistenOpened = null;
@@ -1522,6 +1540,11 @@ watchEffect(() => { void settings.aiEnabled; void settings.aiProvider; refreshAi
       @save="onUnsavedAction('save')"
       @discard="onUnsavedAction('discard')"
       @cancel="onUnsavedAction('cancel')"
+    />
+    <ImageUrlDialog
+      :open="imageUrlDialogOpen"
+      @confirm="onImageUrlConfirm"
+      @cancel="imageUrlDialogOpen = false"
     />
     <SessionRestoreDialog />
     <!-- v4.6 F5 — saved-view create/edit modal (self-mounts via window events). -->

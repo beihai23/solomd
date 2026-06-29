@@ -293,6 +293,12 @@ async function pickAndInsertImage() {
   );
 }
 
+// Insert an image by external URL (网络图片) — opens the dialog mounted in App.vue.
+function openImageUrlDialog() {
+  insertOpen.value = false;
+  window.dispatchEvent(new CustomEvent('solomd:open-image-url-dialog'));
+}
+
 function shortPath(p: string) {
   const parts = p.split(/[\\/]/);
   return parts[parts.length - 1] || p;
@@ -543,6 +549,9 @@ onBeforeUnmount(() => {
             </button>
             <button class="dropdown__item dropdown__item--single" @mousedown.prevent="pickAndInsertImage()">
               <span class="dropdown__name">{{ t('toolbar.insertImage') }}</span>
+            </button>
+            <button class="dropdown__item dropdown__item--single" @mousedown.prevent="openImageUrlDialog()">
+              <span class="dropdown__name">{{ t('toolbar.insertNetworkImage') }}</span>
             </button>
             <button class="dropdown__item dropdown__item--single" @mousedown.prevent="dispatchInsert('> $|$')">
               <span class="dropdown__name">{{ t('toolbar.insertQuote') }}</span>

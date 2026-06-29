@@ -279,6 +279,30 @@ export function useCommands(): Command[] {
     },
 
     {
+      id: 'editor.insertImageUrl',
+      title: 'Image from URL…',
+      hint: 'Insert a Markdown image link for an external image URL (image host / 图床)',
+      run: () => window.dispatchEvent(new CustomEvent('solomd:open-image-url-dialog')),
+    },
+
+    {
+      id: 'image.uploadLocalImages',
+      title: 'Upload local images to image host…',
+      hint: 'Upload every local image in this note to the configured image host and rewrite the links',
+      run: () => {
+        if (!tabs.activeTab) {
+          toasts.warning('No active document');
+          return;
+        }
+        window.dispatchEvent(
+          new CustomEvent('solomd:upload-local-images', {
+            detail: { paneId: tiles.focusedPaneId },
+          }),
+        );
+      },
+    },
+
+    {
       id: 'format.markdown',
       title: 'Format Markdown (Prettier)',
       shortcut: 'Ctrl+Alt+L',

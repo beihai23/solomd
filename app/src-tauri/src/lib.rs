@@ -1,5 +1,7 @@
 pub mod app_build;
 pub mod commands;
+// Image-bed (图床) upload: PicGo / shell command / sm.ms / S3-compatible / GitHub.
+pub mod image_upload;
 pub mod search;
 pub mod workspace_index;
 pub mod spellcheck;
@@ -155,6 +157,7 @@ pub fn run() {
             commands::write_binary_file,
             commands::print_webview,
             commands::copy_file,
+            image_upload::upload_image,
             commands::list_dir,
             commands::fs_create_file,
             commands::fs_create_dir,

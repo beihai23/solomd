@@ -24,13 +24,15 @@ import { vim } from '@replit/codemirror-vim';
 import { cmThemeFor } from '../lib/themes';
 import { useTabsStore } from '../stores/tabs';
 import { useSettingsStore, buildEditorFontStack } from '../stores/settings';
+import { useToastsStore } from '../stores/toasts';
 import type { Tab } from '../types';
 import { livePreviewExtension, richHighlightOnly } from '../lib/cm-live-preview';
 import { liveEditExtension } from '../lib/cm-live-render';
 import { liveBlocksExtension, liveBlocksTheme, extractImageRoot } from '../lib/cm-live-blocks';
 import { findTldrawFences, replaceBoardSnapshot } from '../lib/tldraw-board';
 import { dragAwareExtension } from '../lib/cm-drag-aware';
-import { imagePasteExtension, insertImageFromPath as cmInsertImageFromPath, handleTextareaImagePaste } from '../lib/cm-image-paste';
+import { imagePasteExtension, insertImageFromPath as cmInsertImageFromPath, handleTextareaImagePaste, type ImagePasteOptions } from '../lib/cm-image-paste';
+import { resolveUploader, uploadImage, type ImageUploadSettings } from '../lib/image-upload';
 import { focusModeExtension, typewriterModeExtension } from '../lib/cm-focus-mode';
 import { wikilinkExtension, wikilinkComplete } from '../lib/cm-wikilink';
 import { tagAutocompleteExtension, tagComplete } from '../lib/cm-tag-autocomplete';
@@ -102,7 +104,29 @@ const emit = defineEmits<{
 const tabs = useTabsStore();
 const settings = useSettingsStore();
 const workspaceIndex = useWorkspaceIndexStore();
+const toasts = useToastsStore();
 const { t } = useI18n();
+
+/** Shared image paste/drop/insert options — file context + the configured
+ *  image-host uploader (图床) + toast surface. Used by the CodeMirror paste
+ *  extension, the plain-textarea paste path, and `insertImageFromPath`. */
+function imagePasteOpts(): ImagePasteOptions {
+  return {
+    getFilePath: () => props.tab.filePath,
+    getDocContent: () => props.tab.content,
+    getAttachmentMode: () => settings.attachmentMode,
+    getAssetsDirName: () => settings.assetsDirName,
+    getCustomPath: () => settings.attachmentCustomPath,
+    getUploader: (filename: string) =>
+      resolveUploader(settings as unknown as ImageUploadSettings, filename),
+    notify: (kind, key, params) => {
+      const msg = t(key, params as Record<string, string | number>);
+      if (kind === 'success') toasts.success(msg);
+      else if (kind === 'error') toasts.error(msg);
+      else toasts.info(msg);
+    },
+  };
+}
 const pandoc = usePandocExport();
 let cachedCitations: CitationEntry[] = [];
 pandoc.loadCitations().then((c) => { cachedCitations = c; }).catch(() => {});
@@ -528,17 +552,7 @@ function syncPlainLiveScroll() {
 function handlePlainPaste(event: ClipboardEvent) {
   // Clipboard image paste (Ctrl+V of a screenshot). Text paste falls through to
   // the textarea's native handling. plainInsertText records its own undo step.
-  void handleTextareaImagePaste(
-    event,
-    {
-      getFilePath: () => props.tab.filePath,
-      getDocContent: () => props.tab.content,
-      getAttachmentMode: () => settings.attachmentMode,
-      getAssetsDirName: () => settings.assetsDirName,
-      getCustomPath: () => settings.attachmentCustomPath,
-    },
-    (text) => plainInsertText(text),
-  );
+  void handleTextareaImagePaste(event, imagePasteOpts(), (text) => plainInsertText(text));
 }
 
 function plainInsertText(snippet: string) {
@@ -1525,13 +1539,7 @@ function buildExtensions() {
     spellCheckCompartment.of(spellCheckExt(props.spellCheck)),
     focusCompartment.of(props.focusMode ? focusModeExtension() : []),
     typewriterCompartment.of(props.typewriterMode ? typewriterModeExtension() : []),
-    imagePasteExtension({
-      getFilePath: () => props.tab.filePath,
-      getDocContent: () => props.tab.content,
-      getAttachmentMode: () => settings.attachmentMode,
-      getAssetsDirName: () => settings.assetsDirName,
-      getCustomPath: () => settings.attachmentCustomPath,
-    }),
+    imagePasteExtension(imagePasteOpts()),
     ...(!windowsImeSafeMode && props.tab.language === 'markdown' && !markdownSafeMode
       ? [
           wikilinkExtension(),
@@ -1849,12 +1857,106 @@ async function insertImageFromPath(srcPath: string): Promise<void> {
     return;
   }
   if (!view) return;
-  await cmInsertImageFromPath(view, srcPath, {
-    getFilePath: () => props.tab.filePath,
-    getDocContent: () => props.tab.content,
-    getAttachmentMode: () => settings.attachmentMode,
-    getAssetsDirName: () => settings.assetsDirName,
-  });
+  await cmInsertImageFromPath(view, srcPath, imagePasteOpts());
+}
+
+/** Insert a markdown image link for a user-supplied URL (网络图片) at the
+ *  cursor — no upload, no local copy. Used by the "Image from URL…" dialog. */
+function insertImageUrl(url: string, alt = ''): void {
+  const clean = (url || '').trim();
+  if (!clean) return;
+  if (usePlainWindowsEditor) {
+    plainInsertText(`![${alt}](${clean})`);
+    return;
+  }
+  if (!view) return;
+  insertMarkdown(`![${alt}](${clean})`);
+}
+
+/**
+ * Upload every *local* image referenced in the current document to the
+ * configured image host and rewrite each link to the hosted URL. Skips links
+ * that are already remote (http/https/data). Reports progress + a final count
+ * via toasts. No-op (with a hint) when no uploader is configured.
+ */
+async function uploadLocalImages(): Promise<void> {
+  if (!view) return;
+  const up0 = resolveUploader(settings as unknown as ImageUploadSettings, 'x.png');
+  if (settings.imageUploader === 'none' || !up0) {
+    toasts.info(t('toast.noUploaderConfigured'));
+    return;
+  }
+  const doc = view.state.doc.toString();
+  // Match markdown image links with a local (non-remote) src.
+  const re = /!\[[^\]]*\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g;
+  const targets: { src: string }[] = [];
+  const seen = new Set<string>();
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(doc))) {
+    const src = m[1];
+    if (/^(https?:|data:)/i.test(src)) continue;
+    if (seen.has(src)) continue;
+    seen.add(src);
+    targets.push({ src });
+  }
+  if (targets.length === 0) {
+    toasts.info(t('toast.noLocalImages'));
+    return;
+  }
+  let done = 0;
+  let uploaded = 0;
+  for (const tgt of targets) {
+    done++;
+    toasts.info(t('toast.uploadingProgress', { done, total: targets.length }));
+    try {
+      const abs = await resolveLocalImageAbsPath(tgt.src);
+      if (!abs) continue;
+      const filename = abs.split(/[\\/]/).pop() || 'image.png';
+      const resolved = resolveUploader(settings as unknown as ImageUploadSettings, filename);
+      if (!resolved) break;
+      const url = await uploadImage(resolved.cfg, abs);
+      // Replace every occurrence of this exact src in the live doc.
+      replaceAllImageSrc(tgt.src, url);
+      uploaded++;
+    } catch (err) {
+      console.error('[Editor] uploadLocalImages failed for', tgt.src, err);
+    }
+  }
+  if (uploaded > 0) toasts.success(t('toast.uploadedCount', { n: uploaded }));
+  else toasts.error(t('toast.imageUploadFailedShort'));
+}
+
+/** Resolve a markdown image src (relative / imageRoot / absolute) to an
+ *  absolute filesystem path for upload. */
+async function resolveLocalImageAbsPath(src: string): Promise<string | null> {
+  const { resolveImagePath } = await import('../lib/image-resolve');
+  const imageRoot = parseFrontMatterImageRoot(props.tab.content) ?? null;
+  const abs = resolveImagePath(decodeURIComponent(src), imageRoot, props.tab.filePath);
+  return abs || null;
+}
+
+/** Replace every `](oldSrc)` occurrence in the live doc with the new URL. */
+function replaceAllImageSrc(oldSrc: string, newUrl: string): void {
+  if (!view) return;
+  const doc = view.state.doc.toString();
+  const changes: { from: number; to: number; insert: string }[] = [];
+  const needle = `](${oldSrc})`;
+  let idx = doc.indexOf(needle);
+  while (idx >= 0) {
+    const from = idx + 2; // after `](`
+    const to = idx + 2 + oldSrc.length;
+    changes.push({ from, to, insert: newUrl });
+    idx = doc.indexOf(needle, idx + needle.length);
+  }
+  if (changes.length) view.dispatch({ changes });
+}
+
+/** Minimal front-matter `imageRoot` reader (mirror of the paste helper). */
+function parseFrontMatterImageRoot(source: string): string | undefined {
+  const fm = /^---\r?\n([\s\S]*?)\r?\n---/.exec(source);
+  if (!fm) return undefined;
+  const im = /^(?:imageRoot|image_root|typora-root-url)\s*:\s*(.+?)\s*$/m.exec(fm[1]);
+  return im ? im[1].replace(/^["']|["']$/g, '').trim() || undefined : undefined;
 }
 
 /** Returns the 1-indexed line currently at the top of the visible viewport. */
@@ -1920,7 +2022,7 @@ function insertMarkdown(snippet: string): void {
   view.focus();
 }
 
-defineExpose({ gotoLine, insertImageFromPath, getViewLine, scrollToLine, insertMarkdown });
+defineExpose({ gotoLine, insertImageFromPath, insertImageUrl, uploadLocalImages, getViewLine, scrollToLine, insertMarkdown });
 
 const cls = computed(() => ({
   'cm-host': true,

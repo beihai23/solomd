@@ -254,6 +254,8 @@ onMounted(() => {
   window.addEventListener('solomd:outline-goto', onOutlineGotoEvent);
   window.addEventListener('solomd:insert-markdown', onInsertMarkdownEvent);
   window.addEventListener('solomd:insert-image-path', onInsertImagePathEvent);
+  window.addEventListener('solomd:insert-image-url', onInsertImageUrlEvent);
+  window.addEventListener('solomd:upload-local-images', onUploadLocalImagesEvent);
   window.addEventListener('solomd:preview-search', onPreviewSearchEvent);
 });
 
@@ -263,6 +265,8 @@ onBeforeUnmount(() => {
   window.removeEventListener('solomd:outline-goto', onOutlineGotoEvent);
   window.removeEventListener('solomd:insert-markdown', onInsertMarkdownEvent);
   window.removeEventListener('solomd:insert-image-path', onInsertImagePathEvent);
+  window.removeEventListener('solomd:insert-image-url', onInsertImageUrlEvent);
+  window.removeEventListener('solomd:upload-local-images', onUploadLocalImagesEvent);
   window.removeEventListener('solomd:preview-search', onPreviewSearchEvent);
 });
 
@@ -286,6 +290,20 @@ function onInsertImagePathEvent(e: Event) {
   if (paneId !== props.paneId) return;
   const ed = editorRef.value as unknown as { insertImageFromPath?: (p: string) => void } | null;
   ed?.insertImageFromPath?.(path);
+}
+
+function onInsertImageUrlEvent(e: Event) {
+  const { url, alt, paneId } = (e as CustomEvent).detail;
+  if (paneId !== props.paneId) return;
+  const ed = editorRef.value as unknown as { insertImageUrl?: (u: string, a?: string) => void } | null;
+  ed?.insertImageUrl?.(url, alt || '');
+}
+
+function onUploadLocalImagesEvent(e: Event) {
+  const { paneId } = (e as CustomEvent).detail;
+  if (paneId !== props.paneId) return;
+  const ed = editorRef.value as unknown as { uploadLocalImages?: () => void } | null;
+  ed?.uploadLocalImages?.();
 }
 
 function onPreviewSearchEvent(e: Event) {

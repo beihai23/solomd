@@ -252,6 +252,40 @@ interface Settings {
   // only when attachmentMode is 'shared'; per-file mode always uses
   // `<stem>.assets/`. Empty string falls back to `_assets`.
   assetsDirName: string;
+  // ── Image upload / 图床 (external image hosting) ───────────────────────────
+  // Like Typora / MarkText: instead of (or alongside) copying a pasted/dropped
+  // image into the local attachments folder, upload it to an image host and
+  // insert the returned URL. `none` = current local-only behavior. The actual
+  // upload runs in the Rust `upload_image` command; the per-backend fields below
+  // are forwarded to it. See `lib/image-upload.ts` for the config builder.
+  imageUploader: 'none' | 'picgo' | 'command' | 'smms' | 's3' | 'github';
+  // Auto-upload pasted/dropped images. When false, images still save locally and
+  // the user uploads later via the command palette ("Upload local images…").
+  imageUploadOnPaste: boolean;
+  // Keep a local copy in the attachments folder too (link still points at the
+  // uploaded URL). When false, only a temp copy is made for the upload.
+  imageUploadKeepLocal: boolean;
+  // PicGo app's built-in HTTP server endpoint.
+  picgoEndpoint: string;
+  // Custom uploader command template; `{path}` is replaced with the image file.
+  imageUploadCommand: string;
+  // SM.MS API token (optional; empty = anonymous upload).
+  smmsToken: string;
+  // S3-compatible (AWS S3 / Aliyun OSS / Tencent COS / Cloudflare R2 / MinIO).
+  s3Endpoint: string;
+  s3Region: string;
+  s3Bucket: string;
+  s3AccessKeyId: string;
+  s3SecretAccessKey: string;
+  s3PathPrefix: string;
+  s3CustomDomain: string;
+  s3UsePathStyle: boolean;
+  // GitHub repo as an image host (served via raw.githubusercontent or jsDelivr).
+  ghImageRepo: string;
+  ghImageBranch: string;
+  ghImageToken: string;
+  ghImagePathPrefix: string;
+  ghImageCdn: 'raw' | 'jsdelivr';
   // v4.6 F6 — Inbox workflow. Master opt-out for the whole inbox surface
   // (file-tree row, status-bar pill, dedicated InboxView, ⌘E auto-advance).
   // Default on — mirrors Tolaria's per-vault InboxConfig.explicitOrganization,
@@ -436,6 +470,25 @@ function defaults(): Settings {
     attachmentMode: 'shared',
     assetsDirName: '_assets',
     attachmentCustomPath: './images/${filename}/',
+    imageUploader: 'none',
+    imageUploadOnPaste: true,
+    imageUploadKeepLocal: false,
+    picgoEndpoint: 'http://127.0.0.1:36677/upload',
+    imageUploadCommand: '',
+    smmsToken: '',
+    s3Endpoint: '',
+    s3Region: 'us-east-1',
+    s3Bucket: '',
+    s3AccessKeyId: '',
+    s3SecretAccessKey: '',
+    s3PathPrefix: 'images/',
+    s3CustomDomain: '',
+    s3UsePathStyle: false,
+    ghImageRepo: '',
+    ghImageBranch: 'main',
+    ghImageToken: '',
+    ghImagePathPrefix: 'images/',
+    ghImageCdn: 'jsdelivr',
     inboxWorkflowEnabled: true,
     autoAdvanceInboxAfterOrganize: true,
     _rsPanesBeforeHide: null,
@@ -1002,6 +1055,49 @@ export const useSettingsStore = defineStore('settings', {
       // back to the default when empty.
       const cleaned = (name || '').replace(/[\\/]/g, '').trim();
       this.assetsDirName = cleaned || '_assets';
+      this.persist();
+    },
+    /** Image-upload / 图床 config. One generic patch action — the Settings
+     *  panel binds each field through it. Only whitelisted keys are accepted so
+     *  a stray key can't pollute the persisted blob. */
+    setImageUpload(
+      patch: Partial<
+        Pick<
+          Settings,
+          | 'imageUploader'
+          | 'imageUploadOnPaste'
+          | 'imageUploadKeepLocal'
+          | 'picgoEndpoint'
+          | 'imageUploadCommand'
+          | 'smmsToken'
+          | 's3Endpoint'
+          | 's3Region'
+          | 's3Bucket'
+          | 's3AccessKeyId'
+          | 's3SecretAccessKey'
+          | 's3PathPrefix'
+          | 's3CustomDomain'
+          | 's3UsePathStyle'
+          | 'ghImageRepo'
+          | 'ghImageBranch'
+          | 'ghImageToken'
+          | 'ghImagePathPrefix'
+          | 'ghImageCdn'
+        >
+      >,
+    ) {
+      const keys: (keyof Settings)[] = [
+        'imageUploader', 'imageUploadOnPaste', 'imageUploadKeepLocal',
+        'picgoEndpoint', 'imageUploadCommand', 'smmsToken',
+        's3Endpoint', 's3Region', 's3Bucket', 's3AccessKeyId',
+        's3SecretAccessKey', 's3PathPrefix', 's3CustomDomain', 's3UsePathStyle',
+        'ghImageRepo', 'ghImageBranch', 'ghImageToken', 'ghImagePathPrefix', 'ghImageCdn',
+      ];
+      for (const k of keys) {
+        if (k in patch && (patch as any)[k] !== undefined) {
+          (this as any)[k] = (patch as any)[k];
+        }
+      }
       this.persist();
     },
     /** v4.3.0 PR #74 — editor-only font size convenience wrappers. The

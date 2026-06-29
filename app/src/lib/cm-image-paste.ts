@@ -16,6 +16,7 @@
 import { EditorView } from '@codemirror/view';
 import { invoke } from '@tauri-apps/api/core';
 import { tempDir, sep } from '@tauri-apps/api/path';
+import { uploadImage, type ResolvedUploader } from './image-upload';
 
 export interface ImagePasteOptions {
   getFilePath: () => string | undefined;
@@ -23,6 +24,18 @@ export interface ImagePasteOptions {
   getDocContent?: () => string;
   /** Override temp directory (mainly for tests). */
   tempDir?: string;
+  /** 图床 / image-host uploader resolved for a target filename, or null to
+   *  save locally only. When present and `.onPaste` is true, pasted/dropped
+   *  images are uploaded and the returned URL is inserted (with a local
+   *  fallback on failure). */
+  getUploader?: (filename: string) => ResolvedUploader | null;
+  /** Surface upload progress/results to the user (wired to toasts + i18n by
+   *  the editor). `key` is an i18n key under `toast.*`. */
+  notify?: (
+    kind: 'info' | 'success' | 'error',
+    key: string,
+    params?: Record<string, unknown>,
+  ) => void;
   /** v4.3.5 — `shared` (`_assets/`) vs `per-file` (`<stem>.assets/`).
    *  Defaults to `shared` if absent (back-compat for callers that haven't
    *  been updated yet). */
@@ -171,87 +184,183 @@ async function readFileAsUint8(file: File | Blob): Promise<Uint8Array> {
   return new Uint8Array(buf);
 }
 
-async function saveAndInsert(
-  view: EditorView,
-  bytes: Uint8Array,
-  ext: string,
-  opts: ImagePasteOptions,
-): Promise<void> {
-  const insertText = await saveImageBytes(bytes, ext, opts);
-  if (!insertText) return;
-  const pos = view.state.selection.main.head;
-  view.dispatch({
-    changes: { from: pos, insert: insertText },
-    selection: { anchor: pos + insertText.length },
-  });
+function getSep(): string {
+  try {
+    return sep();
+  } catch {
+    return '/';
+  }
+}
+
+function makeFilename(ext: string): string {
+  return `image-${timestamp()}-${randSuffix()}.${ext}`;
 }
 
 /**
- * Persist image bytes to the right location (front-matter imageRoot / assets dir
- * / temp) and return the markdown link to insert, or null on failure. Shared by
- * the CodeMirror editor and the Windows plain-textarea editor.
+ * Compute where a new image with `filename` should live locally, and the
+ * markdown link to insert for it — based on front-matter `imageRoot`, the
+ * attachment mode, or (no file path) the temp dir. Pure-ish: only touches
+ * `sep()` / `tempDir()`. Shared by the local-save and upload paths.
+ */
+async function prepareLocalTarget(
+  filename: string,
+  opts: ImagePasteOptions,
+): Promise<{ fullPath: string; insertText: string }> {
+  const sepCh = getSep();
+  const filePath = opts.getFilePath();
+  const imageRoot = opts.getDocContent ? parseImageRootFast(opts.getDocContent()) : null;
+
+  if (imageRoot && filePath) {
+    const rootAbs = imageRoot.startsWith('/') || /^[a-zA-Z]:[\\/]/.test(imageRoot);
+    const rootDir = rootAbs ? imageRoot : joinPath(dirnameOf(filePath, sepCh), imageRoot, sepCh);
+    return { fullPath: joinPath(rootDir, filename, sepCh), insertText: `![](${filename})` };
+  }
+  if (filePath) {
+    const mode = opts.getAttachmentMode ? opts.getAttachmentMode() : 'shared';
+    const sharedDir = opts.getAssetsDirName ? opts.getAssetsDirName() || '_assets' : '_assets';
+    const customPath = opts.getCustomPath ? opts.getCustomPath() : undefined;
+    const { dir: assetsDir, urlPrefix } = resolveAssetsDir(filePath, sepCh, mode, sharedDir, customPath);
+    return {
+      fullPath: joinPath(assetsDir, filename, sepCh),
+      insertText: `![](${urlPrefix}/${filename})`,
+    };
+  }
+  const t = await resolveTempDir(opts.tempDir);
+  const fullPath = joinPath(joinPath(t, 'solomd', sepCh), filename, sepCh);
+  // Forward slashes in the markdown URL — markdown-it eats `\` as escapes on
+  // Windows, mangling the preview src. (No-op on macOS/Linux.)
+  return { fullPath, insertText: `![](${fullPath.replace(/\\/g, '/')})` };
+}
+
+/** Temp path for an image we only need transiently (upload source when not
+ *  keeping a local copy). */
+async function prepareTempTarget(
+  filename: string,
+  opts: ImagePasteOptions,
+): Promise<string> {
+  const sepCh = getSep();
+  const t = await resolveTempDir(opts.tempDir);
+  return joinPath(joinPath(t, 'solomd', sepCh), filename, sepCh);
+}
+
+async function writeBytes(fullPath: string, bytes: Uint8Array): Promise<boolean> {
+  try {
+    await invoke('write_binary_file', { path: fullPath, data: Array.from(bytes) });
+    return true;
+  } catch (err) {
+    console.error('[cm-image-paste] failed to write image', err);
+    return false;
+  }
+}
+
+function insertAtCursor(view: EditorView, text: string): void {
+  const pos = view.state.selection.main.head;
+  view.dispatch({
+    changes: { from: pos, insert: text },
+    selection: { anchor: pos + text.length },
+  });
+}
+
+/** Replace the `![](token)` upload placeholder with `finalText`, locating it
+ *  live in the current doc so concurrent typing doesn't desync the position.
+ *  No-op if the user already deleted the placeholder. */
+function replaceToken(view: EditorView, token: string, finalText: string): void {
+  const needle = `![](${token})`;
+  const idx = view.state.doc.toString().indexOf(needle);
+  if (idx < 0) return;
+  view.dispatch({ changes: { from: idx, to: idx + needle.length, insert: finalText } });
+}
+
+/**
+ * Upload `srcPath` via the resolved uploader and return the markdown to insert:
+ * `![](url)` on success, or `fallback()` (a local link) on failure. Emits
+ * info/success/error toasts via `opts.notify`.
+ */
+async function performUpload(
+  up: ResolvedUploader,
+  srcPath: string,
+  opts: ImagePasteOptions,
+  fallback: () => Promise<string>,
+): Promise<string> {
+  opts.notify?.('info', 'toast.imageUploading');
+  try {
+    const url = await uploadImage(up.cfg, srcPath);
+    opts.notify?.('success', 'toast.imageUploaded');
+    return `![](${url})`;
+  } catch (err) {
+    console.error('[cm-image-paste] upload failed', err);
+    opts.notify?.('error', 'toast.imageUploadFailed');
+    return await fallback();
+  }
+}
+
+/**
+ * Persist image bytes locally and return the markdown link to insert, or null
+ * on failure. Used by the Windows plain-textarea editor (which inserts text via
+ * a callback rather than a CodeMirror view). No upload — kept simple.
  */
 export async function saveImageBytes(
   bytes: Uint8Array,
   ext: string,
   opts: ImagePasteOptions,
 ): Promise<string | null> {
-  let sepCh: string;
-  try {
-    sepCh = sep();
-  } catch {
-    sepCh = '/';
+  const { fullPath, insertText } = await prepareLocalTarget(makeFilename(ext), opts);
+  return (await writeBytes(fullPath, bytes)) ? insertText : null;
+}
+
+/**
+ * Save (and optionally upload) pasted/dropped image bytes, inserting the
+ * resulting markdown at the cursor. When an uploader is configured with
+ * auto-upload on, inserts an `![](token)` placeholder immediately, then swaps
+ * in the hosted URL (or a local fallback) once the upload settles.
+ */
+async function saveAndInsert(
+  view: EditorView,
+  bytes: Uint8Array,
+  ext: string,
+  opts: ImagePasteOptions,
+): Promise<void> {
+  const filename = makeFilename(ext);
+  const up = opts.getUploader ? opts.getUploader(filename) : null;
+  const local = await prepareLocalTarget(filename, opts);
+
+  if (!up || !up.onPaste) {
+    if (await writeBytes(local.fullPath, bytes)) insertAtCursor(view, local.insertText);
+    return;
   }
 
-  const filePath = opts.getFilePath();
-  const filename = `image-${timestamp()}-${randSuffix()}.${ext}`;
-
-  // If the document has a front-matter `imageRoot`, write to that dir and
-  // insert a markdown link relative to it.
-  const imageRoot = opts.getDocContent ? parseImageRootFast(opts.getDocContent()) : null;
-
-  let fullPath: string;
-  let insertText: string;
-
-  if (imageRoot && filePath) {
-    const rootAbs = imageRoot.startsWith('/') || /^[a-zA-Z]:[\\/]/.test(imageRoot);
-    const rootDir = rootAbs
-      ? imageRoot
-      : joinPath(dirnameOf(filePath, sepCh), imageRoot, sepCh);
-    fullPath = joinPath(rootDir, filename, sepCh);
-    insertText = `![](${filename})`;
-  } else if (filePath) {
-    const mode = opts.getAttachmentMode ? opts.getAttachmentMode() : 'shared';
-    const sharedDir = opts.getAssetsDirName ? (opts.getAssetsDirName() || '_assets') : '_assets';
-    const customPath = opts.getCustomPath ? opts.getCustomPath() : undefined;
-    const { dir: assetsDir, urlPrefix } = resolveAssetsDir(filePath, sepCh, mode, sharedDir, customPath);
-    fullPath = joinPath(assetsDir, filename, sepCh);
-    insertText = `![](${urlPrefix}/${filename})`;
+  // Materialize the upload source: the assets file (keepLocal) or a temp copy.
+  let srcPath: string;
+  if (up.keepLocal) {
+    if (!(await writeBytes(local.fullPath, bytes))) {
+      insertAtCursor(view, local.insertText);
+      return;
+    }
+    srcPath = local.fullPath;
   } else {
-    const t = await resolveTempDir(opts.tempDir);
-    const solomdDir = joinPath(t, 'solomd', sepCh);
-    fullPath = joinPath(solomdDir, filename, sepCh);
-    // Use forward slashes in the markdown URL. On Windows the path is built
-    // with `\`, and markdown-it (used by the preview pane) treats `\` in URLs
-    // as escape characters — it silently strips them, leaving a mangled src
-    // that 404s. Live-edit's image regex captures the raw text untouched, so
-    // it loaded fine there; only preview broke. Backslash→slash makes both
-    // modes resolve the same absolute path. (No-op on macOS/Linux.)
-    insertText = `![](${fullPath.replace(/\\/g, '/')})`;
+    const temp = await prepareTempTarget(filename, opts);
+    if (!(await writeBytes(temp, bytes))) {
+      // Temp write failed — fall back to a plain local save.
+      if (await writeBytes(local.fullPath, bytes)) insertAtCursor(view, local.insertText);
+      return;
+    }
+    srcPath = temp;
   }
 
-  try {
-    await invoke('write_binary_file', {
-      path: fullPath,
-      data: Array.from(bytes),
-    });
-  } catch (err) {
-    // Best-effort: log and abort this image.
-    console.error('[cm-image-paste] failed to write image', err);
-    return null;
-  }
-
-  return insertText;
+  const token = `solomd-uploading-${randSuffix()}${randSuffix()}`;
+  insertAtCursor(view, `![](${token})`);
+  const finalText = await performUpload(up, srcPath, opts, async () => {
+    // On failure keep a local copy: assets file already exists when keepLocal;
+    // otherwise copy the temp file into the attachments folder.
+    if (up.keepLocal) return local.insertText;
+    try {
+      await invoke('copy_file', { src: srcPath, dst: local.fullPath });
+      return local.insertText;
+    } catch {
+      return `![](${srcPath.replace(/\\/g, '/')})`;
+    }
+  });
+  replaceToken(view, token, finalText);
 }
 
 /**
@@ -278,10 +387,49 @@ export async function handleTextareaImagePaste(
   event.preventDefault();
   for (const img of images) {
     const bytes = await readFileAsUint8(img.blob);
-    const text = await saveImageBytes(bytes, img.ext, opts);
+    const text = await saveOrUploadText(bytes, img.ext, opts);
     if (text) insert(text);
   }
   return true;
+}
+
+/**
+ * Blocking variant of `saveAndInsert` for the plain-textarea editor: saves
+ * locally, or (if an uploader is configured with auto-upload) uploads and
+ * returns the hosted URL — falling back to a local link on failure. Awaits the
+ * upload before returning (no placeholder, unlike the CodeMirror path).
+ */
+async function saveOrUploadText(
+  bytes: Uint8Array,
+  ext: string,
+  opts: ImagePasteOptions,
+): Promise<string | null> {
+  const filename = makeFilename(ext);
+  const up = opts.getUploader ? opts.getUploader(filename) : null;
+  const local = await prepareLocalTarget(filename, opts);
+  if (!up || !up.onPaste) {
+    return (await writeBytes(local.fullPath, bytes)) ? local.insertText : null;
+  }
+  let srcPath: string;
+  if (up.keepLocal) {
+    if (!(await writeBytes(local.fullPath, bytes))) return null;
+    srcPath = local.fullPath;
+  } else {
+    const temp = await prepareTempTarget(filename, opts);
+    if (!(await writeBytes(temp, bytes))) {
+      return (await writeBytes(local.fullPath, bytes)) ? local.insertText : null;
+    }
+    srcPath = temp;
+  }
+  return performUpload(up, srcPath, opts, async () => {
+    if (up.keepLocal) return local.insertText;
+    try {
+      await invoke('copy_file', { src: srcPath, dst: local.fullPath });
+      return local.insertText;
+    } catch {
+      return `![](${srcPath.replace(/\\/g, '/')})`;
+    }
+  });
 }
 
 async function handlePaste(
@@ -351,55 +499,41 @@ export async function insertImageFromPath(
   srcPath: string,
   opts: ImagePasteOptions,
 ): Promise<void> {
-  let sepCh: string;
-  try {
-    sepCh = sep();
-  } catch {
-    sepCh = '/';
-  }
-
   const ext = extFromName(srcPath) || 'png';
-  const filename = `image-${timestamp()}-${randSuffix()}.${ext}`;
-  const filePath = opts.getFilePath();
-  const imageRoot = opts.getDocContent ? parseImageRootFast(opts.getDocContent()) : null;
+  const filename = makeFilename(ext);
+  const up = opts.getUploader ? opts.getUploader(filename) : null;
+  const local = await prepareLocalTarget(filename, opts);
 
-  let dstPath: string;
-  let insertText: string;
-  if (imageRoot && filePath) {
-    const rootAbs = imageRoot.startsWith('/') || /^[a-zA-Z]:[\\/]/.test(imageRoot);
-    const rootDir = rootAbs
-      ? imageRoot
-      : joinPath(dirnameOf(filePath, sepCh), imageRoot, sepCh);
-    dstPath = joinPath(rootDir, filename, sepCh);
-    insertText = `![](${filename})`;
-  } else if (filePath) {
-    const mode = opts.getAttachmentMode ? opts.getAttachmentMode() : 'shared';
-    const sharedDir = opts.getAssetsDirName ? (opts.getAssetsDirName() || '_assets') : '_assets';
-    const customPath = opts.getCustomPath ? opts.getCustomPath() : undefined;
-    const { dir: assetsDir, urlPrefix } = resolveAssetsDir(filePath, sepCh, mode, sharedDir, customPath);
-    dstPath = joinPath(assetsDir, filename, sepCh);
-    insertText = `![](${urlPrefix}/${filename})`;
-  } else {
-    const t = await resolveTempDir(opts.tempDir);
-    const solomdDir = joinPath(t, 'solomd', sepCh);
-    dstPath = joinPath(solomdDir, filename, sepCh);
-    // Forward slashes in the URL — see the saveAndInsert temp-dir branch
-    // comment above for why (markdown-it eats `\` as escapes on Windows).
-    insertText = `![](${dstPath.replace(/\\/g, '/')})`;
+  if (!up || !up.onPaste) {
+    try {
+      await invoke('copy_file', { src: srcPath, dst: local.fullPath });
+    } catch (err) {
+      console.error('[cm-image-paste] copy_file failed', err);
+      throw err;
+    }
+    insertAtCursor(view, local.insertText);
+    return;
   }
 
-  try {
-    await invoke('copy_file', { src: srcPath, dst: dstPath });
-  } catch (err) {
-    console.error('[cm-image-paste] copy_file failed', err);
-    throw err;
+  // Upload source: copy into the attachments folder first when keeping a local
+  // copy; otherwise upload the original file in place (no copy needed).
+  let uploadSrc = srcPath;
+  if (up.keepLocal) {
+    await invoke('copy_file', { src: srcPath, dst: local.fullPath });
+    uploadSrc = local.fullPath;
   }
-
-  const pos = view.state.selection.main.head;
-  view.dispatch({
-    changes: { from: pos, insert: insertText },
-    selection: { anchor: pos + insertText.length },
+  const token = `solomd-uploading-${randSuffix()}${randSuffix()}`;
+  insertAtCursor(view, `![](${token})`);
+  const finalText = await performUpload(up, uploadSrc, opts, async () => {
+    if (up.keepLocal) return local.insertText;
+    try {
+      await invoke('copy_file', { src: srcPath, dst: local.fullPath });
+      return local.insertText;
+    } catch {
+      return `![](${srcPath.replace(/\\/g, '/')})`;
+    }
   });
+  replaceToken(view, token, finalText);
 }
 
 export function imagePasteExtension(opts: ImagePasteOptions) {
