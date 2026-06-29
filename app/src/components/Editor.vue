@@ -154,7 +154,13 @@ const focusCompartment = new Compartment();
 const typewriterCompartment = new Compartment();
 const vimCompartment = new Compartment();
 const slashCompartment = new Compartment();
-const isWindows = typeof navigator !== 'undefined' && /Win/i.test(navigator.platform);
+// `?forcePlain` query flag forces the Windows plain-textarea editor on any OS —
+// a dev/test hook so the Windows-only path can be exercised on macOS/Linux. It
+// can only be set programmatically (the Tauri shell has no URL bar), so it is
+// inert for real users.
+const isWindows =
+  (typeof navigator !== 'undefined' && /Win/i.test(navigator.platform)) ||
+  (typeof location !== 'undefined' && location.search.includes('forcePlain'));
 // Windows uses the plain-textarea editor: WebView2 + contentEditable drops the
 // first IME character and doubles CJK punctuation (worst on Sogou), and even
 // freezing CodeMirror's decorations during composition does not fix it — the
