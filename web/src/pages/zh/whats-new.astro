@@ -5,7 +5,7 @@ import Footer from '../../components/Footer.astro';
 import Giscus from '../../components/Giscus.astro';
 
 const lang = 'zh' as const;
-const VERSION = '4.7.4';
+const VERSION = '4.8.0';
 const baseUrl = `https://github.com/zhitongblog/solomd/releases/download/v${VERSION}`;
 ---
 
@@ -62,6 +62,16 @@ const baseUrl = `https://github.com/zhitongblog/solomd/releases/download/v${VERS
         <p style="opacity:.8;">
           <strong>macOS、Linux、iOS 和 Android 不受影响</strong> —— 继续使用现有的
           CodeMirror 编辑器。4.7 还修复了:命令面板在悬停或滚轮滚动列表时不再乱跳（#93）。
+        </p>
+        <p style="margin-top:14px;">
+          <strong>4.8.0</strong> —— <strong>图片上传到图床</strong>。粘贴、拖入或选择图片时,
+          SoloMD 现在可以把它上传到外部图床并插入外链,而不再只复制到本地文件夹 ——
+          和 Typora / MarkText 一样。支持五种后端:<strong>PicGo</strong>(本地服务)、
+          <strong>自定义命令</strong>(PicGo-Core / uPic / 任意脚本)、<strong>SM.MS</strong>、
+          <strong>S3 兼容</strong>(阿里云 OSS / 腾讯云 COS / Cloudflare R2 / MinIO),
+          以及 <strong>GitHub 仓库 + CDN</strong>。另有"插入网络图片 URL"和
+          "上传本文所有本地图片"命令。粘贴时自动上传,图床不可达会自动回退本地副本。
+          在 设置 → 写作 中配置。
         </p>
         <p style="margin-top:14px;">
           <strong>4.7.4</strong> —— Windows 编辑器的 <strong>Backspace / Delete</strong>
