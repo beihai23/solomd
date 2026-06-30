@@ -736,8 +736,18 @@ onMounted(async () => {
   // #87(3) — if a startup view mode is pinned, force it now (overrides the
   // persisted last-used `viewMode`). Empty/null = resume whatever the user
   // left in, as before.
+  // #128 — a pinned "reading" mode with nothing to show (restore-tabs off, or
+  // no tabs persisted → just a blank Untitled) lands on a blank reading window.
+  // Skip forcing reading when there's no real document to read (no saved file
+  // and no typed content); editor / split are fine empty.
   if (settings.startupViewMode && settings.startupViewMode !== settings.viewMode) {
-    settings.setViewMode(settings.startupViewMode);
+    const hasReadable = tabs.tabs.some(
+      (t) => t.filePath || (t.content && t.content.trim().length > 0),
+    );
+    const nothingToRead = settings.startupViewMode === 'reading' && !hasReadable;
+    if (!nothingToRead) {
+      settings.setViewMode(settings.startupViewMode);
+    }
   }
 
   window.addEventListener('keydown', onEsc);

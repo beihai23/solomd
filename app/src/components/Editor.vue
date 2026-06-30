@@ -3,7 +3,7 @@ import { ref, onMounted, onBeforeUnmount, watch, computed, nextTick } from 'vue'
 import { EditorState, Compartment } from '@codemirror/state';
 import { EditorView, keymap, lineNumbers, highlightActiveLine, drawSelection, rectangularSelection, crosshairCursor } from '@codemirror/view';
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands';
-import { searchKeymap, search } from '@codemirror/search';
+import { searchKeymap, search, openSearchPanel } from '@codemirror/search';
 import { syntaxHighlighting, defaultHighlightStyle, indentOnInput, bracketMatching } from '@codemirror/language';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import mermaid from 'mermaid';
@@ -1646,6 +1646,23 @@ onMounted(() => {
   cleanupRelayout = () => window.removeEventListener('solomd:relayout', onRelayout);
 });
 
+/**
+ * #137 — open the find/replace UI. The panel already exists on both editor
+ * paths (CodeMirror's search panel + the plain-textarea find bar) behind
+ * Ctrl+F, but had no toolbar / command-palette entry, so users thought it was
+ * gone. PaneContent forwards `solomd:editor-find` here for the focused pane.
+ */
+function openFind(): void {
+  if (usePlainWindowsEditor) {
+    openPlainFind();
+    return;
+  }
+  if (view) {
+    view.focus();
+    openSearchPanel(view);
+  }
+}
+
 onBeforeUnmount(() => {
   cleanupRelayout?.();
   if (contentSyncTimer) {
@@ -2028,7 +2045,7 @@ function insertMarkdown(snippet: string): void {
   view.focus();
 }
 
-defineExpose({ gotoLine, insertImageFromPath, insertImageUrl, uploadLocalImages, getViewLine, scrollToLine, insertMarkdown });
+defineExpose({ gotoLine, insertImageFromPath, insertImageUrl, uploadLocalImages, getViewLine, scrollToLine, insertMarkdown, openFind });
 
 const cls = computed(() => ({
   'cm-host': true,

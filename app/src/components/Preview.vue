@@ -349,6 +349,12 @@ function resolveRelativePath(basePath: string, href: string): string {
   }
   const winStyle = basePath.includes('\\') && !basePath.includes('/');
   const sepCh = winStyle ? '\\' : '/';
+  // #138 — a UNC path (`\\server\share\…`, or WSL's `\\wsl$\Ubuntu\…` /
+  // `\\wsl.localhost\…`) starts with a DOUBLE separator. Splitting on
+  // `[\\/]+` collapses that pair into one match, so a naive join emits a
+  // single leading `\` — an invalid path that Rust's `fs::read` rejects with
+  // os error 3. Detect it and restore the second leading separator.
+  const isUnc = /^[\\/]{2}/.test(basePath);
   // Directory segments of the current file (drop the file name itself).
   const segs = basePath.split(/[\\/]+/);
   segs.pop();
@@ -360,7 +366,8 @@ function resolveRelativePath(basePath: string, href: string): string {
     }
     segs.push(part);
   }
-  return segs.join(sepCh);
+  const joined = segs.join(sepCh);
+  return isUnc ? sepCh + joined : joined;
 }
 
 onMounted(async () => {

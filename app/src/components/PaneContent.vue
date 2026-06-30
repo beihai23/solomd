@@ -256,6 +256,7 @@ onMounted(() => {
   window.addEventListener('solomd:insert-image-path', onInsertImagePathEvent);
   window.addEventListener('solomd:insert-image-url', onInsertImageUrlEvent);
   window.addEventListener('solomd:upload-local-images', onUploadLocalImagesEvent);
+  window.addEventListener('solomd:editor-find', onEditorFindEvent);
   window.addEventListener('solomd:preview-search', onPreviewSearchEvent);
 });
 
@@ -267,6 +268,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('solomd:insert-image-path', onInsertImagePathEvent);
   window.removeEventListener('solomd:insert-image-url', onInsertImageUrlEvent);
   window.removeEventListener('solomd:upload-local-images', onUploadLocalImagesEvent);
+  window.removeEventListener('solomd:editor-find', onEditorFindEvent);
   window.removeEventListener('solomd:preview-search', onPreviewSearchEvent);
 });
 
@@ -304,6 +306,15 @@ function onUploadLocalImagesEvent(e: Event) {
   if (paneId !== props.paneId) return;
   const ed = editorRef.value as unknown as { uploadLocalImages?: () => void } | null;
   ed?.uploadLocalImages?.();
+}
+
+function onEditorFindEvent(e: Event) {
+  const { paneId } = (e as CustomEvent).detail || {};
+  // No paneId → the focused pane handles it.
+  if (paneId && paneId !== props.paneId) return;
+  if (!paneId && !isFocused.value) return;
+  const ed = editorRef.value as unknown as { openFind?: () => void } | null;
+  ed?.openFind?.();
 }
 
 function onPreviewSearchEvent(e: Event) {

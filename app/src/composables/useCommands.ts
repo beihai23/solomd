@@ -257,6 +257,17 @@ export function useCommands(): Command[] {
     },
 
     {
+      id: 'editor.find',
+      title: 'Find / Replace in note…',
+      shortcut: 'Ctrl+F',
+      hint: 'Open the find & replace bar in the current editor',
+      run: () =>
+        window.dispatchEvent(
+          new CustomEvent('solomd:editor-find', { detail: { paneId: tiles.focusedPaneId } }),
+        ),
+    },
+
+    {
       id: 'editor.insertImage',
       title: 'Insert image…',
       hint: 'Pick an image — it is copied into the note’s attachments folder and a Markdown image link is inserted',
